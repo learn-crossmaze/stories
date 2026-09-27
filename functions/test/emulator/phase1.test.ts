@@ -155,6 +155,17 @@ describe('M1.4 subscriptions, payments, deposits', () => {
     await issue(m, [c1, c2]); // still 2 at a time under the old terms
   });
 
+  it('returns a custom-barcoded copy by its copy code (desk checkbox return)', async () => {
+    const m = await register('Asha');
+    await subscribe(m);
+    const { codes } = await call<{ codes: string[] }>(copies.acquire, lib, { orgId: org, branchId: central, bookId, quantity: 1, acquisitionCostMinor: 0, barcodes: ['LBL-9001'] });
+    await issue(m, ['LBL-9001']);
+    await giveBack(codes);
+    const copyId = (await db.doc(`orgs/${org}/barcodes/LBL-9001`).get()).get('copyId');
+    expect((await get(`copies/${copyId}`)).status).toBe('UNDER_INSPECTION');
+    expect(await failure(giveBack(['COPY-999999-01']))).toBe('UNKNOWN_BARCODE');
+  });
+
   it('keeps the deposit balance equal to the ledger, with maker-checker approvals', async () => {
     const m = await register('Asha');
     await subscribe(m);
