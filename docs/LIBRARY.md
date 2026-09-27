@@ -8,7 +8,7 @@ One **shared catalogue** for all organizations: top-level `books`, `authors`, `p
 
 | Field | Notes |
 |---|---|
-| `code` | `BOOK-000001…` from `counters/books`, allocated inside the create transaction |
+| `code` | `BOOK-000001…` from `counters/books`, allocated inside the create transaction; pattern configurable ([NUMBERING.md](NUMBERING.md)) |
 | `isbn` | optional; ISBN-10 or ISBN-13 accepted, stored as ISBN-13 digits; unique via `isbnIndex/{isbn}` |
 | `authorIds` / `authorNames` | 1–5 authors; names denormalized for display and search, refreshed when an author is renamed |
 | `genres` | 1–3 of FICTION, FANTASY, MYSTERY, ADVENTURE, SCIENCE, BIOGRAPHY, SELF_HELP, CLASSICS, COMICS, EDUCATIONAL |
@@ -30,10 +30,11 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 `copies/{id}/events`. **Ownership ≠ location:** `owningBranchId` never changes (transfers move `currentBranchId`).
 
 - **Acquire** (`copies-acquire`, `copies.manage` at the branch): 1–50 copies of an active title. Codes are
-  `COPY-<book number>-NN` per organization; the barcode defaults to the code, or pre-printed barcodes can be scanned in.
+  `COPY-<book number>-NN` per organization by default (each branch can set its own pattern, see [NUMBERING.md](NUMBERING.md)); the barcode defaults to the code, or pre-printed barcodes can be scanned in.
   Barcodes are unique per organization via `orgs/{o}/barcodes/{barcode}`. New copies go straight to members waiting
   for that title at the branch.
-- **Shelf locations:** `orgs/{o}/branches/{b}/locations` (code, label, kind).
+- **Shelf locations:** `orgs/{o}/branches/{b}/locations` (code, label, kind). Leave the code blank to number it with the
+  branch's shelf pattern.
 - **Condition:** NEW, GOOD, FAIR, POOR (changes are recorded as events). DAMAGED/LOST/RETIRED are *statuses*.
 - **State machine** — see [CIRCULATION.md](CIRCULATION.md). Retired copies are never deleted and never return.
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
@@ -44,7 +45,7 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 
 ## Members (M1.3)
 
-`orgs/{o}/members/{memberId}` — code `MEM-000001`, name, date of birth, audience (derived from age: under 13
+`orgs/{o}/members/{memberId}` — code `MEM-000001` (branch-configurable), name, date of birth, audience (derived from age: under 13
 CHILDREN, 13–17 TEENS, 18+ ADULTS), mobile (E.164), home branch, status (ACTIVE / SUSPENDED / CLOSED) and the
 circulation counters (`activeLoanCount`, `allocatedCount`, `waitingCount`, lifetime loans/exchanges).
 

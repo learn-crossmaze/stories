@@ -4,9 +4,9 @@ import { z } from 'zod';
 import { searchTokens } from '../catalog/search.js';
 import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
-import { pad, reserveCounter } from '../core/counters.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { branchPatterns, existingCodes, reserveCodes } from '../core/numbering.js';
 import { address, id, reason } from '../core/schemas.js';
 import { ageOn, audienceFor, ADULT_AGE, type Member, normalizePhone } from './model.js';
 
@@ -84,8 +84,14 @@ export const register = command(
     const branch = await tx.get(db.doc(`orgs/${input.orgId}/branches/${input.homeBranchId}`));
     if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
     const person = await checkPerson(tx, input.orgId, input, null);
-    const counter = await reserveCounter(tx, `orgs/${input.orgId}/counters/members`);
-    const code = `MEM-${pad(counter.value, 6)}`;
+    const counter = await reserveCodes(tx, {
+      kind: 'member',
+      pattern: branchPatterns(branch).member,
+      values: { BRANCH: branch.get('code') },
+      base: `orgs/${input.orgId}/counters`,
+      taken: (c) => existingCodes(tx, `orgs/${input.orgId}/members`, c),
+    });
+    const [code] = counter.codes;
     const ref = db.collection(`orgs/${input.orgId}/members`).doc();
 
     const member: Member & Record<string, unknown> = {

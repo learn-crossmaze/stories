@@ -10,6 +10,7 @@ import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../Dialog';
 import { canManageMember, grantableRoles, isOrgWide } from '../grants';
+import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
 
 function RolesDialog({ org, member, onClose, onSaved }: { org: Org; member?: StaffMembership; onClose: () => void; onSaved: () => void }) {
@@ -23,6 +24,7 @@ function RolesDialog({ org, member, onClose, onSaved }: { org: Org; member?: Sta
   const [roles, setRoles] = useState<Role[]>(member?.status === 'ACTIVE' ? member.roles : []);
   const [allBranches, setAllBranches] = useState(member ? member.branchIds.includes('*') : false);
   const [picked, setPicked] = useState<string[]>(member?.branchIds.filter((b) => b !== '*') ?? []);
+  const [employeeId, setEmployeeId] = useState(member?.employeeId ?? '');
   const [touched, setTouched] = useState(false);
 
   const orgWide = roles.some(isOrgWide);
@@ -31,13 +33,14 @@ function RolesDialog({ org, member, onClose, onSaved }: { org: Org; member?: Sta
     email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) ? undefined : 'Enter a valid email address.',
     roles: roles.length ? undefined : 'Choose at least one role.',
     branches: all || picked.length ? undefined : 'Choose at least one branch.',
+    employeeId: !employeeId.trim() || /^[A-Za-z0-9-]{2,24}$/.test(employeeId.trim()) ? undefined : 'Use 2–24 letters, digits or dashes.',
   };
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
-    if (errors.email || errors.roles || errors.branches) return;
-    await command('staff-setRoles', { orgId: org.id, email: email.trim(), roles, branchIds: all ? ['*'] : picked });
+    if (errors.email || errors.roles || errors.branches || errors.employeeId) return;
+    await command('staff-setRoles', { orgId: org.id, email: email.trim(), roles, branchIds: all ? ['*'] : picked, employeeId: employeeId.trim().toUpperCase() });
     onSaved();
     onClose();
   });
@@ -46,6 +49,7 @@ function RolesDialog({ org, member, onClose, onSaved }: { org: Org; member?: Sta
     <Dialog title={member ? t.staffEditRoles : t.staffAdd} onClose={onClose}>
       <form onSubmit={submit} noValidate>
         <TextField label={t.staffEmail} type="email" value={email} onChange={setEmail} hint={member ? undefined : t.staffEmailHint} error={touched ? errors.email : undefined} disabled={!!member} />
+        <TextField label={lt.employeeId} value={employeeId} onChange={setEmployeeId} hint={lt.employeeIdHint} error={touched ? errors.employeeId : undefined} />
         <fieldset className="choices">
           <legend>{t.staffRoles}</legend>
           {offered.map((r) => (
@@ -113,6 +117,7 @@ export function StaffPage() {
             <thead>
               <tr>
                 <th scope="col">Name</th>
+                <th scope="col">{lt.employeeId}</th>
                 <th scope="col">{t.staffRoles}</th>
                 <th scope="col">{t.staffBranches}</th>
                 <th scope="col">Status</th>
@@ -133,6 +138,7 @@ export function StaffPage() {
                         {m.uid === user?.uid && ` · ${t.staffYou}`}
                       </div>
                     </td>
+                    <td className="mono nowrap">{m.employeeId ?? '—'}</td>
                     <td>{m.roles.map((r) => ROLES[r]?.label ?? r).join(', ') || '—'}</td>
                     <td>{m.branchIds.includes('*') ? t.allBranches : m.branchIds.map(branchName).join(', ')}</td>
                     <td>

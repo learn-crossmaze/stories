@@ -233,4 +233,23 @@ export const lt = {
   waitingReservations: 'Members waiting',
   incomingTransfers: 'Incoming transfers',
   approvalsPending: 'Deposit approvals',
+
+  // numbering
+  numbering: 'Numbering',
+  numberingTitle: (branch: string) => `Numbering at ${branch}`,
+  numberingIntro:
+    'Patterns for the codes this branch creates. Only new records use a changed pattern — existing codes and printed labels stay as they are.',
+  numberingCopy: 'Book copies',
+  numberingMember: 'Members',
+  numberingLocation: 'Shelves (when no code is typed)',
+  numberingEmployee: 'Employee IDs',
+  numberingBook: 'Book codes',
+  numberingBookTitle: 'Book numbering',
+  numberingBookIntro: 'Codes for new catalogue titles, shared by every organization. Existing titles keep their codes.',
+  numberingExample: (codes: string) => `Next codes look like ${codes}`,
+  numberingDefault: 'Default:',
+  numberingTokens: 'What can go in a pattern?',
+  employeeId: 'Employee ID',
+  employeeIdHint: 'Leave blank to number automatically with the branch pattern.',
+  locationCodeAuto: 'Leave blank to number it automatically.',
 };

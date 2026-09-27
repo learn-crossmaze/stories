@@ -45,6 +45,8 @@ export interface Branch {
   contact: { phone: string; email: string };
   operatingHours: { day: Weekday; open: string; close: string }[];
   weeklyOffs: Weekday[];
+  /** Numbering pattern overrides for codes created at this branch. */
+  numbering?: Partial<Record<'copy' | 'member' | 'location' | 'employee', string>>;
 }
 
 export interface Department {
@@ -62,6 +64,7 @@ export interface StaffMembership {
   roles: Role[];
   branchIds: string[];
   status: 'ACTIVE' | 'REVOKED';
+  employeeId?: string | null;
 }
 
 export interface AuditEntry {

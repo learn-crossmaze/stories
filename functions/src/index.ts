@@ -7,6 +7,7 @@
 import { setGlobalOptions } from 'firebase-functions/v2';
 
 import * as branches from './branches/branches.js';
+import * as numbering from './branches/numbering.js';
 import * as catalog from './catalog/catalog.js';
 import * as circ from './circulation/circulation.js';
 import * as res from './circulation/reservations.js';
@@ -37,6 +38,7 @@ export const admin = router({
   'branches-create': branches.create,
   'branches-update': branches.update,
   'branches-archive': branches.archive,
+  'branches-setNumbering': numbering.setBranchNumbering,
   'departments-create': departments.create,
   'departments-rename': departments.rename,
   'departments-archive': departments.archive,
@@ -49,6 +51,7 @@ export const catalogue = router({
   'books-create': catalog.create,
   'books-update': catalog.update,
   'books-archive': catalog.archive,
+  'books-setNumbering': numbering.setBookNumbering,
   'authors-create': catalog.authors.create,
   'authors-rename': catalog.authors.rename,
   'authors-archive': catalog.authors.archive,

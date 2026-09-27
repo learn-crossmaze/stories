@@ -16,6 +16,7 @@ export interface Membership {
   roles: Role[];
   branchIds: BranchScope;
   status: 'ACTIVE' | 'REVOKED';
+  employeeId?: string | null;
 }
 
 export type OrgType = 'CORPORATE' | 'FRANCHISE';
