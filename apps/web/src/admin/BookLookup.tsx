@@ -5,6 +5,8 @@ import { callAction, toApiError } from '../data/api';
 import { label } from '../data/library';
 import { services } from '../data/services';
 import { paths } from '../paths';
+import { Icon } from '../ui';
+import { CameraScanner } from './CameraScanner';
 import { lt } from './libraryStrings';
 
 /** A match from Google Books / Open Library (functions/src/catalog/lookup.ts). */
@@ -31,14 +33,15 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Candidate[] | null>(null);
   const [applying, setApplying] = useState<number | null>(null);
+  const [camera, setCamera] = useState(false);
 
-  const search = async (e?: FormEvent) => {
+  const search = async (e?: FormEvent, term = q) => {
     e?.preventDefault();
-    if (q.trim().length < 2 || busy) return;
+    if (term.trim().length < 2 || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await callAction<{ candidates: Candidate[] }>(services().fns, 'books-lookup', { q: q.trim() });
+      const res = await callAction<{ candidates: Candidate[] }>(services().fns, 'books-lookup', { q: term.trim() });
       setResults(res.candidates);
     } catch (err) {
       setError(toApiError(err).message || lt.lookupFailed);
@@ -78,7 +81,20 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
         <button type="button" className="btn btn-outlined" onClick={() => void search()} disabled={busy || q.trim().length < 2}>
           {busy ? lt.lookupSearching : lt.lookupButton}
         </button>
+        <button type="button" className="btn btn-outlined btn-icon" onClick={() => setCamera((c) => !c)} aria-pressed={camera} aria-label={lt.camScanIsbn} title={lt.camScanIsbn}>
+          <Icon name="camera" />
+        </button>
       </div>
+      {camera && (
+        <CameraScanner
+          continuous={false}
+          onDetect={(text) => {
+            setQ(text);
+            void search(undefined, text);
+          }}
+          onClose={() => setCamera(false)}
+        />
+      )}
       <p className="muted small">{lt.lookupHint}</p>
       {error && <p className="field-error" role="alert">{error}</p>}
       {results && results.length === 0 && <p className="muted">{lt.lookupNone}</p>}

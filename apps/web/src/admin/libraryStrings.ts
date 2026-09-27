@@ -372,4 +372,21 @@ export const lt = {
   actOnlineRequested: (how: string) => `Online payment requested (${how})`,
   actOnlineCancelled: 'Online payment request cancelled',
   actOnlineUnapplied: (amount: string) => `Online payment of ${amount} received but not applied`,
+
+  // camera barcode scanning
+  camUse: 'Scan with the camera',
+  camScanIsbn: 'Scan the ISBN barcode with the camera',
+  camTitle: 'Camera',
+  camPreview: 'Camera preview',
+  camStarting: 'Starting the camera…',
+  camHint: 'Hold the barcode inside the frame, about a hand-width from the camera.',
+  camScanned: (code: string) => `Scanned ${code}`,
+  camChoose: 'Choose camera',
+  camDefault: 'Default camera',
+  camStop: 'Stop camera',
+  camDenied: 'Camera access is blocked. Click the camera icon in the address bar, allow the camera for this site, and try again.',
+  camNone: 'No camera found on this device.',
+  camBusy: 'The camera is in use by another app (e.g. a video call). Close it and try again.',
+  camInsecure: 'The camera only works on the secure (https) site.',
+  camFailed: "The camera couldn't be started.",
 };

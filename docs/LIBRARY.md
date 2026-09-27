@@ -54,8 +54,12 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
   exact, no counters to drift). Any signed-in user may call it (it reveals only counts).
 - **Labels:** the console prints A4 sheets (3 × 8) with Code 128 barcodes.
-- **Scanning:** USB/Bluetooth scanners work in every scan field (they type the code and press Enter). Camera
-  scanning is a known gap.
+- **Scanning:** USB/Bluetooth scanners work in every scan field (they type the code and press Enter). The camera
+  button next to each scan field reads barcodes with the laptop webcam or a phone camera (Code 128 labels, EAN-13 /
+  ISBN, Code 39, UPC, QR) using ZXing, loaded only when the camera is opened. It keeps scanning book after book
+  (the same code isn't read twice within 2 s); the *Find book details* box has a camera button that reads a book's
+  ISBN barcode and searches. The browser asks for camera permission once per site; it needs https (the live site)
+  or localhost.
 
 ## Members (M1.3)
 
