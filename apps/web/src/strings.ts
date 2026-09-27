@@ -45,6 +45,8 @@ export const t = {
   errorGeneric: 'Something went wrong on our side. Please try again.',
   errorNetwork: 'You appear to be offline. Check your connection and try again.',
   errorLoad: "We couldn't load this. Check your connection and try again.",
+  errorServerOutdated:
+    "This feature needs the latest server update, which hasn't been deployed yet. Ask the administrator to run `npm run deploy:backend`, then try again.",
   errorIndex: 'This list is still being set up on the server (a database index is building). Try again in a few minutes; if it persists, run the backend deploy again.',
   errorForbidden: "You don't have permission to see this.",
   retry: 'Try again',

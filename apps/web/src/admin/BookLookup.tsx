@@ -86,7 +86,18 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
         <ul className="lookup-results">
           {results.map((c, i) => (
             <li key={`${c.source}-${c.isbn ?? c.title}-${i}`}>
-              {c.coverUrl ? <img src={c.coverUrl} alt="" loading="lazy" className="lookup-cover" /> : <span className="lookup-cover lookup-cover-none" />}
+              {c.coverUrl ? (
+                <img
+                  src={c.coverUrl}
+                  alt=""
+                  loading="lazy"
+                  className="lookup-cover"
+                  // Some catalogue entries point at an image that no longer exists: drop it rather than show a broken picture or import it.
+                  onError={() => setResults((rs) => rs?.map((r, j) => (j === i ? { ...r, coverUrl: null } : r)) ?? rs)}
+                />
+              ) : (
+                <span className="lookup-cover lookup-cover-none" />
+              )}
               <div className="lookup-main">
                 <strong>{c.title}</strong>
                 {c.subtitle && <span className="muted"> · {c.subtitle}</span>}

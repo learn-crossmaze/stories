@@ -23,6 +23,8 @@ export function toApiError(e: unknown): ApiError {
     const reason = (e as FirebaseError & { details?: { reason?: string } }).details?.reason ?? code.toUpperCase();
     // The SDK appends the HTTP status (" [400]") to server messages; users don't need it.
     const message = e.message.replace(/\s*\[\d{3}\]$/, '');
+    // The web app is newer than the deployed backend: the router doesn't know the action (or the function is missing).
+    if (code === 'not-found' && /^(unknown action\.?|not[ _-]?found)$/i.test(message)) return new ApiError(t.errorServerOutdated, 'SERVER_OUTDATED');
     if (passThrough.has(code) && message) return new ApiError(message, reason);
     if (code === 'unavailable' || code === 'deadline-exceeded') return new ApiError(t.errorNetwork, 'NETWORK');
     return new ApiError(t.errorGeneric, reason);

@@ -72,6 +72,16 @@ describe('toApiError', () => {
     expect(toApiError(e)).toMatchObject({ message: 'Branch code NTH is already used.', reason: 'BRANCH_CODE_TAKEN' });
     expect(toApiError(new FirebaseError('functions/internal', 'stack trace here')).message).toMatch(/Something went wrong/);
   });
+
+  it('explains a 404 from an outdated backend instead of showing "not found"', async () => {
+    const { FirebaseError } = await import('firebase/app');
+    const { toApiError } = await import('../data/api');
+    for (const msg of ['Unknown action. [404]', 'NOT FOUND', 'not-found']) {
+      expect(toApiError(new FirebaseError('functions/not-found', msg))).toMatchObject({ reason: 'SERVER_OUTDATED', message: expect.stringContaining('deploy:backend') });
+    }
+    // A domain "not found" keeps its own message.
+    expect(toApiError(new FirebaseError('functions/not-found', 'Book not found. [404]')).message).toBe('Book not found.');
+  });
 });
 
 describe('routerFor', () => {
