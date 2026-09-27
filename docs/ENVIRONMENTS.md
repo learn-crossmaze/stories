@@ -8,7 +8,7 @@ Two services, nothing in between:
 | Where | Firebase project | Config |
 |---|---|---|
 | Your laptop | `demo-stories` (Emulator Suite only; `demo-` IDs never touch the cloud) | `apps/web/.env.emulator` |
-| Live site | your project, e.g. `stories-crossmaze` | `apps/web/.env.production` (written by `provision.mjs`) |
+| Live site | `stories-by-crossmaze` | `apps/web/.env.production` (written by `provision.mjs`) |
 
 ## 1. Local development (no cloud access needed)
 
@@ -29,7 +29,7 @@ Run these from the repository folder (not your home or System32 folder), after `
 
 ```bash
 npx firebase login --reauth
-node tools/firebase/provision.mjs --project stories-crossmaze
+node tools/firebase/provision.mjs --project stories-by-crossmaze
 ```
 
 If login fails with "Unable to authenticate using the provided code", run `npx firebase logout`, then

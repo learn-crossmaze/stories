@@ -2,7 +2,7 @@
 // Creates (or re-verifies) the Stories Firebase project and publishes the web
 // app to it. Idempotent: every step checks current state and skips work done.
 //
-//   node tools/firebase/provision.mjs --project stories-crossmaze
+//   node tools/firebase/provision.mjs --project stories-by-crossmaze
 //
 // Requires an authenticated Firebase CLI (`npx firebase login --no-localhost`)
 // or FIREBASE_TOKEN / GOOGLE_APPLICATION_CREDENTIALS in CI.
