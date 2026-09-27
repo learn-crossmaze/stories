@@ -1,12 +1,14 @@
+import { NO_CLAIMS, type StoriesClaims } from '../auth/claims';
 import type { AppUser } from '../auth/models';
-import type { AuthRepository } from '../auth/repository';
+import type { AuthRepository, UserProfile } from '../auth/repository';
 
 /** In-memory AuthRepository: any 8+ char password signs in; `fail` forces an error. */
-export function fakeAuth(initial: AppUser | null = null) {
+export function fakeAuth(initial: AppUser | null = null, claims: StoriesClaims = NO_CLAIMS) {
   let user = initial;
   const listeners = new Set<(u: AppUser | null) => void>();
   const emit = () => listeners.forEach((l) => l(user));
-  const repo: AuthRepository & { fail?: Error } = {
+  const repo: AuthRepository & { fail?: Error; claims: StoriesClaims } = {
+    claims,
     onChange(cb) {
       listeners.add(cb);
       cb(user);
@@ -32,6 +34,18 @@ export function fakeAuth(initial: AppUser | null = null) {
       user = null;
       emit();
     },
+    getClaims: async () => repo.claims,
+    watchProfile(uid, cb) {
+      const profile: UserProfile = {
+        uid, displayName: user?.displayName ?? null, email: user?.email ?? null,
+        platformRoles: repo.claims.sa ? ['SUPER_ADMIN'] : [], claimsVersion: repo.claims.v, status: 'ACTIVE',
+      };
+      cb(profile);
+      return () => undefined;
+    },
+    ensureProfile: async () => undefined,
+    resendVerification: async () => undefined,
+    reload: async () => undefined,
   };
   return repo;
 }

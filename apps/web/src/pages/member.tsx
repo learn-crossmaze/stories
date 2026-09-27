@@ -1,4 +1,8 @@
+import { Link } from 'react-router';
+
 import { useAuth } from '../auth/AuthContext';
+import { isStaff } from '../auth/claims';
+import { paths } from '../paths';
 import { t } from '../strings';
 import { EmptyState } from '../ui';
 
@@ -41,7 +45,7 @@ export const OrdersPage = () => (
 );
 
 export function ProfilePage() {
-  const { user, repo } = useAuth();
+  const { user, repo, claims } = useAuth();
   return (
     <>
       <header className="page-header">
@@ -50,6 +54,11 @@ export function ProfilePage() {
       <section className="profile">
         {user?.displayName && <h2>{user.displayName}</h2>}
         {user?.email && <p className="muted">{t.profileSignedInAs(user.email)}</p>}
+        {isStaff(claims) && (
+          <Link to={paths.admin} className="btn btn-filled">
+            {t.staffConsole}
+          </Link>
+        )}
         <button type="button" className="btn btn-outlined" onClick={() => repo.signOut()}>
           {t.signOut}
         </button>
