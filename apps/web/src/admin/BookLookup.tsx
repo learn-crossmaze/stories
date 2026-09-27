@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router';
 
-import { callAction } from '../data/api';
+import { callAction, toApiError } from '../data/api';
 import { label } from '../data/library';
 import { services } from '../data/services';
 import { paths } from '../paths';
@@ -41,7 +41,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
       const res = await callAction<{ candidates: Candidate[] }>(services().fns, 'books-lookup', { q: q.trim() });
       setResults(res.candidates);
     } catch (err) {
-      setError(err instanceof Error ? err.message : lt.lookupFailed);
+      setError(toApiError(err).message || lt.lookupFailed);
       setResults(null);
     } finally {
       setBusy(false);
@@ -55,7 +55,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
       await onPick(c);
       setResults(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : lt.lookupFailed);
+      setError(toApiError(err).message || lt.lookupFailed);
     } finally {
       setApplying(null);
     }

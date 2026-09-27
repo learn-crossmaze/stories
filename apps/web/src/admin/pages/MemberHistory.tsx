@@ -117,6 +117,13 @@ export function describe(e: AuditEntry): string {
       return lt.actSubCancelled;
     case 'subscription.expire':
       return lt.actSubExpired;
+    case 'payment.requestOnline':
+      return lt.actOnlineRequested(String(get(a, 'channel') ?? '') === 'LINK' ? lt.olLink.toLowerCase() : lt.olQr.toLowerCase());
+    case 'payment.requestCancelled':
+      return lt.actOnlineCancelled;
+    case 'payment.onlineUnapplied':
+      return lt.actOnlineUnapplied(money(Number(get(a, 'amountMinor') ?? 0)));
+    case 'payment.online':
     case 'payment.recordOffline':
       return lt.actPaid(money(Number(get(a, 'amountMinor') ?? 0)), label(String(get(a, 'method') ?? '').replace(/^OFFLINE_/, '')), day(get(a, 'endAt') ? new Date(String(get(a, 'endAt'))) : null));
     case 'circulation.issue':

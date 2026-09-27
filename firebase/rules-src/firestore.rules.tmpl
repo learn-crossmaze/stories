@@ -169,6 +169,17 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Online payment requests (Razorpay links / UPI QR codes), live-watched by the console.
+      match /paymentRequests/{r} {
+        allow read: if canAt(o, resource.data.branchId, 'payments.view');
+        allow write: if false;
+      }
+
+      // Branch secrets (Razorpay key secret, webhook secret): functions only.
+      match /branches/{b}/private/{doc} {
+        allow read, write: if false;
+      }
+
       // Members get an account with their first deposit; before that the
       // lookup finds nothing (allowed, reveals nothing).
       match /depositAccounts/{m} {

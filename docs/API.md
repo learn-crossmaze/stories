@@ -56,6 +56,10 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Plans | `plans-create/update/archive` | `plans.manage` |
 | Subscriptions | `subscriptions-create/cancelPending` | `subscriptions.manage` |
 | Payments | `payments-recordOffline` | `payments.recordOffline` |
+| | `payments-createRequest` (`subscriptionId, channel: LINK\|QR, requestId`), `payments-cancelRequest` | `payments.recordOffline` at the subscription's branch |
+| | `payments-checkRequest` (query) | `payments.view` |
+| | `branches-setPaymentGateway`, `branches-testPaymentGateway` (query) | `branches.manage` |
+| | `razorpayWebhook` (HTTPS, signed by Razorpay) | webhook secret of the branch in `?o=&b=` |
 | Deposits | `deposits-proposeAdjustment`, `deposits-startSettlement` / `deposits-decide` / `deposits-refund` | `deposits.adjust` / `deposits.approve` / `deposits.refund` |
 | Circulation | `circulation-issue/return/exchange/declareLost` | `loans.issue` / `loans.return` / `exchanges.process` / `copies.writeOff` |
 | Reservations | `reservations-place/cancel` | `reservations.manage` |

@@ -121,6 +121,8 @@ Global catalogue: Book ─N:M─ Author, Book ─N:1─ Publisher, Book ─N:M�
 | `depositAccounts/{memberId}` | balanceMinor, heldMinor, status (OPEN, SETTLING, CLOSED) | balance = Σ ledger |
 | `depositAccounts/{memberId}/transactions/{txId}` | type (COLLECTED, HOLD, DEDUCTION, REFUND, ADJUSTMENT), amountMinor, reason, reference, createdBy, approval{by, at}, balanceAfter | append-only |
 | `payments/{paymentId}` | memberId, purpose (SUBSCRIPTION, DEPOSIT, DELIVERY, CHARGE), lines[], amountMinor, currency, method (GATEWAY, OFFLINE_CASH, OFFLINE_UPI…), gateway, gatewayOrderId, gatewayPaymentId, status (INITIATED, PENDING, SUCCESS, FAILED, REFUNDED, PARTIALLY_REFUNDED), recordedBy | |
+| `paymentRequests/{razorpayId}` | gateway, mode, channel (LINK, QR, QR_LINK), url, qrImageUrl, subscriptionId, memberId, branchId, amountMinor, status (OPEN, PAID, CANCELLED), sentTo, requestId, expiresAt, paymentId, gatewayPaymentId, needsAttention | function-only write; read with payments.view at the branch |
+| `branches/{b}/private/razorpay` | keySecret, webhookSecret | functions only; no client access |
 | `paymentEvents/{gatewayEventId}` | raw (redacted), processedAt, result | webhook dedupe |
 | `reservations/{resId}` | memberId, bookId, branchId, status (WAITING, ALLOCATED, FULFILLED, EXPIRED, CANCELLED), allocatedCopyId, queuedAt, holdUntil | |
 | `loans/{loanId}` | memberId, subscriptionId, copyId, bookId, branchId, status (ACTIVE, RETURNED, LOST, WRITTEN_OFF), issuedAt, issuedBy, channel (COUNTER, DELIVERY), returnedAt, returnedBy, returnCondition, exchangeId | no dueAt by design |

@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../u
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../Dialog';
 import { lt } from '../libraryStrings';
 import { BranchNumberingDialog } from '../NumberingDialogs';
+import { PaymentGatewayDialog } from '../OnlinePayments';
 import { useWorkspace } from '../Workspace';
 
 const DAYS: Weekday[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -118,6 +119,7 @@ export function BranchesPage() {
   const [editing, setEditing] = useState<Branch | 'new' | null>(null);
   const [archiving, setArchiving] = useState<Branch | null>(null);
   const [numbering, setNumbering] = useState<Branch | null>(null);
+  const [gateway, setGateway] = useState<Branch | null>(null);
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
   const manage = can(claims, 'branches.manage', org.id);
 
@@ -176,6 +178,10 @@ export function BranchesPage() {
                           <button type="button" className="btn btn-text" onClick={() => setNumbering(b)}>
                             {lt.numbering}
                           </button>
+                          <button type="button" className="btn btn-text" onClick={() => setGateway(b)}>
+                            {lt.payments}
+                            {b.payments?.razorpay?.enabled && <span className="muted small"> · {b.payments.razorpay.mode}</span>}
+                          </button>
                           <button type="button" className="btn btn-text" onClick={() => setArchiving(b)}>
                             {t.archive}
                           </button>
@@ -190,6 +196,7 @@ export function BranchesPage() {
         </div>
       )}
       {editing && <BranchDialog orgId={org.id} branch={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={reloadBranches} />}
+      {gateway && <PaymentGatewayDialog orgId={org.id} branch={gateway} onClose={() => setGateway(null)} onSaved={reloadBranches} />}
       {numbering && <BranchNumberingDialog orgId={org.id} branch={numbering} onClose={() => setNumbering(null)} onSaved={reloadBranches} />}
       {archiving && (
         <ConfirmWithReason

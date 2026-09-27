@@ -390,3 +390,13 @@ h2 { font-size: 22px; line-height: 1.25; }
 .lookup-cover { flex: none; width: 40px; height: 58px; object-fit: cover; border-radius: 3px; border: 1px solid var(--outline); background: var(--surface-dim); }
 .lookup-cover-none { display: inline-block; }
 .lookup-cover-note { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* online payments */
+.collect-options { display: grid; gap: 10px; }
+.collect-option { display: grid; gap: 4px; text-align: left; padding: 14px 16px; border: 1px solid var(--outline); border-radius: 12px; background: var(--surface-raised); cursor: pointer; font: inherit; color: inherit; }
+.collect-option:hover:not(:disabled) { border-color: var(--primary); }
+.collect-option:disabled { opacity: .6; cursor: default; }
+.collect-result { display: grid; gap: 10px; }
+.qr-box { display: grid; justify-items: center; gap: 6px; }
+.qr-box img { width: min(280px, 100%); height: auto; background: #fff; padding: 8px; border-radius: 8px; }
+.collect-result .badge { justify-self: start; }

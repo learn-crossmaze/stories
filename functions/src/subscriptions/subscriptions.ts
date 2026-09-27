@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
@@ -128,72 +128,116 @@ export const recordOfflinePayment = command(
     })
     .refine((p) => p.method === 'OFFLINE_CASH' || p.reference.length >= 4, 'needs the UPI/card/bank reference number'),
   async ({ actor, input, requestId }, tx) => {
-    const subRef = db.doc(`orgs/${input.orgId}/subscriptions/${input.subscriptionId}`);
-    const subSnap = await tx.get(subRef);
-    if (!subSnap.exists) throw errors.notFound('Subscription');
-    const branchId = subSnap.get('branchId') as string;
-    await actor.require('payments.recordOffline', input.orgId, branchId, tx);
-    if (subSnap.get('status') !== 'PENDING_PAYMENT') {
+    const s = await readSettlement(tx, input.orgId, input.subscriptionId);
+    await actor.require('payments.recordOffline', input.orgId, s.branchId, tx);
+    if (s.status !== 'PENDING_PAYMENT') {
       throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment (it may already be paid).');
     }
-    const due = subSnap.get('amountDue') as { subscriptionMinor: number; depositMinor: number; totalMinor: number };
-    if (input.amountMinor !== due.totalMinor) {
-      throw errors.invalid(`The amount must be exactly ₹${(due.totalMinor / 100).toFixed(2)}.`);
+    if (input.amountMinor !== s.due.totalMinor) {
+      throw errors.invalid(`The amount must be exactly ₹${(s.due.totalMinor / 100).toFixed(2)}.`);
     }
-    const memberId = subSnap.get('memberId') as string;
-    const { snap: memberSnap, member } = await loadMember(tx, input.orgId, memberId);
-    const deposit = await tx.get(depositRef(input.orgId, memberId));
-    const term = await currentTerm(tx, input.orgId, member);
-
-    // A renewal paid before the current term ends starts when it ends (no gap, no overlap — D6).
-    const now = new Date();
-    const startsLater = subSnap.get('kind') === 'RENEWAL' && term && term.snap.id !== subSnap.id;
-    const start = startsLater ? term!.snap.get('endAt').toDate() : now;
-    const end = addMonths(start, subSnap.get('planSnapshot.months'));
-
-    const payRef = db.collection(`orgs/${input.orgId}/payments`).doc();
-    tx.create(payRef, {
-      memberId,
-      memberCode: member.code,
-      branchId,
-      subscriptionId: input.subscriptionId,
-      purpose: 'SUBSCRIPTION',
-      direction: 'IN',
-      lines: [
-        { type: 'SUBSCRIPTION', amountMinor: due.subscriptionMinor },
-        ...(due.depositMinor > 0 ? [{ type: 'DEPOSIT', amountMinor: due.depositMinor }] : []),
-      ],
-      amountMinor: due.totalMinor,
-      currency: 'INR',
-      method: input.method,
-      reference: input.reference || null,
-      status: 'SUCCESS',
-      recordedBy: actor.uid,
-      at: FieldValue.serverTimestamp(),
-    });
-    tx.update(subRef, {
-      status: 'ACTIVE',
-      startAt: Timestamp.fromDate(start),
-      endAt: Timestamp.fromDate(end),
-      paymentId: payRef.id,
-      activatedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    const memberChanges: Record<string, unknown> = term?.rollover ? { ...term.rollover } : {};
-    if (startsLater) memberChanges.nextSubscriptionId = input.subscriptionId;
-    else Object.assign(memberChanges, { activeSubscriptionId: input.subscriptionId, subscriptionEndsAt: Timestamp.fromDate(end), nextSubscriptionId: null });
-    tx.update(memberSnap.ref, { ...memberChanges, updatedAt: FieldValue.serverTimestamp() });
-    if (due.depositMinor > 0) {
-      postLedger(tx, input.orgId, deposit, {
-        memberId, branchId, type: 'DEPOSIT_COLLECTED', deltaMinor: due.depositMinor, reason: 'Security deposit collected with subscription',
-        reference: { paymentId: payRef.id, subscriptionId: input.subscriptionId }, actorUid: actor.uid,
-      });
-    }
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'payment.recordOffline', entityType: 'subscription', entityId: input.subscriptionId, branchId, memberId,
-      before: { status: 'PENDING_PAYMENT' },
-      after: { status: 'ACTIVE', paymentId: payRef.id, amountMinor: due.totalMinor, method: input.method, startAt: start.toISOString(), endAt: end.toISOString() },
-    });
-    return { paymentId: payRef.id, startAt: start.toISOString(), endAt: end.toISOString() };
+    const r = writeSettlement(tx, s, { method: input.method, reference: input.reference || null }, { uid: actor.uid, email: actor.email }, requestId);
+    return { paymentId: r.paymentId, startAt: r.start.toISOString(), endAt: r.end.toISOString() };
   },
 );
+
+/** Everything settling a subscription needs to read (call before any writes in the transaction). */
+export async function readSettlement(tx: Transaction, orgId: string, subscriptionId: string) {
+  const subRef = db.doc(`orgs/${orgId}/subscriptions/${subscriptionId}`);
+  const subSnap = await tx.get(subRef);
+  if (!subSnap.exists) throw errors.notFound('Subscription');
+  const memberId = subSnap.get('memberId') as string;
+  const { snap: memberSnap, member } = await loadMember(tx, orgId, memberId);
+  const deposit = await tx.get(depositRef(orgId, memberId));
+  const term = await currentTerm(tx, orgId, member);
+  return {
+    orgId,
+    subscriptionId,
+    subRef,
+    subSnap,
+    status: subSnap.get('status') as string,
+    branchId: subSnap.get('branchId') as string,
+    due: subSnap.get('amountDue') as { subscriptionMinor: number; depositMinor: number; totalMinor: number },
+    memberId,
+    memberSnap,
+    member,
+    deposit,
+    term,
+  };
+}
+
+export interface SettlementPayment {
+  method: string;
+  reference: string | null;
+  /** Online payments: provider ids, for reconciliation. */
+  gateway?: { provider: 'razorpay'; requestId: string; paymentId: string; channel: string };
+}
+
+/**
+ * Records the payment, activates the subscription and collects the deposit
+ * into the ledger (writes only; the caller has checked it is pending and the
+ * amount matches). A renewal paid before the current term ends starts when
+ * it ends (no gap, no overlap — D6).
+ */
+export function writeSettlement(
+  tx: Transaction,
+  s: Awaited<ReturnType<typeof readSettlement>>,
+  payment: SettlementPayment,
+  actor: { uid: string; email: string | null },
+  requestId: string | undefined,
+) {
+  const { orgId, subscriptionId, subSnap, branchId, due, memberId, member, memberSnap, deposit, term } = s;
+  const now = new Date();
+  const startsLater = subSnap.get('kind') === 'RENEWAL' && term && term.snap.id !== subSnap.id;
+  const start = startsLater ? term!.snap.get('endAt').toDate() : now;
+  const end = addMonths(start, subSnap.get('planSnapshot.months'));
+
+  const payRef = db.collection(`orgs/${orgId}/payments`).doc();
+  tx.create(payRef, {
+    memberId,
+    memberCode: member.code,
+    branchId,
+    subscriptionId,
+    purpose: 'SUBSCRIPTION',
+    direction: 'IN',
+    lines: [
+      { type: 'SUBSCRIPTION', amountMinor: due.subscriptionMinor },
+      ...(due.depositMinor > 0 ? [{ type: 'DEPOSIT', amountMinor: due.depositMinor }] : []),
+    ],
+    amountMinor: due.totalMinor,
+    currency: 'INR',
+    method: payment.method,
+    reference: payment.reference,
+    gateway: payment.gateway ?? null,
+    status: 'SUCCESS',
+    recordedBy: actor.uid,
+    at: FieldValue.serverTimestamp(),
+  });
+  tx.update(s.subRef, {
+    status: 'ACTIVE',
+    startAt: Timestamp.fromDate(start),
+    endAt: Timestamp.fromDate(end),
+    paymentId: payRef.id,
+    activatedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  const memberChanges: Record<string, unknown> = term?.rollover ? { ...term.rollover } : {};
+  if (startsLater) memberChanges.nextSubscriptionId = subscriptionId;
+  else Object.assign(memberChanges, { activeSubscriptionId: subscriptionId, subscriptionEndsAt: Timestamp.fromDate(end), nextSubscriptionId: null });
+  tx.update(memberSnap.ref, { ...memberChanges, updatedAt: FieldValue.serverTimestamp() });
+  if (due.depositMinor > 0) {
+    postLedger(tx, orgId, deposit, {
+      memberId, branchId, type: 'DEPOSIT_COLLECTED', deltaMinor: due.depositMinor, reason: 'Security deposit collected with subscription',
+      reference: { paymentId: payRef.id, subscriptionId }, actorUid: actor.uid,
+    });
+  }
+  recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, orgId, {
+    action: payment.gateway ? 'payment.online' : 'payment.recordOffline', entityType: 'subscription', entityId: subscriptionId, branchId, memberId,
+    before: { status: 'PENDING_PAYMENT' },
+    after: {
+      status: 'ACTIVE', paymentId: payRef.id, amountMinor: due.totalMinor, method: payment.method, reference: payment.reference,
+      startAt: start.toISOString(), endAt: end.toISOString(),
+    },
+  });
+  return { paymentId: payRef.id, start, end };
+}

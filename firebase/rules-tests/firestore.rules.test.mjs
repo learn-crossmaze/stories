@@ -70,6 +70,9 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/transfers/t1`, { fromBranchId: 'cen', toBranchId: 'nth', status: 'IN_TRANSIT' });
     await put(`orgs/${CORP}/plans/plan1`, { name: 'Monthly', status: 'ACTIVE' });
     await put('config/numbering', { book: 'B{YY}-{SEQ:5}' });
+    await put(`orgs/${CORP}/branches/cen/private/razorpay`, { keySecret: 's', webhookSecret: 'w' });
+    await put(`orgs/${CORP}/paymentRequests/plink_1`, { branchId: 'cen', status: 'OPEN' });
+    await put(`orgs/${CORP}/paymentRequests/plink_2`, { branchId: 'nth', status: 'OPEN' });
     await put(`orgs/${CORP}/employeeIds/EMP-0001`, { uid: 'alice' });
     await put(`orgs/${CORP}/counters/members`, { next: 2 });
   });
@@ -127,6 +130,13 @@ describe('organization isolation', () => {
     await assertFails(setDoc(doc(as('root', claims({}, true)), 'config/numbering'), { book: 'X-{SEQ}' }));
     await assertFails(getDoc(doc(lib(), `orgs/${CORP}/employeeIds/EMP-0001`)));
     await assertFails(getDoc(doc(lib(), `orgs/${CORP}/counters/members`)));
+  });
+
+  it('payment gateway secrets are unreadable; payment requests follow branch scope', async () => {
+    await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/branches/cen/private/razorpay`)));
+    await assertFails(getDoc(doc(lib(), `orgs/${CORP}/branches/cen/private/razorpay`)));
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/paymentRequests/plink_1`)));
+    await assertFails(getDoc(doc(lib(), `orgs/${CORP}/paymentRequests/plink_2`)));
   });
 
   it('only super admins can list all organizations', async () => {
