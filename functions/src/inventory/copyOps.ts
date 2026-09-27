@@ -33,9 +33,13 @@ export async function loadCopy(tx: Transaction, orgId: string, copyId: string) {
 
 /** Finds a copy by its scanned barcode (or code) within an organization. */
 export async function findByBarcode(tx: Transaction, orgId: string, barcode: string) {
-  const index = await tx.get(db.doc(`orgs/${orgId}/barcodes/${barcode.trim().toUpperCase()}`));
-  if (!index.exists) throw errors.conflict('UNKNOWN_BARCODE', `No copy with barcode ${barcode} in this organization.`);
-  return loadCopy(tx, orgId, index.get('copyId') as string);
+  const key = barcode.trim().toUpperCase();
+  const index = await tx.get(db.doc(`orgs/${orgId}/barcodes/${key}`));
+  if (index.exists) return loadCopy(tx, orgId, index.get('copyId') as string);
+  // Custom barcodes differ from the copy code, which staff also type or pick.
+  const byCode = await tx.get(db.collection(`orgs/${orgId}/copies`).where('code', '==', key).limit(1));
+  if (byCode.empty) throw errors.conflict('UNKNOWN_BARCODE', `No copy with barcode ${barcode} in this organization.`);
+  return { snap: byCode.docs[0], copy: byCode.docs[0].data() as Copy };
 }
 
 export interface CopyEvent {
