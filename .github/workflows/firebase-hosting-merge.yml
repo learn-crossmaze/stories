@@ -11,6 +11,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Pinned: the build tools need Node 22.12+ (added to the generated file).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
       - run: npm ci && npm run build
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
