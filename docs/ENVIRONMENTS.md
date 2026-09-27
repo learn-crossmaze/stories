@@ -55,7 +55,33 @@ node tools/firebase/provision.mjs --env dev --project stories-crossmaze-dev
 | **App Check** (reCAPTCHA Enterprise) | App Check → Apps | Register web app; put the site key in `config/<env>.json`; enforce after monitoring |
 | Authorized domains for custom domains | Authentication → Settings | When `app.` / `admin.` domains are decided |
 
-## 4. Configuration & secrets policy
+## 4. GitHub → Firebase deployment
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `ci.yml` | every PR, push to `main`/`develop` | format, analyze, test, web build, Security Rules tests |
+| `deploy.yml` | push to `develop` | deploy rules, indexes and Hosting to **dev** |
+| `deploy.yml` | tag `v*` | same to **prod**, after approval on the `prod` environment |
+| `deploy.yml` | same-repo PR | Hosting preview channel `pr-<n>` on dev (7-day expiry, URL in the job summary) |
+| Dependabot | weekly | Actions, npm and pub updates |
+
+Until an environment is provisioned, `deploy.yml` skips with a notice instead of failing.
+
+One-time setup per environment, after `provision.mjs` (needs `gcloud` signed in as owner):
+
+```bash
+tools/firebase/setup-github-deploy.sh stories-crossmaze-dev
+```
+
+This creates a least-privilege `github-deploy` service account and a Workload Identity provider that only trusts
+this repository, then prints three variables. In GitHub → **Settings → Environments**, create `dev` and `prod`, set
+`FIREBASE_PROJECT_ID`, `GCP_WIF_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT` on each, and on `prod` add required
+reviewers and restrict deployments to `v*` tags.
+
+Repository settings (owner only): create `main` and `develop`, make `main` the default branch, and protect both
+(require PRs, require the CI checks, require CODEOWNERS review).
+
+## 5. Configuration & secrets policy
 
 - `config/*.json` hold only the **public** Firebase web config (identifies the project; protected by rules, App
   Check and API-key restrictions). They are committed.
@@ -64,7 +90,7 @@ node tools/firebase/provision.mjs --env dev --project stories-crossmaze-dev
 - Web API keys are restricted in Google Cloud Console → APIs & Services → Credentials to the Firebase APIs and the
   environment's HTTP referrers.
 
-## 5. Web build note
+## 6. Web build note
 
 FlutterFire web loads the Firebase JS SDK from `www.gstatic.com` and CanvasKit from Google's CDN at runtime. Production
 browsers reach these normally. For offline/sandboxed builds use `flutter build web --no-web-resources-cdn`.

@@ -1,0 +1,102 @@
+name: Deploy
+
+# develop → dev (live), v* tags → prod (live, gated by the "prod" environment's
+# required reviewers), same-repo PRs → 7-day Hosting preview channel on dev.
+#
+# Auth is keyless: Workload Identity Federation into a per-project deploy
+# service account. Each GitHub environment (dev, prod) carries three variables,
+# set by tools/firebase/setup-github-deploy.sh:
+#   FIREBASE_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOY_SERVICE_ACCOUNT
+# Until an environment is provisioned the job skips instead of failing.
+
+on:
+  push:
+    branches: [develop]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+concurrency:
+  group: deploy-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    # Fork PRs get no OIDC token, so they never reach this job.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: >-
+      ${{ github.event_name == 'workflow_dispatch' && inputs.environment
+      || startsWith(github.ref, 'refs/tags/v') && 'prod'
+      || 'dev' }}
+    env:
+      ENV_NAME: >-
+        ${{ github.event_name == 'workflow_dispatch' && inputs.environment
+        || startsWith(github.ref, 'refs/tags/v') && 'prod'
+        || 'dev' }}
+      PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check environment is provisioned
+        id: ready
+        run: |
+          config="apps/stories_app/config/${ENV_NAME}.json"
+          if [ -z "$PROJECT_ID" ] || [ -z "${{ vars.GCP_WIF_PROVIDER }}" ] || [ ! -f "$config" ]; then
+            echo "::notice::'${ENV_NAME}' not provisioned yet (see docs/ENVIRONMENTS.md); skipping deploy."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.ready.outputs.ok == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - if: steps.ready.outputs.ok == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.5
+          cache: true
+
+      - if: steps.ready.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - if: steps.ready.outputs.ok == 'true'
+        run: npm ci && flutter pub get
+
+      - name: Build web
+        if: steps.ready.outputs.ok == 'true'
+        working-directory: apps/stories_app
+        run: flutter build web --release --dart-define-from-file=config/${ENV_NAME}.json
+
+      - name: Deploy preview channel
+        if: steps.ready.outputs.ok == 'true' && github.event_name == 'pull_request'
+        run: |
+          url=$(npx firebase hosting:channel:deploy "pr-${{ github.event.pull_request.number }}" \
+            --expires 7d --project "$PROJECT_ID" --json --non-interactive \
+            | node -e 'const r=JSON.parse(require("fs").readFileSync(0)).result; console.log(Object.values(r)[0].url)')
+          echo "Preview: $url" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy rules, indexes and hosting
+        if: steps.ready.outputs.ok == 'true' && github.event_name != 'pull_request'
+        run: |
+          npx firebase deploy --only firestore:rules,firestore:indexes,hosting \
+            --project "$PROJECT_ID" --non-interactive
+          echo "Live: https://${PROJECT_ID}.web.app" | tee -a "$GITHUB_STEP_SUMMARY"
