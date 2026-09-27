@@ -149,7 +149,7 @@ Global catalogue: Book ─N:M─ Author, Book ─N:1─ Publisher, Book ─N:M�
 | `taskInstances/{id}/responses/{employeeId}` | checklist answers, evidencePaths[], submittedAt | |
 | `taskInstances/{id}/log/{id}` | reminders, escalations, reassignments, approvals | |
 | `notifications/{id}` | recipientUid, type, title, body, deepLink, readAt, channels{push: status}, createdAt | client may only set `readAt` |
-| `auditLogs/{id}` | actorUid, actorRoles, action, entityType, entityId, branchId, before, after, reason, requestId, ip/device (where relevant), at | function-only write; no client update/delete |
+| `auditLogs/{id}` | actorUid, actorRoles, action, entityType, entityId, branchId, memberId (member-related entries), before, after, reason, requestId, ip/device (where relevant), at | function-only write; no client update/delete |
 | `idempotency/{fn:requestId}` | result, createdAt, TTL `expireAt` (+30 days) | Firestore TTL policy |
 | `config/{key}` | versioned business settings | audited |
 

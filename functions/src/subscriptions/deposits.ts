@@ -46,7 +46,7 @@ export const proposeAdjustment = command(
     };
     tx.create(ref, { ...adj, createdAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'deposit.propose', entityType: 'depositAdjustment', entityId: ref.id, branchId: member.homeBranchId, after: adj, reason: input.reason,
+      action: 'deposit.propose', entityType: 'depositAdjustment', entityId: ref.id, branchId: member.homeBranchId, memberId: input.memberId, after: adj, reason: input.reason,
     });
     return { adjustmentId: ref.id };
   },
@@ -78,7 +78,7 @@ export const decideAdjustment = command(
     }
     tx.update(ref, { status: input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED', decidedBy: actor.uid, decidedAt: FieldValue.serverTimestamp(), note: input.note || null });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: `deposit.${input.decision.toLowerCase()}`, entityType: 'depositAdjustment', entityId: input.adjustmentId, branchId,
+      action: `deposit.${input.decision.toLowerCase()}`, entityType: 'depositAdjustment', entityId: input.adjustmentId, branchId, memberId,
       before: { status: 'PENDING' }, after: { status: input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED', deltaMinor: delta }, reason: input.note || null,
     });
     return { adjustmentId: input.adjustmentId };
@@ -106,7 +106,7 @@ export const startSettlement = command(
     }
     tx.update(account.ref, { status: 'SETTLING', settlementStartedBy: actor.uid, settlementStartedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'deposit.startSettlement', entityType: 'depositAccount', entityId: input.memberId, branchId: member.homeBranchId,
+      action: 'deposit.startSettlement', entityType: 'depositAccount', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { status: 'OPEN', balanceMinor: balanceOf(account) }, after: { status: 'SETTLING' },
     });
     return { balanceMinor: balanceOf(account) };
@@ -144,7 +144,7 @@ export const refund = command(
     }
     tx.update(account.ref, { status: 'CLOSED', closedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'deposit.refund', entityType: 'depositAccount', entityId: input.memberId, branchId: member.homeBranchId,
+      action: 'deposit.refund', entityType: 'depositAccount', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { status: 'SETTLING', balanceMinor: amount }, after: { status: 'CLOSED', balanceMinor: 0, paymentId: payRef.id },
     });
     return { refundedMinor: amount, paymentId: payRef.id };

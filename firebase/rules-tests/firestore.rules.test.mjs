@@ -157,6 +157,17 @@ describe('audit log', () => {
     await assertFails(getDocs(collection(bm, `orgs/${CORP}/auditLogs`)));
   });
 
+  it("a member's audit trail and payments load for branch staff with the branch filter", async () => {
+    const bm = as('bea', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+    const trail = (field) => query(collection(bm, `orgs/${CORP}/auditLogs`), where(field, '==', 'm-cen'), where('branchId', 'in', ['cen']));
+    await assertSucceeds(getDocs(trail('memberId')));
+    await assertSucceeds(getDocs(trail('entityId')));
+    await assertFails(getDocs(query(collection(bm, `orgs/${CORP}/auditLogs`), where('memberId', '==', 'm-cen'))));
+    const lib = as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
+    await assertSucceeds(getDocs(query(collection(lib, `orgs/${CORP}/payments`), where('memberId', '==', 'm-cen'), where('branchId', 'in', ['cen']))));
+    await assertFails(getDocs(query(collection(lib, `orgs/${CORP}/auditLogs`), where('memberId', '==', 'm-cen'), where('branchId', 'in', ['cen']))));
+  });
+
   it('roles without audit.view are denied', async () => {
     const lib = as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
     await assertFails(getDoc(doc(lib, `orgs/${CORP}/auditLogs/a-cen`)));

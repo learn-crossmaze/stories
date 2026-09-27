@@ -338,6 +338,7 @@ h2 { font-size: 22px; line-height: 1.25; }
 .pending-box { background: #fdf0d5; color: #4a3500; border-radius: var(--radius-md); padding: 10px 14px; }
 @media (prefers-color-scheme: dark) { .pending-box { background: #3d3013; color: #f5d98b; } }
 .table.compact td { padding: 6px 4px; border-bottom: 1px solid var(--outline); }
+.table-wrap .table.compact th, .table-wrap .table.compact td { padding: 8px 16px; }
 
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .plan-card header { display: flex; justify-content: space-between; align-items: baseline; }
@@ -372,3 +373,9 @@ h2 { font-size: 22px; line-height: 1.25; }
   .label { border: 0; break-inside: avoid; }
 }
 .card h2 a, .page-header h1 a { color: inherit; text-decoration: none; } .card h2 a:hover { text-decoration: underline; }
+
+/* member audit trail */
+.timeline { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 2px solid var(--outline); display: grid; gap: 14px; }
+.timeline li { position: relative; min-width: 0; }
+.timeline li::before { content: ''; position: absolute; left: -22px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
+.timeline pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; }

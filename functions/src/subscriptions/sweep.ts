@@ -39,7 +39,7 @@ export async function expireDueSubscriptions(now = new Date(), batch = 300): Pro
         });
       }
       recordAudit(tx, { actorUid: 'system' }, orgId, {
-        action: 'subscription.expire', entityType: 'subscription', entityId: sub.id, branchId: sub.get('branchId'),
+        action: 'subscription.expire', entityType: 'subscription', entityId: sub.id, branchId: sub.get('branchId'), memberId: sub.get('memberId'),
         before: { status: 'ACTIVE' }, after: { status: 'EXPIRED', renewedInto: next?.exists ? next.id : null },
       });
       return true;
