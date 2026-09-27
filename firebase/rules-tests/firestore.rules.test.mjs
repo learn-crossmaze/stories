@@ -209,6 +209,13 @@ describe('library (Phase 1)', () => {
     await assertSucceeds(getDocs(collection(fin, `orgs/${CORP}/payments`)));
   });
 
+  it('looking up a document that does not exist is allowed (page shows "not found")', async () => {
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/depositAccounts/nobody`)));
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/members/nobody`)));
+    await assertFails(getDoc(doc(emp(), `orgs/${CORP}/members/nobody`)));
+    await assertFails(getDoc(doc(as('x', claims({ [FRAN]: { r: ['FO'], b: ['*'] } })), `orgs/${CORP}/members/nobody`)));
+  });
+
   it('Franchise A cannot read Franchise B members; corporate staff cannot read franchise members', async () => {
     const fo2 = as('fred2', claims({ [FRAN2]: { r: ['FO'], b: ['*'] } }));
     await assertFails(getDoc(doc(fo2, `orgs/${FRAN}/members/m-fr`)));

@@ -175,7 +175,10 @@ service cloud.firestore {
       // must filter on the same branch field. All writes go through functions.
 
       // Copies: visible at the branch holding them and at the owning branch.
+      // (`resource == null`: looking up a document that doesn't exist only
+      // reveals that it doesn't exist, so the page can say "not found".)
       match /copies/{c} {
+        allow get: if resource == null && can(o, 'books.view');
         allow read: if canAt(o, resource.data.currentBranchId, 'books.view')
           || canAt(o, resource.data.owningBranchId, 'books.view');
         allow write: if false;
@@ -187,6 +190,7 @@ service cloud.firestore {
       }
 
       match /members/{m} {
+        allow get: if resource == null && can(o, 'members.view');
         allow read: if canAt(o, resource.data.homeBranchId, 'members.view');
         allow write: if false;
       }
@@ -211,7 +215,10 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Members get an account with their first deposit; before that the
+      // lookup finds nothing (allowed, reveals nothing).
       match /depositAccounts/{m} {
+        allow get: if resource == null && can(o, 'deposits.view');
         allow read: if canAt(o, resource.data.branchId, 'deposits.view');
         allow write: if false;
 
