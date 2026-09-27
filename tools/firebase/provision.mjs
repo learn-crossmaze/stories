@@ -8,10 +8,12 @@
 // or FIREBASE_TOKEN / GOOGLE_APPLICATION_CREDENTIALS in CI.
 // See docs/ENVIRONMENTS.md for what this does and what stays manual.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((pairs, arg, i, all) => {
@@ -29,10 +31,13 @@ if (!PROJECT) {
   process.exit(2);
 }
 
-const root = new URL('../../', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../../', import.meta.url));
+// Run the repo's firebase-tools through node itself: no npx/.cmd shims, so
+// this works the same on Windows, macOS and Linux.
+const firebaseCli = createRequire(import.meta.url).resolve('firebase-tools/lib/bin/firebase.js');
 
 function firebase(...cmd) {
-  const out = execFileSync('npx', ['firebase', ...cmd, '--json', '--non-interactive'], {
+  const out = execFileSync(process.execPath, [firebaseCli, ...cmd, '--json', '--non-interactive'], {
     cwd: root,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -159,7 +164,7 @@ firebase('deploy', '--only', 'firestore:rules,firestore:indexes', '--project', P
 console.log('  deployed');
 
 step('Build + deploy web app to Hosting');
-execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
+execSync('npm run build', { cwd: root, stdio: 'inherit' });
 firebase('deploy', '--only', 'hosting', '--project', PROJECT);
 console.log(`  live at https://${PROJECT}.web.app`);
 

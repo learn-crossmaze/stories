@@ -25,10 +25,15 @@ npm run test:rules     # Security Rules tests
 Firebase project IDs are globally unique and permanent; pick it deliberately. The owner account is
 `learn@crossmaze.in`.
 
+Run these from the repository folder (not your home or System32 folder), after `npm ci`:
+
 ```bash
-npx firebase login
+npx firebase login --reauth
 node tools/firebase/provision.mjs --project stories-crossmaze
 ```
+
+If login fails with "Unable to authenticate using the provided code", run `npx firebase logout`, then
+`npx firebase login` again and finish the browser sign-in within a few minutes.
 
 `provision.mjs` is idempotent. It creates the project, registers the **Stories Web** app, writes its public config to
 `apps/web/.env.production`, sets the project as the default in `.firebaserc`, creates Firestore in **asia-south1**
