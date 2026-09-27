@@ -99,8 +99,10 @@ service cloud.firestore {
       return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).r.hasAny(perms()[perm]));
     }
 
+    // Checks "all branches" before touching `b`, so org-wide staff can run
+    // unfiltered list queries (b comes from resource.data).
     function canAt(o, b, perm) {
-      return can(o, perm) && inBranch(o, b);
+      return can(o, perm) && (allBranches(o) || inBranch(o, b));
     }
 
     // ---------------------------------------------------------------- users
@@ -127,6 +129,26 @@ service cloud.firestore {
             || resource.data.branchIds.hasAny(orgClaims(resource.data.orgId).b));
     }
 
+    // ---------------------------------------------------------------- catalogue
+    // Shared across organizations; readable by any signed-in user, written
+    // only by functions (head office permission). Indexes/counters stay closed.
+    match /books/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /authors/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /publishers/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /categories/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     // ---------------------------------------------------------------- orgs
     match /orgs/{o} {
       allow get: if inOrg(o);
@@ -138,7 +160,96 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      match /branches/{b}/locations/{l} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
       match /departments/{d} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
+      // ------------------------------------------------ library (Phase 1)
+      // Every read is scoped to a branch the caller works at; list queries
+      // must filter on the same branch field. All writes go through functions.
+
+      // Copies: visible at the branch holding them and at the owning branch.
+      match /copies/{c} {
+        allow read: if canAt(o, resource.data.currentBranchId, 'books.view')
+          || canAt(o, resource.data.owningBranchId, 'books.view');
+        allow write: if false;
+
+        match /events/{e} {
+          allow read: if canAt(o, get(/databases/$(database)/documents/orgs/$(o)/copies/$(c)).data.currentBranchId, 'books.view');
+          allow write: if false;
+        }
+      }
+
+      match /members/{m} {
+        allow read: if canAt(o, resource.data.homeBranchId, 'members.view');
+        allow write: if false;
+      }
+
+      match /plans/{p} {
+        allow read: if inOrg(o);
+        allow write: if false;
+
+        match /versions/{v} {
+          allow read: if inOrg(o);
+          allow write: if false;
+        }
+      }
+
+      match /subscriptions/{s} {
+        allow read: if canAt(o, resource.data.branchId, 'members.view');
+        allow write: if false;
+      }
+
+      match /payments/{p} {
+        allow read: if canAt(o, resource.data.branchId, 'payments.view');
+        allow write: if false;
+      }
+
+      match /depositAccounts/{m} {
+        allow read: if canAt(o, resource.data.branchId, 'deposits.view');
+        allow write: if false;
+
+        // Authorized by the account's branch so a member's ledger can be listed as-is.
+        match /transactions/{t} {
+          allow read: if canAt(o, get(/databases/$(database)/documents/orgs/$(o)/depositAccounts/$(m)).data.branchId, 'deposits.view');
+          allow write: if false;
+        }
+      }
+
+      match /depositAdjustments/{a} {
+        allow read: if canAt(o, resource.data.branchId, 'deposits.view');
+        allow write: if false;
+      }
+
+      match /loans/{l} {
+        allow read: if canAt(o, resource.data.branchId, 'members.view');
+        allow write: if false;
+      }
+
+      match /exchanges/{x} {
+        allow read: if canAt(o, resource.data.branchId, 'members.view');
+        allow write: if false;
+      }
+
+      match /reservations/{r} {
+        allow read: if canAt(o, resource.data.branchId, 'members.view');
+        allow write: if false;
+      }
+
+      // Transfers: visible to both the sending and the receiving branch.
+      match /transfers/{t} {
+        allow read: if canAt(o, resource.data.fromBranchId, 'books.view')
+          || canAt(o, resource.data.toBranchId, 'books.view');
+        allow write: if false;
+      }
+
+      match /config/{k} {
         allow read: if inOrg(o);
         allow write: if false;
       }

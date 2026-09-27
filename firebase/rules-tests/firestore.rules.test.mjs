@@ -53,6 +53,22 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/auditLogs/a-nth`, { action: 'x', branchId: 'nth' });
     await put(`orgs/${CORP}/auditLogs/a-org`, { action: 'x', branchId: null });
     await put(`orgs/${FRAN}/auditLogs/f1`, { action: 'x', branchId: 'fr1' });
+    // Phase 1 library data
+    await put('books/b1', { title: 'Treasure Island', status: 'ACTIVE' });
+    await put('isbnIndex/9780306406157', { bookId: 'b1' });
+    await put(`orgs/${CORP}/copies/c-cen`, { code: 'COPY-1', currentBranchId: 'cen', owningBranchId: 'cen', status: 'AVAILABLE' });
+    await put(`orgs/${CORP}/copies/c-nth`, { code: 'COPY-2', currentBranchId: 'nth', owningBranchId: 'nth', status: 'AVAILABLE' });
+    await put(`orgs/${CORP}/copies/c-moved`, { code: 'COPY-3', currentBranchId: 'nth', owningBranchId: 'cen', status: 'AVAILABLE' });
+    await put(`orgs/${CORP}/copies/c-cen/events/e1`, { type: 'ACQUIRED' });
+    await put(`orgs/${CORP}/members/m-cen`, { fullName: 'Asha', homeBranchId: 'cen' });
+    await put(`orgs/${CORP}/members/m-nth`, { fullName: 'Ravi', homeBranchId: 'nth' });
+    await put(`orgs/${FRAN}/members/m-fr`, { fullName: 'Fatima', homeBranchId: 'fr1' });
+    await put(`orgs/${CORP}/loans/l-cen`, { memberId: 'm-cen', branchId: 'cen', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/depositAccounts/m-cen`, { branchId: 'cen', balanceMinor: 100000 });
+    await put(`orgs/${CORP}/depositAccounts/m-cen/transactions/t1`, { branchId: 'cen', deltaMinor: 100000 });
+    await put(`orgs/${CORP}/payments/p1`, { branchId: 'cen', amountMinor: 130000 });
+    await put(`orgs/${CORP}/transfers/t1`, { fromBranchId: 'cen', toBranchId: 'nth', status: 'IN_TRANSIT' });
+    await put(`orgs/${CORP}/plans/plan1`, { name: 'Monthly', status: 'ACTIVE' });
   });
 });
 
@@ -155,6 +171,62 @@ describe('staff directory (memberships collection group)', () => {
   it('staff without staff.view cannot list colleagues', async () => {
     const lib = as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
     await assertFails(getDocs(query(collectionGroup(lib, 'memberships'), where('orgId', '==', CORP))));
+  });
+});
+
+describe('library (Phase 1)', () => {
+  const lib = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
+  const del = () => as('dev', claims({ [CORP]: { r: ['DEL'], b: ['cen'] } }));
+  const emp = () => as('esha', claims({ [CORP]: { r: ['EMP'], b: ['cen'] } }));
+
+  it('catalogue is readable by any signed-in user and never writable from clients', async () => {
+    await assertSucceeds(getDoc(doc(as('member', claims()), 'books/b1')));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'books/b1')));
+    await assertFails(setDoc(doc(as('root', claims({}, true)), 'books/b2'), { title: 'x' }));
+    await assertFails(getDoc(doc(lib(), 'isbnIndex/9780306406157')));
+  });
+
+  it('copies are visible only at the holding or owning branch (branch isolation)', async () => {
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/copies/c-cen`)));
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/copies/c-moved`))); // owned by cen, now at nth
+    await assertFails(getDoc(doc(lib(), `orgs/${CORP}/copies/c-nth`)));
+    await assertSucceeds(getDocs(query(collection(lib(), `orgs/${CORP}/copies`), where('currentBranchId', '==', 'cen'))));
+    await assertFails(getDocs(collection(lib(), `orgs/${CORP}/copies`)));
+    await assertSucceeds(getDocs(collection(lib(), `orgs/${CORP}/copies/c-cen/events`)));
+    await assertFails(getDoc(doc(emp(), `orgs/${CORP}/copies/c-cen`)));
+  });
+
+  it('members, loans and money are scoped to the branch and to roles that need them', async () => {
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/members/m-cen`)));
+    await assertFails(getDoc(doc(lib(), `orgs/${CORP}/members/m-nth`)));
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/loans/l-cen`)));
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/depositAccounts/m-cen`)));
+    await assertSucceeds(getDocs(collection(lib(), `orgs/${CORP}/depositAccounts/m-cen/transactions`)));
+    await assertFails(getDoc(doc(del(), `orgs/${CORP}/members/m-cen`)));
+    await assertFails(getDoc(doc(del(), `orgs/${CORP}/depositAccounts/m-cen`)));
+    await assertFails(getDoc(doc(emp(), `orgs/${CORP}/payments/p1`)));
+    const fin = as('fina', claims({ [CORP]: { r: ['FIN'], b: ['*'] } }));
+    await assertSucceeds(getDocs(collection(fin, `orgs/${CORP}/payments`)));
+  });
+
+  it('Franchise A cannot read Franchise B members; corporate staff cannot read franchise members', async () => {
+    const fo2 = as('fred2', claims({ [FRAN2]: { r: ['FO'], b: ['*'] } }));
+    await assertFails(getDoc(doc(fo2, `orgs/${FRAN}/members/m-fr`)));
+    const ho = as('hana', claims({ [CORP]: { r: ['HO'], b: ['*'] } }));
+    await assertFails(getDoc(doc(ho, `orgs/${FRAN}/members/m-fr`)));
+  });
+
+  it('transfers are visible to both the sending and the receiving branch', async () => {
+    const nthLib = as('nora', claims({ [CORP]: { r: ['LIB'], b: ['nth'] } }));
+    await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/transfers/t1`)));
+    await assertSucceeds(getDocs(query(collection(nthLib, `orgs/${CORP}/transfers`), where('toBranchId', '==', 'nth'))));
+  });
+
+  it('clients can never write library data, whatever their role', async () => {
+    const ho = as('hana', claims({ [CORP]: { r: ['HO'], b: ['*'] } }));
+    await assertFails(setDoc(doc(ho, `orgs/${CORP}/copies/c-cen`), { status: 'RETIRED' }));
+    await assertFails(setDoc(doc(ho, `orgs/${CORP}/depositAccounts/m-cen`), { balanceMinor: 0 }));
+    await assertFails(setDoc(doc(lib(), `orgs/${CORP}/loans/l-new`), { status: 'ACTIVE' }));
   });
 });
 
