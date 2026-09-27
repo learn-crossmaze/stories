@@ -1,0 +1,4 @@
+# Keep LF line endings in the repo on every OS (silences CRLF warnings on Windows).
+* text=auto eol=lf
+*.png binary
+*.ttf binary
