@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "demo-stories",
+    "emulator": "demo-stories"
+  }
+}

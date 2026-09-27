@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// Stories — Firestore Security Rules (foundation).
+//
+// Policy: deny by default. Invariant-bearing collections are written only by
+// Cloud Functions (Admin SDK bypasses rules). Clients get explicit, narrow
+// read access per collection as each module ships. See docs/RBAC.md.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Identity profile: the owner may read it. Created and maintained by
+    // Cloud Functions (profile bootstrap), never written by clients.
+    match /users/{uid} {
+      allow read: if isSelf(uid);
+      allow write: if false;
+
+      // Authoritative roles per organization: readable by the owner so the
+      // app can render the right navigation; granted only via functions.
+      match /memberships/{orgId} {
+        allow read: if isSelf(uid);
+        allow write: if false;
+      }
+    }
+
+    // Everything else is denied until its module defines explicit rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
