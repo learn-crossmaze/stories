@@ -79,6 +79,20 @@ export class Actor {
     return branchId === undefined || coversBranch(m.branchIds, branchId);
   }
 
+  /**
+   * The shared catalogue belongs to head office: a permission counts only if
+   * held in a CORPORATE organization (franchises can't edit shared titles).
+   */
+  async requireCatalog(perm: Permission, tx: Transaction): Promise<void> {
+    if (this.isSuperAdmin) return;
+    const snaps = await tx.get(db.collection(`users/${this.uid}/memberships`).where('status', '==', 'ACTIVE'));
+    const ok = snaps.docs.some((d) => {
+      const m = d.data() as Membership;
+      return m.orgType === 'CORPORATE' && rolesGrant(m.roles, perm);
+    });
+    if (!ok) throw errors.forbidden();
+  }
+
   async require(perm: Permission, orgId: string, branchId?: string, tx?: Transaction): Promise<void> {
     if (!(await this.can(perm, orgId, branchId, tx))) throw errors.forbidden();
   }
