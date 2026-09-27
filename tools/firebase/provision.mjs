@@ -83,6 +83,35 @@ async function google(method, url, body) {
   return text ? JSON.parse(text) : {};
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Enables a Google API on the project and waits until the enable completes. */
+async function enableApi(service) {
+  let op = await google(
+    'POST',
+    `https://serviceusage.googleapis.com/v1/projects/${PROJECT}/services/${service}:enable`,
+    {},
+  );
+  for (let i = 0; !op.done && op.name && i < 60; i++) {
+    await sleep(3000);
+    op = await google('GET', `https://serviceusage.googleapis.com/v1/${op.name}`);
+  }
+  if (op.error) throw new Error(`Enabling ${service}: ${JSON.stringify(op.error)}`);
+}
+
+/** Retries fn while a just-enabled API is still propagating (403 "has not been used ... or it is disabled"). */
+async function whenApiReady(fn) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= 20 || !/has not been used|is disabled|SERVICE_DISABLED/i.test(String(e.message))) throw e;
+      if (i === 0) console.log('  waiting for the API to become available…');
+      await sleep(6000);
+    }
+  }
+}
+
 // 1. Project -----------------------------------------------------------------
 step(`Project ${PROJECT}`);
 const projects = firebase('projects:list');
@@ -139,7 +168,8 @@ console.log('  updated .firebaserc');
 
 // 4. Firestore -----------------------------------------------------------------
 step(`Firestore (default) in ${LOCATION}`);
-const dbs = firebase('firestore:databases:list', '--project', PROJECT);
+await enableApi('firestore.googleapis.com');
+const dbs = await whenApiReady(() => firebase('firestore:databases:list', '--project', PROJECT));
 if ((dbs ?? []).some((d) => d.name?.endsWith('/databases/(default)'))) {
   console.log('  exists');
 } else {
@@ -154,18 +184,23 @@ if ((dbs ?? []).some((d) => d.name?.endsWith('/databases/(default)'))) {
 
 // 5. Authentication: email/password -------------------------------------------
 step('Authentication (email/password)');
-await google(
-  'POST',
-  `https://serviceusage.googleapis.com/v1/projects/${PROJECT}/services/identitytoolkit.googleapis.com:enable`,
-  {},
-);
-await google(
-  'PATCH',
-  `https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT}/config` +
-    '?updateMask=signIn.email.enabled,signIn.email.passwordRequired',
-  { signIn: { email: { enabled: true, passwordRequired: true } } },
-);
-console.log('  email/password enabled');
+await enableApi('identitytoolkit.googleapis.com');
+try {
+  await whenApiReady(() =>
+    google(
+      'PATCH',
+      `https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT}/config` +
+        '?updateMask=signIn.email.enabled,signIn.email.passwordRequired',
+      { signIn: { email: { enabled: true, passwordRequired: true } } },
+    ),
+  );
+  console.log('  email/password enabled');
+} catch (e) {
+  // A project whose Authentication page was never opened has no Auth config yet.
+  if (!/CONFIGURATION_NOT_FOUND/.test(String(e.message))) throw e;
+  console.log('  ⚠ Auth not initialised yet: open Firebase console → Authentication → Get started,');
+  console.log('    enable Email/Password there, then re-run this script. Continuing.');
+}
 
 // 6. Rules, indexes, hosting ---------------------------------------------------
 step('Deploy Firestore rules + indexes');
