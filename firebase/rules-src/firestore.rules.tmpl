@@ -1,4 +1,3 @@
-// GENERATED from firebase/rules-src/firestore.rules.tmpl. Edit the template, then `npm run gen:rbac`.
 rules_version = '2';
 
 // Stories — Firestore Security Rules. See docs/RBAC.md and docs/FIRESTORE_RULES.md.
@@ -11,58 +10,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // GENERATED permission → role-code map (tools/rbac/generate.mjs). Do not edit here.
-    function perms() {
-      return {
-        'org.manage': [],
-        'branches.view': ['HO', 'FIN', 'HR', 'FO', 'BM', 'LIB', 'DEL', 'EMP'],
-        'branches.manage': ['HO', 'FO'],
-        'departments.manage': ['HO', 'HR', 'FO'],
-        'staff.view': ['HO', 'HR', 'FO', 'BM'],
-        'staff.manageRoles': ['HO', 'HR', 'FO', 'BM'],
-        'audit.view': ['HO', 'FIN', 'HR', 'FO', 'BM'],
-        'config.manage': ['HO'],
-        'books.view': ['HO', 'FIN', 'FO', 'BM', 'LIB', 'DEL'],
-        'books.create': ['HO'],
-        'books.edit': ['HO'],
-        'copies.manage': ['HO', 'FO', 'BM', 'LIB'],
-        'books.transfer': ['HO', 'FO', 'BM', 'LIB'],
-        'copies.writeOff': ['HO', 'FIN', 'FO', 'BM'],
-        'members.view': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'members.manage': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'loans.issue': ['FO', 'BM', 'LIB'],
-        'loans.return': ['FO', 'BM', 'LIB'],
-        'exchanges.process': ['FO', 'BM', 'LIB'],
-        'reservations.manage': ['FO', 'BM', 'LIB'],
-        'subscriptions.manage': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'plans.manage': ['HO'],
-        'deposits.view': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'deposits.adjust': ['FIN', 'FO', 'BM'],
-        'deposits.approve': ['FIN'],
-        'deposits.refund': ['FIN'],
-        'payments.view': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'payments.recordOffline': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'payments.refund': ['FIN'],
-        'delivery.manage': ['FO', 'BM', 'LIB'],
-        'delivery.assign': ['FO', 'BM', 'LIB'],
-        'delivery.execute': ['DEL'],
-        'employees.view': ['HO', 'HR', 'FO', 'BM'],
-        'employees.edit': ['HO', 'HR', 'FO'],
-        'employees.privateData': ['FIN', 'HR'],
-        'attendance.manage': ['HR', 'FO', 'BM'],
-        'corrections.approve': ['HR', 'FO', 'BM'],
-        'leave.approve': ['HR', 'FO', 'BM'],
-        'payroll.run': ['HR', 'FO'],
-        'payroll.approve': ['FIN', 'FO'],
-        'tasks.assign': ['HO', 'FO', 'BM'],
-        'tasks.approve': ['HO', 'FO', 'BM'],
-        'tasks.skip': ['HO', 'FO', 'BM'],
-        'tasks.execute': ['EMP', 'BM', 'LIB', 'DEL'],
-        'sops.edit': ['HO', 'FO', 'BM'],
-        'sops.publish': ['HO'],
-        'reports.view': ['HO', 'FIN', 'HR', 'FO', 'BM']
-      };
-    }
+    /*@@PERMISSIONS@@*/
 
     function signedIn() {
       return request.auth != null;
