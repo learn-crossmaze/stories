@@ -6,7 +6,7 @@ One Firebase project, `stories-by-crossmaze` (Blaze), region `asia-south1`.
 |---|---|---|
 | Web app (Hosting) | GitHub Actions `firebase-hosting-merge.yml` (build + deploy) | automatically on every push to `main` |
 | PR previews | `firebase-hosting-pull-request.yml` | every pull request from this repo |
-| Cloud Functions, Firestore rules & indexes | `npm run deploy:backend` from a signed-in machine | whenever `functions/` or `firebase/` change — **before** merging web changes that depend on them |
+| Cloud Functions, Firestore rules & indexes, Storage rules | `npm run deploy:backend` from a signed-in machine | whenever `functions/` or `firebase/` change — **before** merging web changes that depend on them |
 
 The GitHub deploy key (secret `FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE`) only has Hosting permissions, so the
 backend is deployed by the owner. To automate it later, grant that service account *Cloud Functions Admin*, *Service
@@ -14,6 +14,11 @@ Account User*, *Firebase Rules Admin* and *Cloud Datastore Index Admin*, then ad
 functions,firestore` to the merge workflow.
 
 ## Deploying the backend
+
+**Once, before the first deploy that includes Storage** (book covers): Firebase console → **Storage** → *Get started* →
+location **asia-south1** (or the default), *production mode*. This creates the default bucket
+(`stories-by-crossmaze.firebasestorage.app`); `deploy:backend` then publishes `firebase/storage.rules` and fails with
+"Firebase Storage has not been set up" until this is done.
 
 ```bash
 git pull

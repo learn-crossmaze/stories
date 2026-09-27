@@ -12,7 +12,8 @@ import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../Dialog';
-import { BookCover, Notice } from '../kit';
+import { CoverEditor } from '../CoverEditor';
+import { Notice } from '../kit';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
 import { BookDialog, useCanEditCatalogue } from './Catalogue';
@@ -89,7 +90,7 @@ export function BookDetailPage() {
         <Link to={paths.adminBooks}>{lt.catalogueTitle}</Link> / <span className="mono">{b.code}</span>
       </p>
       <section className="book-hero">
-        <BookCover title={b.title} author={b.authorNames.join(', ')} seed={b.id} size="lg" />
+        <CoverEditor book={b} canEdit={canEdit && b.status === 'ACTIVE'} onChanged={book.reload} />
         <div className="book-facts">
           <h1>{b.title}</h1>
           {b.subtitle && <p className="muted">{b.subtitle}</p>}

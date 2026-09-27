@@ -7,7 +7,7 @@ import { auth, db } from '../../src/core/firebase.js';
 const PROJECT = 'demo-stories';
 
 if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-  throw new Error('Emulator tests must run under `firebase emulators:exec --only firestore,auth`.');
+  throw new Error('Emulator tests must run under `firebase emulators:exec --only firestore,auth,storage`.');
 }
 
 export async function resetEmulators() {

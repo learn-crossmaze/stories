@@ -297,7 +297,7 @@ export function CataloguePage() {
             {books.map((b) => (
               <li key={b.id}>
                 <Link to={paths.adminBook(b.id)} className="book-row">
-                  <BookCover title={b.title} seed={b.id} size="sm" />
+                  <BookCover title={b.title} seed={b.id} url={b.coverUrl} size="sm" />
                   <span className="book-main">
                     <span className="book-title">{b.title}</span>
                     <span className="muted small">{b.authorNames.join(', ')}</span>

@@ -21,8 +21,13 @@ ISBN, code and keywords plus their 2–12 character prefixes. The app queries on
 (prefix search), optionally with an age-group filter, ordered by title. The same scheme powers member search (name,
 member code, mobile). A dedicated search service can replace it later behind the same query functions.
 
-**Covers:** generated placeholder covers (title + colour) — no copyrighted artwork. Photo upload arrives with
-Firebase Storage (known gap).
+**Covers:** catalogue editors (Super Admin, head office) add a photo or scan on the book page (**Add cover** /
+**Change cover** / **Remove**). The browser shrinks it to a JPEG of at most 800 px (~100 KB) and sends it to
+`books-setCover`, which checks the permission and the file type (JPEG, PNG or WebP by content, 1.5 MB at most),
+stores it at `covers/{bookId}/{requestId}.{ext}` in Cloud Storage, and saves `coverUrl`/`coverPath` on the book. The
+previous file is deleted after the change commits. Covers are public (Storage rules allow reads under `covers/`; no
+client writes). Titles without a cover show a generated placeholder (title + colour). Only upload artwork you have the
+right to use.
 
 ## Inventory (M1.2)
 

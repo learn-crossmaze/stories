@@ -9,6 +9,7 @@ import { setGlobalOptions } from 'firebase-functions/v2';
 import * as branches from './branches/branches.js';
 import * as numbering from './branches/numbering.js';
 import * as catalog from './catalog/catalog.js';
+import * as covers from './catalog/covers.js';
 import * as circ from './circulation/circulation.js';
 import * as res from './circulation/reservations.js';
 import * as xfer from './circulation/transfers.js';
@@ -52,6 +53,7 @@ export const catalogue = router({
   'books-update': catalog.update,
   'books-archive': catalog.archive,
   'books-setNumbering': numbering.setBookNumbering,
+  'books-setCover': covers.setCover,
   'authors-create': catalog.authors.create,
   'authors-rename': catalog.authors.rename,
   'authors-archive': catalog.authors.archive,

@@ -7,5 +7,12 @@ service firebase.storage {
     match /{allPaths=**} {
       allow read, write: if false;
     }
+
+    // Book covers are public (catalogue artwork). Uploads go through the
+    // books-setCover function, which checks catalogue permissions.
+    match /covers/{bookId}/{file} {
+      allow read: if true;
+      allow write: if false;
+    }
   }
 }

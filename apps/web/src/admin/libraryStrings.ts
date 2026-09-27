@@ -252,4 +252,14 @@ export const lt = {
   employeeId: 'Employee ID',
   employeeIdHint: 'Leave blank to number automatically with the branch pattern.',
   locationCodeAuto: 'Leave blank to number it automatically.',
+
+  // covers
+  coverAdd: 'Add cover',
+  coverChange: 'Change cover',
+  coverRemove: 'Remove',
+  coverSaving: 'Uploading…',
+  coverChoose: 'Choose a cover image',
+  coverNotImage: 'Choose a photo or image file (JPEG, PNG or WebP).',
+  coverUnreadable: "This image couldn't be read. Try a JPEG or PNG.",
+  coverFailed: "The cover couldn't be saved. Try again.",
 };

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import * as branches from '../../src/branches/branches.js';
 import * as numbering from '../../src/branches/numbering.js';
 import * as catalog from '../../src/catalog/catalog.js';
+import * as covers from '../../src/catalog/covers.js';
 import * as circ from '../../src/circulation/circulation.js';
 import * as res from '../../src/circulation/reservations.js';
 import * as xfer from '../../src/circulation/transfers.js';
@@ -94,6 +95,36 @@ describe('M1.1 catalogue', () => {
     const book = (await db.doc(`books/${bookId}`).get()).data()!;
     expect(book.authorNames).toEqual(['R. L. Stevenson']);
     expect(book.searchTokens).toEqual(expect.arrayContaining(['treasure', 'stevenson', '9780306406157']));
+  });
+});
+
+describe('book covers', () => {
+  // 1×1 PNG
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const exists = (path: string) => covers.bucket().file(path).exists().then(([e]) => e);
+
+  it('stores the image, replaces the old file and can remove the cover', async () => {
+    const first = await call<{ coverUrl: string }>(covers.setCover, sa, { bookId, image: png });
+    const book = (await db.doc(`books/${bookId}`).get()).data()!;
+    expect(first.coverUrl).toContain(encodeURIComponent(book.coverPath));
+    expect(book.coverPath).toMatch(new RegExp(`^covers/${bookId}/.+\\.png$`));
+    expect(await exists(book.coverPath)).toBe(true);
+    const res = await fetch(first.coverUrl);
+    expect(res.status).toBe(200);
+
+    await call(covers.setCover, sa, { bookId, image: png });
+    const second = (await db.doc(`books/${bookId}`).get()).get('coverPath');
+    expect(second).not.toBe(book.coverPath);
+    expect(await exists(book.coverPath)).toBe(false);
+
+    await call(covers.setCover, sa, { bookId, image: null });
+    expect((await db.doc(`books/${bookId}`).get()).get('coverUrl')).toBeNull();
+    expect(await exists(second)).toBe(false);
+  });
+
+  it('only catalogue editors may change covers, and only images are accepted', async () => {
+    expect(await failure(call(covers.setCover, lib, { bookId, image: png }))).toBe('FORBIDDEN');
+    expect(await failure(call(covers.setCover, sa, { bookId, image: Buffer.from('<svg onload=alert(1)>').toString('base64') }))).toBe('INVALID_INPUT');
   });
 });
 
