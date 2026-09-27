@@ -20,8 +20,31 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Generated RBAC files are up to date
+        run: node tools/rbac/generate.mjs --check
       - run: npm run test:web
       - run: npm run build -w apps/web -- --mode emulator
+
+  functions:
+    name: Cloud Functions (typecheck, unit + emulator tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci && npm --prefix functions ci
+      - run: npm --prefix functions run typecheck
+      - run: npm --prefix functions run build
+      - run: npm run test:functions
 
   firebase-rules:
     name: Security Rules tests (emulator)
