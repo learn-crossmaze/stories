@@ -1,6 +1,7 @@
 # Stories — Implementation Plan
 
-> Status: **Phase 0 complete (2026-09-27); Phase 1 awaits "START PHASE 1".** Later phases are outlined and will be
+> Status: **Phases 0 and 1 complete (2026-09-27).** Phase 1 as built: see LIBRARY.md, CIRCULATION.md,
+> SUBSCRIPTIONS.md, PAYMENTS.md (deviations listed at the top of DATABASE.md). Later phases are outlined and will be
 > detailed before they start. Each milestone lands as its own set of logical commits and PR.
 >
 > | Milestone | Status |

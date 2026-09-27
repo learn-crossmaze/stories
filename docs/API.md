@@ -1,7 +1,12 @@
 # Stories — Cloud Functions API conventions
 
-All app operations are **callable functions** in `asia-south1`, named `<group>-<name>` (e.g. `branches-create`).
-Implementation: `functions/src/core/callable.ts`.
+All app operations are **actions** named `<group>-<name>` (e.g. `branches-create`), implemented in
+`functions/src/core/callable.ts`. They are deployed through **six router functions** in `asia-south1` —
+`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation` (`functions/src/index.ts`) — plus two scheduled
+jobs. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
+action prefix). Each Cloud Function is its own Cloud Run service reserving CPU; ~60 separate functions exceeded the
+project's regional CPU quota, eight services stay well inside it. Routing doesn't change behaviour: the router
+passes the request to the action's own handler, so every check below applies unchanged; unknown actions are rejected.
 
 ## Two kinds of callable
 
@@ -37,3 +42,22 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | `departments-create` / `-rename` / `-archive` | `departments.manage` | `orgId, name, branchId?` / `…departmentId, name` / `…departmentId, reason` |
 | `staff-setRoles` | `staff.manageRoles` + grant rules (RBAC.md §4.1) | `orgId, email, roles[], branchIds[]` |
 | `staff-revoke` | same | `orgId, uid, reason` |
+
+## Phase 1 callables
+
+| Group | Callables | Permission |
+|---|---|---|
+| Catalogue | `books-create/update/archive`, `authors-`, `publishers-`, `categories-` `create/rename/archive` | `books.create`/`books.edit` in a corporate org (or Super Admin) |
+| Inventory | `copies-acquire/relocate/recordCondition/inspect/repair/found`, `locations-create/archive` | `copies.manage` at the copy's branch |
+| | `copies-markLost/retire` | `copies.writeOff` |
+| | `copies-availability` (query) | any signed-in user |
+| Members | `members-register/update/setStatus` | `members.manage` at the home branch |
+| Plans | `plans-create/update/archive` | `plans.manage` |
+| Subscriptions | `subscriptions-create/cancelPending` | `subscriptions.manage` |
+| Payments | `payments-recordOffline` | `payments.recordOffline` |
+| Deposits | `deposits-proposeAdjustment`, `deposits-startSettlement` / `deposits-decide` / `deposits-refund` | `deposits.adjust` / `deposits.approve` / `deposits.refund` |
+| Circulation | `circulation-issue/return/exchange/declareLost` | `loans.issue` / `loans.return` / `exchanges.process` / `copies.writeOff` |
+| Reservations | `reservations-place/cancel` | `reservations.manage` |
+| Transfers | `transfers-create/dispatch/cancel` (sending branch), `transfers-receive` (destination) | `books.transfer` |
+
+Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), both idempotent.

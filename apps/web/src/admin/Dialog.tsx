@@ -165,3 +165,74 @@ export function SelectField<T extends string>(props: {
     </div>
   );
 }
+
+export function TextArea(props: { label: string; value: string; onChange: (v: string) => void; rows?: number; hint?: string; error?: string }) {
+  const id = useId();
+  return (
+    <div className="field">
+      <label htmlFor={id}>{props.label}</label>
+      <textarea id={id} rows={props.rows ?? 3} value={props.value} onChange={(e) => props.onChange(e.target.value)} aria-invalid={!!props.error} />
+      {props.hint && <span className="field-hint">{props.hint}</span>}
+      {props.error && <span className="field-error">{props.error}</span>}
+    </div>
+  );
+}
+
+/** Checkbox list with a filter box, for picking several items from a long list. */
+export function MultiPick({
+  legend,
+  options,
+  value,
+  onChange,
+  max,
+  error,
+  onAdd,
+}: {
+  legend: string;
+  options: { value: string; label: string }[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  max?: number;
+  error?: string;
+  onAdd?: (name: string) => Promise<void>;
+}) {
+  const [filter, setFilter] = useState('');
+  const [adding, setAdding] = useState(false);
+  const shown = options.filter((o) => value.includes(o.value) || o.label.toLowerCase().includes(filter.toLowerCase())).slice(0, 60);
+  const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : max && value.length >= max ? value : [...value, v]);
+  return (
+    <fieldset className="choices">
+      <legend>{legend}</legend>
+      <div className="pick-filter">
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t.filterPlaceholder} aria-label={`${legend}: ${t.filterPlaceholder}`} />
+        {onAdd && filter.trim().length >= 2 && !options.some((o) => o.label.toLowerCase() === filter.trim().toLowerCase()) && (
+          <button
+            type="button"
+            className="btn btn-text"
+            disabled={adding}
+            onClick={async () => {
+              setAdding(true);
+              try {
+                await onAdd(filter.trim());
+                setFilter('');
+              } finally {
+                setAdding(false);
+              }
+            }}
+          >
+            + {filter.trim()}
+          </button>
+        )}
+      </div>
+      <div className="pick-list">
+        {shown.map((o) => (
+          <label key={o.value} className="check">
+            <input type="checkbox" checked={value.includes(o.value)} onChange={() => toggle(o.value)} />
+            {o.label}
+          </label>
+        ))}
+      </div>
+      {error && <span className="field-error">{error}</span>}
+    </fieldset>
+  );
+}

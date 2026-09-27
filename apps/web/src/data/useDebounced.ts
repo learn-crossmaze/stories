@@ -1,0 +1,11 @@
+import { useEffect, useState } from 'react';
+
+/** Delays a fast-changing value (e.g. search input) so we don't query on every keystroke. */
+export function useDebounced<T>(value: T, ms = 300): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return v;
+}

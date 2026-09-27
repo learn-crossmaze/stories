@@ -64,6 +64,11 @@ state; the copy moves `ISSUED → UNDER_INSPECTION`. Any transition not drawn ab
 
 ## 3. Interpretations & decisions (accepted 2026-09-27)
 
+Implementation notes (Phase 1): an **exchange** is counted when books are returned and others issued in one desk
+transaction (count = min(returned, issued)); separate return and issue visits are not counted as exchanges.
+Guardians are required for everyone **under 18** (D8); children (<13) have no login of their own.
+
+
 | # | Topic | Proposed rule | Why |
 |---|---|---|---|
 | D1 | Payments before Phase 2 | In Phase 1, subscriptions and deposits are activated by **staff-recorded offline payments** (cash/UPI/card at counter) — a real `payments` record with `method=OFFLINE_*`, recorded by an authorized user and audited. Online gateway (Razorpay) arrives in Phase 2. | Phase 1 includes subscriptions/deposits but payments are Phase 2; this avoids fake payments. |

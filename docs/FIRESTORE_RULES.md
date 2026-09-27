@@ -28,10 +28,29 @@ Source: `firebase/rules-src/firestore.rules.tmpl` + `firebase/rules-src/permissi
 | `orgs/{o}/auditLogs/*` | `audit.view` in `o`; branch-scoped auditors only entries with their `branchId` | never (functions only) |
 | `idempotency/*`, `platform/*`, `platformAuditLogs/*`, `orgs/{o}/branchCodes/*` | nobody | functions |
 
+### Phase 1
+
+| Path | Read |
+|---|---|
+| `books`, `authors`, `publishers`, `categories` | any signed-in user (`isbnIndex`, `counters` closed) |
+| `orgs/{o}/copies/*` (+ `events`) | `books.view` at the holding **or** owning branch |
+| `orgs/{o}/members/*` | `members.view` at the home branch |
+| `orgs/{o}/subscriptions`, `loans`, `exchanges`, `reservations` | `members.view` at the record's branch |
+| `orgs/{o}/payments` | `payments.view` at the branch |
+| `orgs/{o}/depositAccounts/*` (+ `transactions` via the account), `depositAdjustments` | `deposits.view` at the branch |
+| `orgs/{o}/transfers` | `books.view` at the sending or receiving branch |
+| `orgs/{o}/plans` (+ `versions`), `config`, `branches/*/locations` | any role in the org |
+
+A `get` of a document that doesn't exist is allowed with the module permission (it reveals only absence), so pages
+can show "not found". `canAt()` checks "all branches" first so org-wide staff can list without a branch filter.
+No client can write any of these.
+
 ## Tested guarantees
 
 Org isolation, Franchise A ↛ Franchise B, branch isolation (audit + staff directory), self-only profiles, no client
-role self-grant, default deny (even for Super Admin from the client).
+role self-grant, default deny (even for Super Admin from the client); Phase 1: copies/members/loans/money
+scoped to branch and role, franchise members invisible to other orgs and to corporate staff, transfers visible
+to both ends, no client writes.
 
 ## Indexes
 

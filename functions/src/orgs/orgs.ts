@@ -7,7 +7,7 @@ import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, name } from '../core/schemas.js';
 
-export const orgType = z.enum(['CORPORATE', 'FRANCHISE']);
+const orgType = z.enum(['CORPORATE', 'FRANCHISE']);
 
 /** Creates an organization. Super Admin only (`org.manage`). */
 export const create = command(

@@ -2,6 +2,17 @@
 
 > Status: **Proposed (awaiting approval)**. Field lists show key fields, not every field.
 
+> **As built (Phase 1, 2026-09-27) — differences from the design below:**
+> - Catalogue collections are **top-level** `books`, `authors`, `publishers`, `categories` (plus `isbnIndex`,
+>   `counters/books`); `catalog/books/{id}` is not a valid document path.
+> - **No availability projection**: per-branch availability is counted live with count queries
+>   (`copies-availability`), so there are no counters to drift or reconcile.
+> - The **book limit is tracked on the member** (`activeLoanCount`, `allocatedCount`, `waitingCount`), so loans
+>   carry over renewals; the subscription keeps `exchangesThisTerm`.
+> - **Guardian** is stored on the child member (`guardian.memberId`); no `guardianships` collection.
+> - Circulation dashboards use count queries instead of `dailyStats` for now.
+> - Details per module: [LIBRARY.md](LIBRARY.md), [CIRCULATION.md](CIRCULATION.md), [SUBSCRIPTIONS.md](SUBSCRIPTIONS.md).
+
 ## 1. Principles
 
 1. **Tenant-scoped paths.** Everything owned by an organization lives under `orgs/{orgId}/…`. Isolation is then

@@ -10,8 +10,9 @@ attendance, leave, payroll, tasks and SOPs, for company-owned and franchise bran
 on **GitHub**. One Firebase project; pushing to `main` publishes the site; the backend deploys with
 `npm run deploy:backend`.
 
-**Status:** Phase 0 (foundation) complete — sign-in, organizations, branches, departments, staff roles with
-server-enforced permissions, audit log. Phase 1 (core library) is next.
+**Status:** Phases 0 and 1 complete — foundation (roles, organizations, branches, audit) and the core library:
+catalogue, copies and barcodes, members and guardians, plans and subscriptions with counter payments, deposit
+ledger with approvals, circulation desk (issue, return, unlimited exchanges), reservations and transfers.
 
 ```bash
 npm ci && npm --prefix functions ci
@@ -23,6 +24,7 @@ npm run test:web && npm run test:functions && npm run test:rules
 
 Docs:
 
+- [docs/LIBRARY.md](docs/LIBRARY.md), [docs/CIRCULATION.md](docs/CIRCULATION.md), [docs/SUBSCRIPTIONS.md](docs/SUBSCRIPTIONS.md), [docs/PAYMENTS.md](docs/PAYMENTS.md): Phase 1 modules
 - [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md): Firebase + GitHub setup, local development, secrets policy
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): hosting and backend deploys, one-time console steps
 - [docs/API.md](docs/API.md): Cloud Functions conventions and callables
