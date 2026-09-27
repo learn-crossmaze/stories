@@ -3,6 +3,11 @@
 > Status: **Proposed (awaiting approval)**. Phases 0–1 are detailed milestone-by-milestone; later phases are outlined
 > and will be detailed before they start. Each milestone lands as its own set of logical commits and PR.
 
+> **Decision (2026-09-27): web only, one Firebase project.** The client is a Vite + React + TypeScript web app in
+> `apps/web`, hosted on Firebase Hosting; there are no Android/iOS apps and no dev/staging/prod split. Sections below
+> that mention Flutter, mobile apps, flavors or multiple environments are superseded by this; read "Flutter" as
+> "the web app". Setup lives in [ENVIRONMENTS.md](ENVIRONMENTS.md).
+
 **Sequencing note:** Phase 1 depends on Phase 0 (auth, RBAC, org/branch model, rules codegen, design system, CI).
 Recommended instruction order: **START PHASE 0**, review, then **START PHASE 1**. If you prefer to say only
 "START PHASE 1", I will build the Phase 0 milestones first as its prerequisite and report them separately.

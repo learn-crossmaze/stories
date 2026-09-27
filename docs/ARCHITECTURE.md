@@ -2,6 +2,11 @@
 
 > Status: **Proposed (awaiting approval)**. No application code exists yet.
 > Companion documents: [DATABASE.md](DATABASE.md) · [RBAC.md](RBAC.md) · [BUSINESS_RULES.md](BUSINESS_RULES.md) · [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
+>
+> **Decision (2026-09-27): web only, one Firebase project.** The client is a Vite + React + TypeScript web app in
+> `apps/web`, hosted on Firebase Hosting; there are no Android/iOS apps and no dev/staging/prod split. Sections below
+> that mention Flutter, mobile apps, flavors or multiple environments are superseded by this; read "Flutter" as
+> "the web app". Setup lives in [ENVIRONMENTS.md](ENVIRONMENTS.md).
 
 ---
 

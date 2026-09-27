@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Provisions (or re-verifies) a Stories Firebase environment. Idempotent:
-// every step checks current state first and skips work already done.
+// Creates (or re-verifies) the Stories Firebase project and publishes the web
+// app to it. Idempotent: every step checks current state and skips work done.
 //
-//   node tools/firebase/provision.mjs --env dev --project stories-crossmaze-dev
+//   node tools/firebase/provision.mjs --project stories-crossmaze
 //
 // Requires an authenticated Firebase CLI (`npx firebase login --no-localhost`)
 // or FIREBASE_TOKEN / GOOGLE_APPLICATION_CREDENTIALS in CI.
@@ -20,13 +20,12 @@ const args = Object.fromEntries(
   }, []),
 );
 
-const ENV = args.env;
 const PROJECT = args.project;
 const LOCATION = args.location ?? 'asia-south1';
-const DISPLAY = { dev: 'Stories Dev', staging: 'Stories Staging', prod: 'Stories' }[ENV];
+const DISPLAY = 'Stories';
 
-if (!DISPLAY || !PROJECT) {
-  console.error('Usage: provision.mjs --env dev|staging|prod --project <gcp-project-id> [--location asia-south1]');
+if (!PROJECT) {
+  console.error('Usage: provision.mjs --project <firebase-project-id> [--location asia-south1]');
   process.exit(2);
 }
 
@@ -92,34 +91,35 @@ if (!webApp) {
   console.log(`  exists ${webApp.appId}`);
 }
 const sdk = firebase('apps:sdkconfig', 'WEB', webApp.appId, '--project', PROJECT).sdkConfig;
-const configPath = join(root, `apps/stories_app/config/${ENV}.json`);
-const previous = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {};
+const configPath = join(root, 'apps/web/.env.production');
+const previousKey =
+  (existsSync(configPath) ? readFileSync(configPath, 'utf8') : '').match(
+    /^VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY=(.*)$/m,
+  )?.[1] ?? '';
+const lines = {
+  VITE_STORIES_FLAVOR: 'prod',
+  VITE_FIREBASE_PROJECT_ID: sdk.projectId,
+  VITE_FIREBASE_API_KEY: sdk.apiKey,
+  VITE_FIREBASE_APP_ID: sdk.appId,
+  VITE_FIREBASE_MESSAGING_SENDER_ID: sdk.messagingSenderId,
+  VITE_FIREBASE_AUTH_DOMAIN: sdk.authDomain,
+  VITE_FIREBASE_STORAGE_BUCKET: sdk.storageBucket ?? '',
+  VITE_FIREBASE_MEASUREMENT_ID: sdk.measurementId ?? '',
+  VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY: previousKey,
+};
 writeFileSync(
   configPath,
-  JSON.stringify(
-    {
-      STORIES_FLAVOR: ENV,
-      USE_EMULATORS: false,
-      FIREBASE_PROJECT_ID: sdk.projectId,
-      FIREBASE_API_KEY: sdk.apiKey,
-      FIREBASE_APP_ID: sdk.appId,
-      FIREBASE_MESSAGING_SENDER_ID: sdk.messagingSenderId,
-      FIREBASE_AUTH_DOMAIN: sdk.authDomain,
-      FIREBASE_STORAGE_BUCKET: sdk.storageBucket ?? '',
-      FIREBASE_MEASUREMENT_ID: sdk.measurementId ?? '',
-      APP_CHECK_RECAPTCHA_ENTERPRISE_KEY: previous.APP_CHECK_RECAPTCHA_ENTERPRISE_KEY ?? '',
-    },
-    null,
-    2,
-  ) + '\n',
+  '# Public Firebase web config, written by tools/firebase/provision.mjs. Not secret.\n' +
+    Object.entries(lines).map(([k, v]) => `${k}=${v}`).join('\n') +
+    '\n',
 );
-console.log(`  wrote apps/stories_app/config/${ENV}.json`);
+console.log('  wrote apps/web/.env.production');
 
-// 3. .firebaserc alias -------------------------------------------------------
-step(`Alias "${ENV}"`);
+// 3. .firebaserc default project ----------------------------------------------
+step('Default project in .firebaserc');
 const rcPath = join(root, '.firebaserc');
 const rc = JSON.parse(readFileSync(rcPath, 'utf8'));
-rc.projects[ENV] = PROJECT;
+rc.projects.default = PROJECT;
 writeFileSync(rcPath, JSON.stringify(rc, null, 2) + '\n');
 console.log('  updated .firebaserc');
 
@@ -132,7 +132,7 @@ if ((dbs ?? []).some((d) => d.name?.endsWith('/databases/(default)'))) {
   firebase(
     'firestore:databases:create', '(default)',
     '--location', LOCATION,
-    '--delete-protection', ENV === 'prod' ? 'ENABLED' : 'DISABLED',
+    '--delete-protection', 'ENABLED',
     '--project', PROJECT,
   );
   console.log('  created');
@@ -159,11 +159,7 @@ firebase('deploy', '--only', 'firestore:rules,firestore:indexes', '--project', P
 console.log('  deployed');
 
 step('Build + deploy web app to Hosting');
-execFileSync(
-  'flutter',
-  ['build', 'web', '--release', `--dart-define-from-file=config/${ENV}.json`],
-  { cwd: join(root, 'apps/stories_app'), stdio: 'inherit' },
-);
+execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
 firebase('deploy', '--only', 'hosting', '--project', PROJECT);
 console.log(`  live at https://${PROJECT}.web.app`);
 
@@ -171,5 +167,6 @@ console.log(`
 Remaining console-only steps for ${PROJECT} (see docs/ENVIRONMENTS.md):
   • Authentication → Sign-in method → Google: enable (creates the OAuth client)
   • Upgrade to Blaze before Cloud Functions / Storage
+  • Deploys from GitHub: npx firebase init hosting:github
   • App Check → register web app with reCAPTCHA Enterprise, then set
-    APP_CHECK_RECAPTCHA_ENTERPRISE_KEY in apps/stories_app/config/${ENV}.json`);
+    VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY in apps/web/.env.production`);

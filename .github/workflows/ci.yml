@@ -3,35 +3,25 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, develop]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  flutter:
-    name: Flutter (format, analyze, test, build web)
+  web:
+    name: Web app (typecheck, test, build)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/setup-node@v4
         with:
-          channel: stable
-          flutter-version: 3.47.5
-          cache: true
-      - run: flutter pub get
-      - name: Format
-        run: dart format --output=none --set-exit-if-changed apps/stories_app/lib apps/stories_app/test packages
-      - name: Analyze
-        working-directory: apps/stories_app
-        run: flutter analyze
-      - name: Test
-        working-directory: apps/stories_app
-        run: flutter test
-      - name: Build web (emulator config)
-        working-directory: apps/stories_app
-        run: flutter build web --release --dart-define-from-file=config/emulator.json
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:web
+      - run: npm run build -w apps/web -- --mode emulator
 
   firebase-rules:
     name: Security Rules tests (emulator)

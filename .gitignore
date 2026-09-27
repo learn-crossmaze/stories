@@ -2,5 +2,4 @@ node_modules/
 .emulator-data/
 *-debug.log
 .firebase/
-.dart_tool/
-build/
+dist/

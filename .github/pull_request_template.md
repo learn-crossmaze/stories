@@ -1,8 +1,8 @@
 ## What & why
 
 ## How it was tested
-- [ ] `flutter test` / `npm run test:rules`
-- [ ] Checked on the preview channel (link in the Deploy job summary)
+- [ ] `npm run test:web` / `npm run test:rules`
+- [ ] Tried it locally against the emulators (`npm run emulators` + `npm run dev`)
 
 ## Checklist
 - [ ] Security Rules updated and tested for any new collection or field

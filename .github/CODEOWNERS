@@ -1,6 +1,0 @@
-# Security Rules, deploy config and CI need owner review.
-/firebase/           @learn-crossmaze
-/firebase.json       @learn-crossmaze
-/.firebaserc         @learn-crossmaze
-/.github/            @learn-crossmaze
-/tools/firebase/     @learn-crossmaze

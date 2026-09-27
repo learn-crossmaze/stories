@@ -1,96 +1,70 @@
-# Stories — Environments & Firebase Setup
+# Stories — Firebase & GitHub Setup
 
-## 1. Environments
+Two services, nothing in between:
 
-| Environment | Firebase project | App config | Deploys from | Data |
-|---|---|---|---|---|
-| Local | `demo-stories` (Emulator Suite only; the `demo-` prefix guarantees no cloud project is touched) | `config/emulator.json` | — | throwaway |
-| Development | `stories-crossmaze-dev` *(proposed ID)* | `config/dev.json` | `develop` | seed/demo |
-| Staging | `stories-crossmaze-staging` *(proposed)* | `config/staging.json` | `release/*` | anonymized/seed |
-| Production | `stories-crossmaze-prod` *(proposed)* | `config/prod.json` | tagged `main`, manual approval | real |
+- **GitHub** holds the code and runs CI.
+- **Firebase** (one project) hosts the web app and provides Auth and Firestore.
 
-Firebase project IDs are globally unique and permanent; `stories-dev` is almost certainly taken, hence the
-`stories-crossmaze-*` proposal. The owner account is `learn@crossmaze.in`.
-
-## 2. Local development (no cloud access needed)
-
-```bash
-npm ci                                  # Firebase CLI, rules-test tooling
-flutter pub get                         # Dart workspace
-npm run emulators                       # Auth :9099, Firestore :8080, Storage :9199, Hosting :5000, UI :4000
-npm run web:emulator                    # app on http://localhost:8081 against the emulators
-npm run test:rules                      # Security Rules tests
-(cd apps/stories_app && flutter test)   # unit + widget tests
-```
-
-## 3. Provisioning a cloud environment
-
-The Firebase CLI must be signed in as the project owner. In a cloud session the network policy must allow
-`auth.firebase.tools`, `firebase-public.firebaseio.com`, `*.firebaseio.com` and `firebase.google.com` (Google API
-hosts `*.googleapis.com` are already reachable).
-
-```bash
-npx firebase login --no-localhost       # open the printed link, sign in, paste the code back
-node tools/firebase/provision.mjs --env dev --project stories-crossmaze-dev
-```
-
-`provision.mjs` is idempotent. It:
-
-1. Creates the GCP/Firebase project if it doesn't exist.
-2. Registers the **Stories Web** app and writes its SDK config to `apps/stories_app/config/dev.json`.
-3. Adds the `dev` alias to `.firebaserc`.
-4. Creates the default Firestore database in **asia-south1** (delete protection on in prod).
-5. Enables Firebase Authentication with **email/password**.
-6. Deploys Firestore rules + indexes, builds the Flutter web app and deploys it to Hosting
-   (`https://<project>.web.app`).
-
-### Steps that stay in the console (owner only)
-
-| Step | Where | Why manual |
+| Where | Firebase project | Config |
 |---|---|---|
-| Enable **Google** sign-in | Authentication → Sign-in method | Creates the OAuth client + consent screen |
-| Enable **Phone** sign-in (Phase 2) | Authentication → Sign-in method | Needs SMS region policy + billing |
-| Upgrade to **Blaze** | Project settings → Usage and billing | Needs a payment method; required for Cloud Functions, Storage buckets, PITR |
-| Budget alerts | Google Cloud Billing → Budgets | Cost guardrail (recommend alerts at ₹1k/₹5k for dev) |
-| **App Check** (reCAPTCHA Enterprise) | App Check → Apps | Register web app; put the site key in `config/<env>.json`; enforce after monitoring |
-| Authorized domains for custom domains | Authentication → Settings | When `app.` / `admin.` domains are decided |
+| Your laptop | `demo-stories` (Emulator Suite only; `demo-` IDs never touch the cloud) | `apps/web/.env.emulator` |
+| Live site | your project, e.g. `stories-crossmaze` | `apps/web/.env.production` (written by `provision.mjs`) |
 
-## 4. GitHub → Firebase deployment
-
-| Workflow | Trigger | Does |
-|---|---|---|
-| `ci.yml` | every PR, push to `main`/`develop` | format, analyze, test, web build, Security Rules tests |
-| `deploy.yml` | push to `develop` | deploy rules, indexes and Hosting to **dev** |
-| `deploy.yml` | tag `v*` | same to **prod**, after approval on the `prod` environment |
-| `deploy.yml` | same-repo PR | Hosting preview channel `pr-<n>` on dev (7-day expiry, URL in the job summary) |
-| Dependabot | weekly | Actions, npm and pub updates |
-
-Until an environment is provisioned, `deploy.yml` skips with a notice instead of failing.
-
-One-time setup per environment, after `provision.mjs` (needs `gcloud` signed in as owner):
+## 1. Local development (no cloud access needed)
 
 ```bash
-tools/firebase/setup-github-deploy.sh stories-crossmaze-dev
+npm ci
+npm run emulators      # Auth :9099, Firestore :8080, Storage :9199, UI :4000 (needs Java 21)
+npm run dev            # app on http://localhost:8081 against the emulators
+npm run test:web       # app tests
+npm run test:rules     # Security Rules tests
 ```
 
-This creates a least-privilege `github-deploy` service account and a Workload Identity provider that only trusts
-this repository, then prints three variables. In GitHub → **Settings → Environments**, create `dev` and `prod`, set
-`FIREBASE_PROJECT_ID`, `GCP_WIF_PROVIDER` and `GCP_DEPLOY_SERVICE_ACCOUNT` on each, and on `prod` add required
-reviewers and restrict deployments to `v*` tags.
+## 2. Create the Firebase project (once)
 
-Repository settings (owner only): create `main` and `develop`, make `main` the default branch, and protect both
-(require PRs, require the CI checks, require CODEOWNERS review).
+Firebase project IDs are globally unique and permanent; pick it deliberately. The owner account is
+`learn@crossmaze.in`.
+
+```bash
+npx firebase login
+node tools/firebase/provision.mjs --project stories-crossmaze
+```
+
+`provision.mjs` is idempotent. It creates the project, registers the **Stories Web** app, writes its public config to
+`apps/web/.env.production`, sets the project as the default in `.firebaserc`, creates Firestore in **asia-south1**
+(delete protection on), enables **email/password** sign-in, deploys Firestore rules + indexes, and publishes the site
+to `https://<project>.web.app`. Commit the two changed files.
+
+## 3. Deploy from GitHub (once)
+
+```bash
+npx firebase init hosting:github
+```
+
+Answers: repository `learn-crossmaze/stories`; run a build script → **Yes**, `npm ci && npm run build`; deploy on
+merge → **Yes**, branch `main`. This stores a deploy key as a GitHub secret and writes the workflows to
+`.github/workflows/`. Commit them. It also writes a pull-request preview workflow; delete
+`firebase-hosting-pull-request.yml` if you don't want preview links on PRs.
+
+From then on: **merge to `main` → site is live.** Hosting deploys from GitHub; Security Rules and indexes are
+deployed with `npx firebase deploy --only firestore` when they change (or `npm run deploy` for everything).
+
+In GitHub → Settings → Branches, make `main` the default branch and protect it (require PRs and the CI checks).
+
+## 4. Console-only steps (owner)
+
+| Step | Where | When |
+|---|---|---|
+| Enable **Google** sign-in | Authentication → Sign-in method | Now (creates the OAuth client) |
+| Custom domain | Hosting → Add custom domain; then Authentication → Settings → Authorized domains | When the domain is decided |
+| Upgrade to **Blaze** + budget alert | Usage and billing | Before Cloud Functions / Storage |
+| **App Check** (reCAPTCHA Enterprise) | App Check → Apps | Before launch; put the site key in `VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY` |
 
 ## 5. Configuration & secrets policy
 
-- `config/*.json` hold only the **public** Firebase web config (identifies the project; protected by rules, App
-  Check and API-key restrictions). They are committed.
-- Never commit service-account keys, App Check debug tokens, payment keys or SMTP credentials. Server secrets go to
-  **Secret Manager** (Cloud Functions `defineSecret`); CI uses **Workload Identity Federation**, not JSON keys.
-- Web API keys are restricted in Google Cloud Console → APIs & Services → Credentials to the Firebase APIs and the
-  environment's HTTP referrers.
-
-## 6. Web build note
-
-FlutterFire web loads the Firebase JS SDK from `www.gstatic.com` and CanvasKit from Google's CDN at runtime. Production
-browsers reach these normally. For offline/sandboxed builds use `flutter build web --no-web-resources-cdn`.
+- `apps/web/.env.*` hold only the **public** Firebase web config. Everything prefixed `VITE_` ends up in the browser
+  bundle, so nothing secret may go there. They are committed.
+- The only secret is the deploy key GitHub stores for you in step 3. Never commit service-account keys, App Check
+  debug tokens, payment keys or SMTP credentials.
+- Restrict the web API key in Google Cloud Console → APIs & Services → Credentials to the Firebase APIs and your
+  site's domains.
