@@ -13,12 +13,15 @@ Two services, nothing in between:
 ## 1. Local development (no cloud access needed)
 
 ```bash
-npm ci
-npm run emulators      # Auth :9099, Firestore :8080, Storage :9199, UI :4000 (needs Java 21)
+npm ci && npm --prefix functions ci
+npm run emulators      # builds functions; Auth :9099, Firestore :8080, Functions :5001, Storage :9199, UI :4000 (Java 21)
+npm run seed           # demo data: 2 orgs, 2 branches, 10 personas (password stories-demo) — emulator only
 npm run dev            # app on http://localhost:8081 against the emulators
-npm run test:web       # app tests
-npm run test:rules     # Security Rules tests
 ```
+
+Demo personas: `super@`, `ho@`, `finance@`, `hr@`, `manager@`, `librarian@`, `delivery@`, `employee@`,
+`franchise@`, `member@` — all `@stories.test`. The seed script forces the emulator hosts and the `demo-stories`
+project, so it cannot touch the live project. Tests: see [TESTING.md](TESTING.md).
 
 ## 2. Create the Firebase project (once)
 
@@ -40,7 +43,10 @@ If login fails with "Unable to authenticate using the provided code", run `npx f
 (delete protection on), enables **email/password** sign-in, deploys Firestore rules + indexes, and publishes the site
 to `https://<project>.web.app`. Commit the two changed files.
 
-## 3. Deploy from GitHub (once)
+## 3. Deploy from GitHub (done)
+
+Backend deploys (functions, rules, indexes): see [DEPLOYMENT.md](DEPLOYMENT.md).
+
 
 ```bash
 npx firebase init hosting:github

@@ -1,6 +1,6 @@
 # Stories — Security Architecture & RBAC
 
-> Status: **Proposed (awaiting approval)**.
+> Status: **Implemented for Phase 0 (M0.3).** Source of truth: `firebase/rules-src/permissions.json`.
 
 ## 1. Layers
 
@@ -34,8 +34,10 @@ member record; staff discounts are a future plan type).
 ## 3. Permissions
 
 Roles map to permissions in one file — `firebase/rules-src/permissions.json` — the single source consumed by
-(a) Cloud Functions `requirePermission()`, (b) the generated `firestore.rules`/`storage.rules` helpers, and (c) the
-Flutter `permissionsProvider` (for UI only). A CI check fails if generated artifacts are stale.
+(a) Cloud Functions (`Actor.require()` in `functions/src/core/rbac.ts`), (b) the generated `perms()` map in
+`firebase/firestore.rules`, and (c) the web app's `can()` (UI only). `npm run gen:rbac` regenerates all three; CI runs
+`tools/rbac/generate.mjs --check` and fails if any is stale. Super Admin is not in the map: the `sa` claim (rules)
+and `platformRoles` (functions) grant everything.
 
 Initial catalogue (excerpt):
 
@@ -78,18 +80,34 @@ user above a configurable threshold. Same pattern for refunds and payroll approv
 
 - **Authoritative:** `users/{uid}/memberships/{orgId}` → `{ roles[], branchScope: "ALL" | [branchIds], status }`.
   Written only by functions (`staff.grantRole`, `staff.revokeRole`), audited.
-- **Fast path (custom claims)**, synced by a trigger on the membership doc:
+- **Fast path (custom claims)**, synced by `syncClaims(uid)` (`functions/src/core/claims.ts`), which the
+  role-changing callables call right after their transaction commits:
 
 ```json
 { "v": 7, "sa": false, "hq": false,
   "o": { "<orgId>": { "r": ["BM","LIB","EMP"], "b": ["<branchId>"] } } }
 ```
 
-  Short role codes keep claims under the 1000-byte limit. `v` is a claims version; on change the trigger also writes
+  Short role codes keep claims under the 1000-byte limit. `v` is a claims version; on change the sync also writes
   `users/{uid}.claimsVersion`, which the app watches to force an ID-token refresh (so revocation applies within
   seconds, and Functions double-check the authoritative doc for sensitive operations like payroll/refunds).
 - **Members need no claims.** Member access is ownership-based: `members/{id}.accountHolderUid == auth.uid`, or an
   active guardianship for a child member.
+
+### 4.1 Who may grant which roles (`grantable` in permissions.json)
+
+| Grantor | May grant | Branch limit |
+|---|---|---|
+| Super Admin | every org role (respecting org type) | none |
+| Head Office Admin | HO, Finance, HR, Branch Manager, Librarian, Delivery, Employee | org-wide |
+| Franchise Owner | Finance, HR, Branch Manager, Librarian, Delivery, Employee (own org) | org-wide |
+| HR Admin | Employee | org-wide |
+| Branch Manager | Librarian, Delivery, Employee | own branches only |
+
+Also enforced: nobody but a Super Admin edits their own roles; a grantor cannot edit or remove someone holding a role
+they cannot grant; org-wide roles (HO/FIN/HR/FO) always cover all branches; Head Office Admin only in corporate orgs,
+Franchise Owner only in franchise orgs; the person must already have signed in once. The first Super Admin is claimed
+once via `/setup` by the email in `functions/.env` (`BOOTSTRAP_SUPER_ADMIN_EMAIL`), which must be verified.
 
 ## 5. Isolation model
 

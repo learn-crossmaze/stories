@@ -1,7 +1,14 @@
 # Stories — Implementation Plan
 
-> Status: **Proposed (awaiting approval)**. Phases 0–1 are detailed milestone-by-milestone; later phases are outlined
-> and will be detailed before they start. Each milestone lands as its own set of logical commits and PR.
+> Status: **Phase 0 complete (2026-09-27); Phase 1 awaits "START PHASE 1".** Later phases are outlined and will be
+> detailed before they start. Each milestone lands as its own set of logical commits and PR.
+>
+> | Milestone | Status |
+> |---|---|
+> | M0.1 Tooling, repository & environment | Done — single Firebase project + Emulator Suite (decision 2026-09-27) |
+> | M0.2 Design system | Done for the web (tokens, components in `apps/web`); grows with each module |
+> | M0.3 Auth, users, orgs, branches, departments, RBAC | Done — see RBAC.md, FIRESTORE_RULES.md, API.md |
+> | M0.4 Seed & demo data | Done — `npm run seed` (emulator only), 10 personas |
 
 > **Decision (2026-09-27): web only, one Firebase project.** The client is a Vite + React + TypeScript web app in
 > `apps/web`, hosted on Firebase Hosting; there are no Android/iOS apps and no dev/staging/prod split. Sections below
@@ -155,8 +162,7 @@ dashboards built on summary documents.
 
 ---
 
-## Before M0 starts, I need from you
-1. Confirmation of the decisions D1–D11 in BUSINESS_RULES.md (or corrections).
-2. Whether Firebase projects `stories-dev`, `stories-staging`, `stories-prod` exist and are on the **Blaze** plan.
-   Until they do, all work runs on the Emulator Suite (nothing blocks Phase 0/1 development).
-3. Confirmation of region `asia-south1` and payment gateway Razorpay (Phase 2).
+## Decisions recorded (2026-09-27)
+1. D1–D11 in BUSINESS_RULES.md accepted as proposed.
+2. One Firebase project, `stories-by-crossmaze` (Blaze), plus the local Emulator Suite; no dev/staging/prod split.
+3. Web only: Vite + React + TypeScript. Region `asia-south1`; Razorpay remains the Phase 2 payment gateway.
