@@ -379,3 +379,14 @@ h2 { font-size: 22px; line-height: 1.25; }
 .timeline li { position: relative; min-width: 0; }
 .timeline li::before { content: ''; position: absolute; left: -22px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
 .timeline pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+
+/* book details lookup */
+.lookup { display: grid; gap: 6px; padding: 12px; border: 1px dashed var(--outline); border-radius: var(--radius-md, 12px); background: var(--surface-dim); }
+.lookup-bar { display: flex; gap: 8px; }
+.lookup-bar input { flex: 1; min-width: 0; }
+.lookup-results { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; max-height: 360px; overflow-y: auto; }
+.lookup-results li { display: flex; gap: 12px; align-items: center; padding: 8px; background: var(--surface-raised); border-radius: 8px; }
+.lookup-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.lookup-cover { flex: none; width: 40px; height: 58px; object-fit: cover; border-radius: 3px; border: 1px solid var(--outline); background: var(--surface-dim); }
+.lookup-cover-none { display: inline-block; }
+.lookup-cover-note { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }

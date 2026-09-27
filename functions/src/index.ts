@@ -10,6 +10,7 @@ import * as branches from './branches/branches.js';
 import * as numbering from './branches/numbering.js';
 import * as catalog from './catalog/catalog.js';
 import * as covers from './catalog/covers.js';
+import * as lookup from './catalog/lookup.js';
 import * as circ from './circulation/circulation.js';
 import * as res from './circulation/reservations.js';
 import * as xfer from './circulation/transfers.js';
@@ -54,6 +55,7 @@ export const catalogue = router({
   'books-archive': catalog.archive,
   'books-setNumbering': numbering.setBookNumbering,
   'books-setCover': covers.setCover,
+  'books-lookup': lookup.lookup,
   'authors-create': catalog.authors.create,
   'authors-rename': catalog.authors.rename,
   'authors-archive': catalog.authors.archive,

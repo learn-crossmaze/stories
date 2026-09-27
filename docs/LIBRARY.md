@@ -21,6 +21,15 @@ ISBN, code and keywords plus their 2–12 character prefixes. The app queries on
 (prefix search), optionally with an age-group filter, ordered by title. The same scheme powers member search (name,
 member code, mobile). A dedicated search service can replace it later behind the same query functions.
 
+**Find book details (new books):** type a title (optionally with the author) or an ISBN at the top of the *New book*
+form and press *Search*. `books-lookup` searches **Open Library** (no key) and **Google Books** (needs an API key in
+production, see DEPLOYMENT.md) at the same time and returns up to 10 matches, one per ISBN; titles already in the
+catalogue are marked and link to the existing record. *Use this* fills title, subtitle, ISBN, authors and publisher
+(reusing ones with the same name, otherwise adding them), language, year, synopsis, suggested genres and keywords;
+staff check everything before saving. The match's cover is imported when the book is saved (`books-setCover` with
+`imageUrl`, allowed only from Google Books / Open Library hosts). If both sources are unreachable, the form says so and
+works as before.
+
 **Covers:** catalogue editors (Super Admin, head office) add a photo or scan on the book page (**Add cover** /
 **Change cover** / **Remove**). The browser shrinks it to a JPEG of at most 800 px (~100 KB) and sends it to
 `books-setCover`, which checks the permission and the file type (JPEG, PNG or WebP by content, 1.5 MB at most),

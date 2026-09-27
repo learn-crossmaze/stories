@@ -8,3 +8,6 @@ dist/
 .agents/
 .claude/
 skills-lock.json
+
+# Per-project function secrets (e.g. GOOGLE_BOOKS_API_KEY); never committed
+functions/.env.stories-by-crossmaze
