@@ -50,5 +50,8 @@ export const authErrorMessage: Record<AuthFailureCode, string> = {
   network: 'You appear to be offline. Check your connection and try again.',
   popupClosed: 'Google sign-in was cancelled.',
   userDisabled: 'This account has been disabled. Please contact Stories support.',
+  providerDisabled: "This sign-in method isn't switched on yet. Please contact Stories support.",
+  popupBlocked: 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.',
+  unauthorizedDomain: "Sign-in isn't allowed from this web address yet. Please contact Stories support.",
   unknown: 'Please try again. If it keeps happening, contact your branch.',
 };

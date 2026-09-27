@@ -63,4 +63,15 @@ describe('app flow', () => {
     await user.click(screen.getByRole('button', { name: t.signInButton }));
     expect(await screen.findByRole('alert')).toHaveTextContent(authErrorMessage.invalidCredentials);
   });
+
+  it('shows the raw Firebase code for unexpected errors', async () => {
+    const user = userEvent.setup();
+    const repo = fakeAuth();
+    repo.fail = AuthFailure.fromFirebaseCode('auth/internal-error');
+    renderApp(repo);
+    await user.type(await screen.findByLabelText(t.emailLabel), 'reader@example.com');
+    await user.type(screen.getByLabelText(t.passwordLabel), 'long-enough');
+    await user.click(screen.getByRole('button', { name: t.signInButton }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(`${authErrorMessage.unknown} (auth/internal-error)`);
+  });
 });

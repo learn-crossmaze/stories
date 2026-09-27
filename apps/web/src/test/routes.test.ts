@@ -19,6 +19,10 @@ describe('AuthFailure.fromFirebaseCode', () => {
     ['auth/invalid-credential', 'invalidCredentials'],
     ['auth/email-already-in-use', 'emailInUse'],
     ['auth/network-request-failed', 'network'],
+    ['auth/operation-not-allowed', 'providerDisabled'],
+    ['auth/configuration-not-found', 'providerDisabled'],
+    ['auth/popup-blocked', 'popupBlocked'],
+    ['auth/unauthorized-domain', 'unauthorizedDomain'],
     ['auth/something-new', 'unknown'],
   ])('%s → %s', (code, expected) => {
     expect(AuthFailure.fromFirebaseCode(code).code).toBe(expected);
