@@ -3,3 +3,8 @@ node_modules/
 *-debug.log
 .firebase/
 dist/
+
+# Local AI-agent skills installed by `firebase init` (per-developer, not project code)
+.agents/
+.claude/
+skills-lock.json
