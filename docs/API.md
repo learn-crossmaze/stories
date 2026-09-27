@@ -40,14 +40,15 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | `branches-create` | `branches.manage` | `orgId, code, name, address, contact, operatingHours, weeklyOffs` |
 | `branches-update` / `branches-archive` | `branches.manage` (at branch) | `orgId, branchId, …` / `orgId, branchId, reason` |
 | `departments-create` / `-rename` / `-archive` | `departments.manage` | `orgId, name, branchId?` / `…departmentId, name` / `…departmentId, reason` |
-| `staff-setRoles` | `staff.manageRoles` + grant rules (RBAC.md §4.1) | `orgId, email, roles[], branchIds[]` |
+| `branches-setNumbering` | `branches.manage` (at branch) | `orgId, branchId, copy, member, location, employee` (patterns, `''` = default; see NUMBERING.md) |
+| `staff-setRoles` | `staff.manageRoles` + grant rules (RBAC.md §4.1) | `orgId, email, roles[], branchIds[], employeeId?` (blank = keep or auto-number) |
 | `staff-revoke` | same | `orgId, uid, reason` |
 
 ## Phase 1 callables
 
 | Group | Callables | Permission |
 |---|---|---|
-| Catalogue | `books-create/update/archive`, `authors-`, `publishers-`, `categories-` `create/rename/archive` | `books.create`/`books.edit` in a corporate org (or Super Admin) |
+| Catalogue | `books-create/update/archive/setNumbering`, `authors-`, `publishers-`, `categories-` `create/rename/archive` | `books.create`/`books.edit` in a corporate org (or Super Admin) |
 | Inventory | `copies-acquire/relocate/recordCondition/inspect/repair/found`, `locations-create/archive` | `copies.manage` at the copy's branch |
 | | `copies-markLost/retire` | `copies.writeOff` |
 | | `copies-availability` (query) | any signed-in user |

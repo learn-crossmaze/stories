@@ -418,3 +418,9 @@ export async function branchCounts(orgId: string, branchId: string, canDeposits:
   ]);
   return { issuedToday, exchangesToday, inspection, holds, waiting, incoming, approvals };
 }
+
+/** Catalogue-wide book code pattern, or null for the default. */
+export async function getBookNumbering(): Promise<string | null> {
+  const s = await getDoc(doc(db(), 'config/numbering'));
+  return (s.get('book') as string | null | undefined) ?? null;
+}

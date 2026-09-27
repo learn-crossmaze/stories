@@ -3,9 +3,9 @@ import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
-import { pad, reserveCounter } from '../core/counters.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { bookPattern, existingCodes, reserveCodes } from '../core/numbering.js';
 import { id, name, reason } from '../core/schemas.js';
 import { normalizeIsbn } from './isbn.js';
 import { AGE_GROUPS, GENRES, LANGUAGES, money, READING_LEVELS } from './model.js';
@@ -136,7 +136,7 @@ function canonicalIsbn(raw: string): string | null {
   return isbn;
 }
 
-/** Adds a title to the shared catalogue. ISBNs are unique (isbnIndex); codes are BOOK-000001… */
+/** Adds a title to the shared catalogue. ISBNs are unique (isbnIndex); codes follow the catalogue pattern (default BOOK-000001). */
 export const create = command('books-create', bookSchema, async ({ actor, input, requestId }, tx) => {
   await actor.requireCatalog('books.create', tx);
   const isbn = canonicalIsbn(input.isbn);
@@ -145,10 +145,16 @@ export const create = command('books-create', bookSchema, async ({ actor, input,
     throw errors.conflict('DUPLICATE_ISBN', 'A book with this ISBN is already in the catalogue.');
   }
   const names = await resolveRefs(tx, input);
-  const counter = await reserveCounter(tx, 'counters/books');
-  const code = `BOOK-${pad(counter.value, 6)}`;
+  const counter = await reserveCodes(tx, {
+    kind: 'book',
+    pattern: await bookPattern(tx),
+    values: {},
+    base: 'counters',
+    taken: (c) => existingCodes(tx, 'books', c),
+  });
+  const [code] = counter.codes;
   const ref = db.collection('books').doc();
-  const book = { ...derived(input, code, isbn, names), code, status: 'ACTIVE' };
+  const book = { ...derived(input, code, isbn, names), code, number: counter.number, status: 'ACTIVE' };
 
   counter.commit();
   if (isbnRef) tx.create(isbnRef, { bookId: ref.id });

@@ -218,6 +218,10 @@ h2 { font-size: 22px; line-height: 1.25; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 15px; min-height: 32px; }
 .check input { width: 18px; height: 18px; accent-color: var(--primary); }
 .hours-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.numbering-help summary { cursor: pointer; color: var(--primary); }
+.numbering-help dl { display: grid; gap: 6px; margin: 8px 0 0; }
+.numbering-help dl > div { display: grid; grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr); gap: 8px; }
+.numbering-help dd { margin: 0; }
 .hours-day { width: 40px; font-weight: 600; font-size: 13px; }
 
 /* ------------------------------------------------------------ dashboard & setup */

@@ -4,12 +4,14 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import * as branches from '../../src/branches/branches.js';
+import * as numbering from '../../src/branches/numbering.js';
 import * as catalog from '../../src/catalog/catalog.js';
 import * as circ from '../../src/circulation/circulation.js';
 import * as res from '../../src/circulation/reservations.js';
 import * as xfer from '../../src/circulation/transfers.js';
 import { db } from '../../src/core/firebase.js';
 import * as copies from '../../src/inventory/copies.js';
+import * as locations from '../../src/inventory/locations.js';
 import * as members from '../../src/members/members.js';
 import * as orgs from '../../src/orgs/orgs.js';
 import * as staff from '../../src/staff/roles.js';
@@ -309,5 +311,70 @@ describe('M1.6 reservations and transfers', () => {
     expect(await get(`copies/${id1}`)).toMatchObject({ status: 'AVAILABLE', currentBranchId: north, owningBranchId: central });
     expect(await get(`copies/${id2}`)).toMatchObject({ status: 'DAMAGED', currentBranchId: north, owningBranchId: central });
     expect((await get(`transfers/${transferId}`)).status).toBe('RECEIVED');
+  });
+});
+
+describe('numbering settings', () => {
+  const setNumbering = (branchId: string, patterns: Record<string, string>, by = sa) =>
+    call(numbering.setBranchNumbering, by, { orgId: org, branchId, copy: '', member: '', location: '', employee: '', ...patterns });
+  const membership = async (u: TestUser) => (await db.doc(`users/${u.uid}/memberships/${org}`).get()).data()!;
+  const shelf = async (branchId: string, code = '') =>
+    (await call<{ code: string }>(locations.create, lib, { orgId: org, branchId, code, label: 'Fiction', kind: 'SHELF' })).code;
+
+  it("numbers copies and members with the branch's own patterns; other branches keep the defaults", async () => {
+    await setNumbering(north, { copy: '{BRANCH}-{BOOK}-{SEQ:3}', member: '{BRANCH}{YY}-{SEQ:4}' });
+    expect(await acquire(bookId, 2, north)).toEqual(['NTH-000001-001', 'NTH-000001-002']);
+    expect(await acquire(bookId, 1)).toEqual(['COPY-000001-01']);
+    const m = (await call<{ code: string }>(members.register, lib, { orgId: org, homeBranchId: north, fullName: 'Ravi', dob: '1990-05-01', phone: '9811111111' })).code;
+    expect(m).toMatch(/^NTH\d{2}-0001$/);
+    const c = await call<{ code: string }>(members.register, lib, { orgId: org, homeBranchId: central, fullName: 'Asha', dob: '1990-05-01', phone: '9822222222' });
+    expect(c.code).toBe('MEM-000001');
+  });
+
+  it('only branch managers of the org may change numbering, and bad patterns are refused', async () => {
+    expect(await failure(setNumbering(central, { copy: 'C-{SEQ}' }, lib))).toBe('FORBIDDEN');
+    expect(await failure(setNumbering(central, { member: 'MEM-' }))).toBe('INVALID_INPUT');
+    expect(await failure(setNumbering(central, { member: 'M-{BOOK}-{SEQ}' }))).toBe('INVALID_INPUT');
+  });
+
+  it('refuses a pattern that would repeat an existing code', async () => {
+    await register('Asha'); // MEM-000001
+    await setNumbering(central, { member: 'MEM-00000{SEQ}' });
+    expect(await failure(register('Ravi'))).toBe('CODE_TAKEN');
+  });
+
+  it('numbers shelves per branch when the code is left blank', async () => {
+    expect(await shelf(central)).toBe('SH-001');
+    expect(await shelf(central)).toBe('SH-002');
+    expect(await shelf(north)).toBe('SH-001');
+    await setNumbering(north, { location: '{BRANCH}-{KIND}{SEQ:2}' });
+    expect(await shelf(north)).toBe('NTH-SH01');
+    expect(await failure(shelf(central, 'SH-001'))).toBe('DUPLICATE_LOCATION');
+  });
+
+  it('gives staff a unique employee ID that survives role changes', async () => {
+    expect((await membership(lib)).employeeId).toBe('EMP-0001'); // granted first in setup
+    await grant(lib, ['LIBRARIAN', 'DELIVERY_PERSON'], [central]);
+    expect((await membership(lib)).employeeId).toBe('EMP-0001');
+    await setNumbering(north, { employee: '{BRANCH}-E{SEQ:3}' });
+    const del = await createUser('del@stories.test');
+    await grant(del, ['DELIVERY_PERSON'], [north]);
+    expect((await membership(del)).employeeId).toBe('NTH-E001');
+    await call(staff.setRoles, sa, { orgId: org, email: del.email, roles: ['DELIVERY_PERSON'], branchIds: [north], employeeId: 'kol-7' });
+    expect((await membership(del)).employeeId).toBe('KOL-7');
+    expect(await failure(call(staff.setRoles, sa, { orgId: org, email: lib2.email, roles: ['LIBRARIAN'], branchIds: [central], employeeId: 'KOL-7' }))).toBe('EMPLOYEE_ID_TAKEN');
+    // The old ID is free again once replaced.
+    await call(staff.setRoles, sa, { orgId: org, email: lib2.email, roles: ['LIBRARIAN'], branchIds: [central], employeeId: 'NTH-E001' });
+  });
+
+  it('numbers new catalogue titles with the catalogue pattern; book numbers never repeat', async () => {
+    expect(await failure(call(numbering.setBookNumbering, lib, { book: 'B-{SEQ:5}' }))).toBe('FORBIDDEN');
+    await call(numbering.setBookNumbering, sa, { book: 'B{YY}-{SEQ:5}' });
+    const next = await newBook('Kidnapped');
+    const book = (await db.doc(`books/${next}`).get()).data()!;
+    expect(book.code).toMatch(/^B\d{2}-00002$/);
+    expect(await acquire(next, 1)).toEqual(['COPY-000002-01']);
+    await call(numbering.setBookNumbering, sa, { book: '' });
+    expect((await db.doc(`books/${await newBook('Catriona')}`).get()).get('code')).toBe('BOOK-000003');
   });
 });

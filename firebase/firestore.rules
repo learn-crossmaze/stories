@@ -149,6 +149,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Catalogue-wide settings (config/numbering: book code pattern).
+    match /config/{k} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     // ---------------------------------------------------------------- orgs
     match /orgs/{o} {
       allow get: if inOrg(o);

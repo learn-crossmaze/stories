@@ -28,14 +28,14 @@ export function CopyStatusBadge({ status }: { status: CopyStatus }) {
 function LocationDialog({ orgId, branchId, onClose, onSaved }: { orgId: string; branchId: string; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({ code: '', label: '', kind: 'SHELF' as 'SHELF' | 'DISPLAY' | 'DESK' | 'BACKROOM' });
   const { busy, error, submit } = useSubmit(async () => {
-    await command('locations-create', { orgId, branchId, ...f });
+    await command('locations-create', { orgId, branchId, ...f, code: f.code.trim() });
     onSaved();
     onClose();
   });
   return (
     <Dialog title={lt.newLocation} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <TextField label={lt.code} value={f.code} onChange={(code) => setF({ ...f, code })} hint="e.g. A-03-2" />
+        <TextField label={lt.code} value={f.code} onChange={(code) => setF({ ...f, code })} hint={`e.g. A-03-2. ${lt.locationCodeAuto}`} />
         <TextField label={lt.labelText} value={f.label} onChange={(l) => setF({ ...f, label: l })} hint="e.g. Children · bay 3 · shelf 2" />
         <SelectField label={lt.kind} value={f.kind} onChange={(kind) => setF({ ...f, kind })} options={['SHELF', 'DISPLAY', 'DESK', 'BACKROOM'].map((k) => ({ value: k as typeof f.kind, label: label(k) }))} />
         <FormError error={error} />

@@ -69,6 +69,9 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/payments/p1`, { branchId: 'cen', amountMinor: 130000 });
     await put(`orgs/${CORP}/transfers/t1`, { fromBranchId: 'cen', toBranchId: 'nth', status: 'IN_TRANSIT' });
     await put(`orgs/${CORP}/plans/plan1`, { name: 'Monthly', status: 'ACTIVE' });
+    await put('config/numbering', { book: 'B{YY}-{SEQ:5}' });
+    await put(`orgs/${CORP}/employeeIds/EMP-0001`, { uid: 'alice' });
+    await put(`orgs/${CORP}/counters/members`, { next: 2 });
   });
 });
 
@@ -116,6 +119,14 @@ describe('organization isolation', () => {
     await assertFails(getDoc(doc(fo, `orgs/${FRAN2}`)));
     await assertFails(getDoc(doc(fo, `orgs/${FRAN2}/branches/fr2`)));
     await assertFails(getDoc(doc(fo, `orgs/${FRAN2}/departments/d1`)));
+  });
+
+  it('numbering: anyone signed in reads the book pattern; nobody reads counters or the employee ID index', async () => {
+    await assertSucceeds(getDoc(doc(lib(), 'config/numbering')));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'config/numbering')));
+    await assertFails(setDoc(doc(as('root', claims({}, true)), 'config/numbering'), { book: 'X-{SEQ}' }));
+    await assertFails(getDoc(doc(lib(), `orgs/${CORP}/employeeIds/EMP-0001`)));
+    await assertFails(getDoc(doc(lib(), `orgs/${CORP}/counters/members`)));
   });
 
   it('only super admins can list all organizations', async () => {

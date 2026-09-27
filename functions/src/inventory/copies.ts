@@ -5,9 +5,9 @@ import { money } from '../catalog/model.js';
 import { makeAvailable, nextWaiting, readCirculationConfig } from '../circulation/allocation.js';
 import { recordAudit } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
-import { pad, reserveCounter } from '../core/counters.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { branchPatterns, bookNumber, existingCodes, reserveCodes } from '../core/numbering.js';
 import { id, reason } from '../core/schemas.js';
 import { copyRef, loadCopy, requireStatus, transition } from './copyOps.js';
 import { CONDITIONS, IN_STOCK } from './copyState.js';
@@ -28,8 +28,8 @@ async function activeLocation(tx: FirebaseFirestore.Transaction, orgId: string, 
 }
 
 /**
- * Adds physical copies of a catalogue title to a branch. Codes are
- * COPY-<book number>-NN; each barcode (defaults to the code) is unique in the
+ * Adds physical copies of a catalogue title to a branch. Codes follow the
+ * branch's copy pattern (default COPY-<book number>-NN); each barcode (defaults to the code) is unique in the
  * organization via orgs/{o}/barcodes. New copies go to waiting reservations first.
  */
 export const acquire = command(
@@ -49,13 +49,21 @@ export const acquire = command(
     .refine((v) => new Set(v.barcodes).size === v.barcodes.length, 'contains a barcode twice'),
   async ({ actor, input, requestId }, tx) => {
     await actor.require('copies.manage', input.orgId, input.branchId, tx);
-    await activeBranch(tx, input.orgId, input.branchId);
+    const branch = await activeBranch(tx, input.orgId, input.branchId);
     await activeLocation(tx, input.orgId, input.branchId, input.locationId);
     const book = await tx.get(db.doc(`books/${input.bookId}`));
     if (!book.exists || book.get('status') !== 'ACTIVE') throw errors.notFound('Active catalogue title');
     const bookCode = book.get('code') as string;
-    const counter = await reserveCounter(tx, `orgs/${input.orgId}/counters/copies-${bookCode}`);
-    const codes = Array.from({ length: input.quantity }, (_, i) => `COPY-${bookCode.slice(5)}-${pad(counter.value + i, 2)}`);
+    const counter = await reserveCodes(tx, {
+      kind: 'copy',
+      pattern: branchPatterns(branch).copy,
+      values: { BRANCH: branch.get('code'), BOOK: bookNumber(book) },
+      base: `orgs/${input.orgId}/counters`,
+      count: input.quantity,
+      bookCode,
+      taken: (c) => existingCodes(tx, `orgs/${input.orgId}/copies`, c),
+    });
+    const { codes } = counter;
     const barcodes = input.barcodes.length ? input.barcodes : codes;
     const barcodeSnaps = await Promise.all(barcodes.map((b) => tx.get(db.doc(`orgs/${input.orgId}/barcodes/${b}`))));
     const taken = barcodeSnaps.find((s) => s.exists);
@@ -63,7 +71,7 @@ export const acquire = command(
     const waiting = await nextWaiting(tx, input.orgId, input.branchId, input.bookId, input.quantity);
     const { holdHours } = waiting.length ? await readCirculationConfig(tx, input.orgId) : { holdHours: 0 };
 
-    counter.commit(input.quantity);
+    counter.commit();
     const copyIds: string[] = [];
     codes.forEach((code, i) => {
       const ref = db.collection(`orgs/${input.orgId}/copies`).doc();

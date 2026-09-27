@@ -7,6 +7,8 @@ import type { Branch, Weekday } from '../../data/org';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../Dialog';
+import { lt } from '../libraryStrings';
+import { BranchNumberingDialog } from '../NumberingDialogs';
 import { useWorkspace } from '../Workspace';
 
 const DAYS: Weekday[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -115,6 +117,7 @@ export function BranchesPage() {
   const { org, branches, branchesLoading, branchesError, reloadBranches } = useWorkspace();
   const [editing, setEditing] = useState<Branch | 'new' | null>(null);
   const [archiving, setArchiving] = useState<Branch | null>(null);
+  const [numbering, setNumbering] = useState<Branch | null>(null);
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
   const manage = can(claims, 'branches.manage', org.id);
 
@@ -170,6 +173,9 @@ export function BranchesPage() {
                           <button type="button" className="btn btn-text" onClick={() => setEditing(b)}>
                             {t.edit}
                           </button>
+                          <button type="button" className="btn btn-text" onClick={() => setNumbering(b)}>
+                            {lt.numbering}
+                          </button>
                           <button type="button" className="btn btn-text" onClick={() => setArchiving(b)}>
                             {t.archive}
                           </button>
@@ -184,6 +190,7 @@ export function BranchesPage() {
         </div>
       )}
       {editing && <BranchDialog orgId={org.id} branch={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={reloadBranches} />}
+      {numbering && <BranchNumberingDialog orgId={org.id} branch={numbering} onClose={() => setNumbering(null)} onSaved={reloadBranches} />}
       {archiving && (
         <ConfirmWithReason
           title={t.branchArchiveTitle(archiving.name)}

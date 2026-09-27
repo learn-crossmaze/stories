@@ -26,6 +26,7 @@ import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../u
 import { ConfirmWithReason, Dialog, DialogActions, FormError, MultiPick, SelectField, TextArea, TextField, useSubmit } from '../Dialog';
 import { BookCover, Tabs } from '../kit';
 import { lt } from '../libraryStrings';
+import { BookNumbering } from '../NumberingDialogs';
 import { useWorkspace } from '../Workspace';
 
 /** The shared catalogue belongs to head office (server re-checks on every change). */
@@ -236,7 +237,7 @@ export function CataloguePage() {
   const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
   const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
   const [attempt, setAttempt] = useState(0);
-  const [dialog, setDialog] = useState<'book' | 'refs' | null>(null);
+  const [dialog, setDialog] = useState<'book' | 'refs' | 'numbering' | null>(null);
 
   const load = async (after?: DocumentSnapshot) => {
     setState({ loading: true, error: null });
@@ -263,6 +264,9 @@ export function CataloguePage() {
           <div className="row">
             <button type="button" className="btn btn-outlined" onClick={() => setDialog('refs')}>
               {lt.referenceData}
+            </button>
+            <button type="button" className="btn btn-outlined" onClick={() => setDialog('numbering')}>
+              {lt.numberingBookTitle}
             </button>
             <button type="button" className="btn btn-filled" onClick={() => setDialog('book')}>
               <Icon name="plus" /> {lt.newBook}
@@ -316,6 +320,7 @@ export function CataloguePage() {
       )}
       {dialog === 'book' && <BookDialog onClose={() => setDialog(null)} onSaved={() => setAttempt((n) => n + 1)} />}
       {dialog === 'refs' && <RefDataDialog onClose={() => setDialog(null)} />}
+      {dialog === 'numbering' && <BookNumbering onClose={() => setDialog(null)} />}
     </>
   );
 }
