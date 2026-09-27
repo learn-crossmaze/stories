@@ -4,6 +4,8 @@ import { Link } from 'react-router';
 
 import { t } from '../strings';
 import { EmptyState, Icon } from '../ui';
+import { CameraScanner } from './CameraScanner';
+import { lt } from './libraryStrings';
 import { useWorkspace } from './Workspace';
 
 /** Placeholder cover generated from the title (no copyrighted artwork). */
@@ -26,11 +28,13 @@ export function BookCover({ title, author, seed, url, size = 'md' }: { title: st
 }
 
 /**
- * Input for barcode scanners (they type the code and press Enter) and manual
- * entry. Keeps focus after each scan so staff can scan continuously.
+ * Input for barcode scanners (they type the code and press Enter), manual
+ * entry, or the device camera (laptop webcam / phone). Keeps focus after each
+ * scan so staff can scan continuously.
  */
 export function ScanInput({ label, onScan, busy, placeholder }: { label: string; onScan: (value: string) => void | Promise<void>; busy?: boolean; placeholder?: string }) {
   const [value, setValue] = useState('');
+  const [camera, setCamera] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
   const id = useId();
   return (
@@ -61,7 +65,18 @@ export function ScanInput({ label, onScan, busy, placeholder }: { label: string;
         <button type="submit" className="btn btn-outlined" disabled={busy || !value.trim()}>
           {t.scanAdd}
         </button>
+        <button
+          type="button"
+          className={`btn ${camera ? 'btn-filled' : 'btn-outlined'} btn-icon`}
+          onClick={() => setCamera((c) => !c)}
+          aria-pressed={camera}
+          aria-label={camera ? lt.camStop : lt.camUse}
+          title={camera ? lt.camStop : lt.camUse}
+        >
+          <Icon name="camera" />
+        </button>
       </div>
+      {camera && <CameraScanner onDetect={(text) => void onScan(text)} onClose={() => setCamera(false)} />}
     </form>
   );
 }
