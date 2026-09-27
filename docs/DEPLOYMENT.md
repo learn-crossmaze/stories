@@ -23,6 +23,9 @@ npm run deploy:backend
 ```
 
 The first deploy enables the Cloud Functions, Cloud Build, Artifact Registry and Cloud Run APIs (a few minutes).
+Scheduled functions (Phase 1: subscription expiry hourly, reservation holds every 15 minutes) also enable Cloud
+Scheduler. New Firestore indexes build in the background for a few minutes after deploy; until then the affected
+screens show "couldn't load" and recover on their own.
 
 ## One-time console steps after the first backend deploy
 

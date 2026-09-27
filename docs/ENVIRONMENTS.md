@@ -15,7 +15,7 @@ Two services, nothing in between:
 ```bash
 npm ci && npm --prefix functions ci
 npm run emulators      # builds functions; Auth :9099, Firestore :8080, Functions :5001, Storage :9199, UI :4000 (Java 21)
-npm run seed           # demo data: 2 orgs, 2 branches, 10 personas (password stories-demo) — emulator only
+npm run seed           # demo data: orgs, branches, 10 personas (password stories-demo), 36 books, 84 copies, plans, members — emulator only
 npm run dev            # app on http://localhost:8081 against the emulators
 ```
 
