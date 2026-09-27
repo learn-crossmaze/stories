@@ -22,7 +22,7 @@ export function BookPicker({ onPick, label }: { onPick: (b: Book) => void; label
           {results.data.filter((b) => b.status === 'ACTIVE').map((b) => (
             <li key={b.id}>
               <button type="button" onClick={() => onPick(b)} className="picker-book">
-                <BookCover title={b.title} seed={b.id} size="sm" />
+                <BookCover title={b.title} seed={b.id} url={b.coverUrl} size="sm" />
                 <span>
                   <strong>{b.title}</strong>
                   <span className="muted small"> {b.authorNames.join(', ')}</span>

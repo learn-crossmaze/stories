@@ -100,6 +100,7 @@ export interface Book {
   keywords: string[];
   replacementPriceMinor: number;
   status: 'ACTIVE' | 'ARCHIVED';
+  coverUrl?: string | null;
 }
 
 export async function listRefs(kind: 'authors' | 'publishers' | 'categories'): Promise<RefItem[]> {

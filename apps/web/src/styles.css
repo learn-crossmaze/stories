@@ -288,6 +288,9 @@ h2 { font-size: 22px; line-height: 1.25; }
 .cover-sm .cover-title { font-size: 7px; padding: 4px 3px 0 9px; -webkit-line-clamp: 5; }
 .cover-md { width: 96px; height: 140px; }
 .cover-lg { width: 180px; height: 262px; }
+.cover-img { object-fit: cover; border-color: var(--outline); background: var(--surface-dim); }
+.cover-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; max-width: 180px; }
+.cover-col { flex: none; }
 .cover-lg .cover-title { font-size: 22px; padding: 18px 16px 0 22px; -webkit-line-clamp: 6; }
 .cover-lg .cover-author { font-size: 14px; padding: 0 16px 16px 22px; }
 

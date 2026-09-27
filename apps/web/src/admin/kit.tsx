@@ -7,7 +7,8 @@ import { EmptyState, Icon } from '../ui';
 import { useWorkspace } from './Workspace';
 
 /** Placeholder cover generated from the title (no copyrighted artwork). */
-export function BookCover({ title, author, seed, size = 'md' }: { title: string; author?: string; seed: string; size?: 'sm' | 'md' | 'lg' }) {
+export function BookCover({ title, author, seed, url, size = 'md' }: { title: string; author?: string; seed: string; url?: string | null; size?: 'sm' | 'md' | 'lg' }) {
+  if (url) return <img className={`cover cover-img cover-${size}`} src={url} alt="" loading="lazy" />;
   let h = 0;
   for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   const palettes = [
