@@ -32,6 +32,7 @@ import { Notice, Tabs } from '../kit';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
 import { BookPicker } from './BookPicker';
+import { CollectOnlineDialog } from '../OnlinePayments';
 import { MemberDialog } from './Members';
 import { LoanHistory, MemberAudit, PaymentHistory, SubscriptionHistory } from './MemberHistory';
 
@@ -188,12 +189,12 @@ function ReserveDialog({ orgId, memberId, branchId, onClose, onDone }: { orgId: 
   );
 }
 
-type DialogKind = 'edit' | 'subscribe' | 'renew' | 'pay' | 'cancelPending' | 'adjust' | 'settle' | 'refund' | 'reserve' | 'suspend' | 'reactivate' | 'close';
+type DialogKind = 'edit' | 'subscribe' | 'renew' | 'pay' | 'online' | 'cancelPending' | 'adjust' | 'settle' | 'refund' | 'reserve' | 'suspend' | 'reactivate' | 'close';
 
 export function MemberDetailPage() {
   const { memberId = '' } = useParams();
   const { claims } = useAuth();
-  const { org, branchName } = useWorkspace();
+  const { org, branchName, branches } = useWorkspace();
   const orgId = org?.id ?? '';
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const deps = [orgId, memberId, JSON.stringify(scope)];
@@ -336,6 +337,11 @@ export function MemberDetailPage() {
                 {perm('payments.recordOffline') && (
                   <button type="button" className="btn btn-filled" onClick={() => setDialog('pay')}>
                     {lt.recordPayment}
+                  </button>
+                )}
+                {perm('payments.recordOffline') && branches.find((x) => x.id === b)?.payments?.razorpay?.enabled && (
+                  <button type="button" className="btn btn-outlined" onClick={() => setDialog('online')}>
+                    {lt.collectOnline}
                   </button>
                 )}
                 {perm('subscriptions.manage') && (
@@ -508,6 +514,19 @@ export function MemberDetailPage() {
 
       {dialog === 'edit' && <MemberDialog orgId={orgId} branchId={b} member={m} onClose={() => setDialog(null)} onSaved={() => member.reload()} />}
       {(dialog === 'subscribe' || dialog === 'renew') && <SubscribeDialog orgId={orgId} member={m} renewing={dialog === 'renew'} onClose={() => setDialog(null)} onCreated={refresh} />}
+      {dialog === 'online' && pending && (
+        <CollectOnlineDialog
+          orgId={orgId}
+          subscriptionId={pending.id}
+          amountMinor={pending.amountDue.totalMinor}
+          member={{ phone: m.phone, email: m.email ?? null }}
+          onClose={() => {
+            setDialog(null);
+            refresh();
+          }}
+          onPaid={() => setNotice(lt.paymentRecorded)}
+        />
+      )}
       {dialog === 'pay' && pending && (
         <PaymentDialog orgId={orgId} sub={pending} onClose={() => setDialog(null)} onDone={() => { setNotice(lt.paymentRecorded); refresh(); }} />
       )}

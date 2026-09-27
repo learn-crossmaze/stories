@@ -47,6 +47,10 @@ export interface Branch {
   weeklyOffs: Weekday[];
   /** Numbering pattern overrides for codes created at this branch. */
   numbering?: Partial<Record<'copy' | 'member' | 'location' | 'employee', string>>;
+  /** Online payment gateway (secrets are never stored here). */
+  payments?: {
+    razorpay?: { enabled: boolean; keyId: string; mode: 'test' | 'live'; notifySms: boolean; notifyEmail: boolean; hasWebhookSecret: boolean };
+  };
 }
 
 export interface Department {

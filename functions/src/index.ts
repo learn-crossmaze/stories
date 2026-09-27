@@ -5,6 +5,7 @@
 // within the project's Cloud Run CPU quota: the app calls the router with
 // `{ action: 'books-create', ... }`. Keep apps/web/src/data/api.ts ROUTERS in sync.
 import { setGlobalOptions } from 'firebase-functions/v2';
+import { onRequest } from 'firebase-functions/v2/https';
 
 import * as branches from './branches/branches.js';
 import * as numbering from './branches/numbering.js';
@@ -16,6 +17,7 @@ import * as res from './circulation/reservations.js';
 import * as xfer from './circulation/transfers.js';
 import { REGION } from './core/firebase.js';
 import { router } from './core/router.js';
+import * as online from './payments/online.js';
 import * as departments from './departments/departments.js';
 import * as inv from './inventory/copies.js';
 import * as loc from './inventory/locations.js';
@@ -41,6 +43,8 @@ export const admin = router({
   'branches-update': branches.update,
   'branches-archive': branches.archive,
   'branches-setNumbering': numbering.setBranchNumbering,
+  'branches-setPaymentGateway': online.setGateway,
+  'branches-testPaymentGateway': online.testGateway,
   'departments-create': departments.create,
   'departments-rename': departments.rename,
   'departments-archive': departments.archive,
@@ -96,6 +100,9 @@ export const billing = router({
   'subscriptions-create': subs.create,
   'subscriptions-cancelPending': subs.cancelPending,
   'payments-recordOffline': subs.recordOfflinePayment,
+  'payments-createRequest': online.createRequest,
+  'payments-checkRequest': online.checkRequest,
+  'payments-cancelRequest': online.cancelRequest,
   'deposits-proposeAdjustment': dep.proposeAdjustment,
   'deposits-decide': dep.decideAdjustment,
   'deposits-startSettlement': dep.startSettlement,
@@ -117,6 +124,9 @@ export const circulation = router({
 });
 
 /** Scheduled jobs (idempotent). */
+/** Razorpay webhook (payment_link.paid, qr_code.credited); URL per branch: …/razorpayWebhook?o=<orgId>&b=<branchId>. */
+export const razorpayWebhook = onRequest({ region: REGION }, (req, res) => online.handleWebhook(req, res).then(() => undefined));
+
 export const scheduled = {
   expireSubscriptions: sweep.expireSweep,
   expireHolds: res.expireHoldsSweep,
