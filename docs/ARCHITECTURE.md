@@ -1,12 +1,18 @@
 # Stories — Architecture
 
-> Status: **Proposed (awaiting approval)**. No application code exists yet.
+> Status: **Approved; Phase 0 implemented.** Where this document says Flutter, read "the web app" (see the decision below).
 > Companion documents: [DATABASE.md](DATABASE.md) · [RBAC.md](RBAC.md) · [BUSINESS_RULES.md](BUSINESS_RULES.md) · [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
 >
 > **Decision (2026-09-27): web only, one Firebase project.** The client is a Vite + React + TypeScript web app in
 > `apps/web`, hosted on Firebase Hosting; there are no Android/iOS apps and no dev/staging/prod split. Sections below
 > that mention Flutter, mobile apps, flavors or multiple environments are superseded by this; read "Flutter" as
-> "the web app". Setup lives in [ENVIRONMENTS.md](ENVIRONMENTS.md).
+> "the web app". Setup lives in [ENVIRONMENTS.md](ENVIRONMENTS.md); deployment in [DEPLOYMENT.md](DEPLOYMENT.md);
+> callable conventions in [API.md](API.md).
+>
+> **As built (Phase 0):** `apps/web` (React, React Router, Firebase JS SDK) · `functions/` (2nd-gen TypeScript Cloud
+> Functions, `asia-south1`) · `firebase/` (rules generated from `firebase/rules-src/`) · `tools/rbac` (generator).
+> Claims are synced directly by the role-changing callables after commit, not by a Firestore trigger (simpler, no
+> Eventarc; see RBAC.md §4).
 
 ---
 

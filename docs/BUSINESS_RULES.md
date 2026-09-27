@@ -1,7 +1,7 @@
 # Stories — Business Rules
 
-> Status: rules 1–37 are **final** (from the product brief). Section 3 lists interpretations and open decisions
-> that need confirmation before or during Phase 1.
+> Status: rules 1–37 are **final** (from the product brief). Decisions D1–D11 in section 3 were **accepted by the
+> product owner on 2026-09-27** and are now binding for implementation.
 
 ## 1. Final rules (current version)
 
@@ -38,7 +38,7 @@
 31. Important financial and operational actions must be auditable.
 32. Firebase is the primary backend platform.
 33. Firestore is the primary database.
-34. Flutter is the primary application framework.
+34. The client is a web application (Vite + React + TypeScript), decided 2026-09-27; no mobile apps in scope.
 35. GitHub is the source-code repository.
 36. Firebase Security Rules and Cloud Functions enforce trusted backend behavior.
 37. Critical inventory and financial operations must be transaction-safe and idempotent.
@@ -62,7 +62,7 @@ state; the copy moves `ISSUED → UNDER_INSPECTION`. Any transition not drawn ab
 
 **Condition** (`NEW, GOOD, FAIR, DAMAGED, UNUSABLE`) changes are recorded as copy events, never silently overwritten.
 
-## 3. Interpretations & decisions needing confirmation
+## 3. Interpretations & decisions (accepted 2026-09-27)
 
 | # | Topic | Proposed rule | Why |
 |---|---|---|---|

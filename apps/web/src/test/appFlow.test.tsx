@@ -8,6 +8,7 @@ import { AuthFailure } from '../auth/models';
 import { routes } from '../routes';
 import { authErrorMessage, t } from '../strings';
 import { fakeAuth } from './fakeAuth';
+import type { StoriesClaims } from '../auth/claims';
 
 function renderApp(repo = fakeAuth(), path = '/') {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
@@ -62,5 +63,28 @@ describe('app flow', () => {
     await user.type(screen.getByLabelText(t.passwordLabel), 'wrong-password');
     await user.click(screen.getByRole('button', { name: t.signInButton }));
     expect(await screen.findByRole('alert')).toHaveTextContent(authErrorMessage.invalidCredentials);
+  });
+
+  it('shows the raw Firebase code for unexpected errors', async () => {
+    const user = userEvent.setup();
+    const repo = fakeAuth();
+    repo.fail = AuthFailure.fromFirebaseCode('auth/internal-error');
+    renderApp(repo);
+    await user.type(await screen.findByLabelText(t.emailLabel), 'reader@example.com');
+    await user.type(screen.getByLabelText(t.passwordLabel), 'long-enough');
+    await user.click(screen.getByRole('button', { name: t.signInButton }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(`${authErrorMessage.unknown} (auth/internal-error)`);
+  });
+
+  it('keeps members out of the staff console', async () => {
+    const { router } = renderApp(fakeAuth({ uid: 'm1', email: 'm@x.in', displayName: 'Mira', emailVerified: true }), '/admin/staff');
+    expect(await screen.findByRole('heading', { name: t.greeting('Mira') })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/');
+  });
+
+  it('shows staff the console link on their profile', async () => {
+    const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
+    renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/profile');
+    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', '/admin');
   });
 });

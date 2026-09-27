@@ -13,6 +13,10 @@ import {
   type User,
 } from 'firebase/auth';
 
+import { doc, type Firestore, onSnapshot } from 'firebase/firestore';
+import { type Functions, httpsCallable } from 'firebase/functions';
+
+import { parseClaims, type StoriesClaims, NO_CLAIMS } from './claims';
 import { type AppUser, AuthFailure } from './models';
 
 export interface AuthRepository {
@@ -23,6 +27,24 @@ export interface AuthRepository {
   signInWithGoogle(): Promise<void>;
   sendPasswordReset(email: string): Promise<void>;
   signOut(): Promise<void>;
+  /** Current role claims; `forceRefresh` fetches a new ID token (after a role change). */
+  getClaims(forceRefresh?: boolean): Promise<StoriesClaims>;
+  /** Watches users/{uid}; `null` while it doesn't exist yet. */
+  watchProfile(uid: string, callback: (profile: UserProfile | null) => void): () => void;
+  /** Creates users/{uid} on first sign-in (server-side). */
+  ensureProfile(): Promise<void>;
+  resendVerification(): Promise<void>;
+  /** Reloads the user (e.g. to pick up a just-verified email) and refreshes the token. */
+  reload(): Promise<void>;
+}
+
+export interface UserProfile {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  platformRoles: string[];
+  claimsVersion: number;
+  status: 'ACTIVE' | 'DISABLED';
 }
 
 const toAppUser = (u: User | null): AppUser | null =>
@@ -41,7 +63,7 @@ async function guard(action: () => Promise<unknown>): Promise<void> {
   }
 }
 
-export function firebaseAuthRepository(auth: Auth): AuthRepository {
+export function firebaseAuthRepository(auth: Auth, db: Firestore, fns: Functions): AuthRepository {
   return {
     // onIdTokenChanged also fires after updateProfile() + reload, unlike onAuthStateChanged.
     onChange: (cb) => onIdTokenChanged(auth, (u) => cb(toAppUser(u))),
@@ -58,5 +80,24 @@ export function firebaseAuthRepository(auth: Auth): AuthRepository {
       guard(() => signInWithPopup(auth, new GoogleAuthProvider().addScope('email'))),
     sendPasswordReset: (email) => guard(() => sendPasswordResetEmail(auth, email.trim())),
     signOut: () => signOut(auth),
+    getClaims: async (forceRefresh = false) =>
+      auth.currentUser ? parseClaims((await auth.currentUser.getIdTokenResult(forceRefresh)).claims) : NO_CLAIMS,
+    watchProfile: (uid, cb) =>
+      onSnapshot(
+        doc(db, `users/${uid}`),
+        (snap) => cb(snap.exists() ? (snap.data() as UserProfile) : null),
+        () => cb(null),
+      ),
+    ensureProfile: async () => {
+      await httpsCallable(fns, 'users-ensureProfile')({});
+    },
+    resendVerification: async () => {
+      if (auth.currentUser) await guard(() => sendEmailVerification(auth.currentUser!));
+    },
+    reload: async () => {
+      if (!auth.currentUser) return;
+      await auth.currentUser.reload();
+      await auth.currentUser.getIdToken(true);
+    },
   };
 }

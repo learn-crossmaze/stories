@@ -29,7 +29,11 @@ export function SignInPage() {
       await action(repo);
       return true;
     } catch (e) {
-      setError(authErrorMessage[e instanceof AuthFailure ? e.code : 'unknown']);
+      if (!(e instanceof AuthFailure)) console.error(e);
+      const failure = e instanceof AuthFailure ? e : new AuthFailure('unknown');
+      // Show the raw code for unexpected errors so users can report something actionable.
+      const suffix = failure.code === 'unknown' && failure.firebaseCode ? ` (${failure.firebaseCode})` : '';
+      setError(authErrorMessage[failure.code] + suffix);
       return false;
     } finally {
       setSubmitting(false);

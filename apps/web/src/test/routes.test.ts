@@ -8,8 +8,9 @@ describe('authRedirect', () => {
     expect(authRedirect(false, paths.explore)).toBe(paths.signIn);
     expect(authRedirect(false, paths.signIn)).toBeNull();
   });
-  it('sends signed-in users away from sign-in', () => {
+  it('sends signed-in users away from sign-in (staff to the console)', () => {
     expect(authRedirect(true, paths.signIn)).toBe(paths.home);
+    expect(authRedirect(true, paths.signIn, true)).toBe(paths.admin);
     expect(authRedirect(true, paths.orders)).toBeNull();
   });
 });
@@ -19,6 +20,10 @@ describe('AuthFailure.fromFirebaseCode', () => {
     ['auth/invalid-credential', 'invalidCredentials'],
     ['auth/email-already-in-use', 'emailInUse'],
     ['auth/network-request-failed', 'network'],
+    ['auth/operation-not-allowed', 'providerDisabled'],
+    ['auth/configuration-not-found', 'providerDisabled'],
+    ['auth/popup-blocked', 'popupBlocked'],
+    ['auth/unauthorized-domain', 'unauthorizedDomain'],
     ['auth/something-new', 'unknown'],
   ])('%s → %s', (code, expected) => {
     expect(AuthFailure.fromFirebaseCode(code).code).toBe(expected);

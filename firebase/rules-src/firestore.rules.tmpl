@@ -1,0 +1,108 @@
+rules_version = '2';
+
+// Stories — Firestore Security Rules. See docs/RBAC.md and docs/FIRESTORE_RULES.md.
+//
+// Policy: deny by default. Every invariant-bearing document is written only by
+// Cloud Functions (the Admin SDK bypasses rules), so these rules are almost all
+// read rules. Authorization comes from custom claims synced from
+// users/{uid}/memberships/{orgId}:
+//   { v, sa: bool, o: { <orgId>: { r: [roleCodes], b: [branchIds] | ['*'] } } }
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /*@@PERMISSIONS@@*/
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isSA() {
+      return signedIn() && request.auth.token.get('sa', false) == true;
+    }
+
+    function orgClaims(o) {
+      return request.auth.token.get('o', {}).get(o, null);
+    }
+
+    // Org isolation: the caller holds some role in organization o.
+    function inOrg(o) {
+      return isSA() || (signedIn() && orgClaims(o) != null);
+    }
+
+    function allBranches(o) {
+      return isSA() || (signedIn() && orgClaims(o) != null && '*' in orgClaims(o).b);
+    }
+
+    // Branch isolation: branch b is inside the caller's branch scope in org o.
+    function inBranch(o, b) {
+      return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).b.hasAny(['*', b]));
+    }
+
+    // RBAC: one of the caller's roles in org o grants permission perm.
+    function can(o, perm) {
+      return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).r.hasAny(perms()[perm]));
+    }
+
+    function canAt(o, b, perm) {
+      return can(o, perm) && inBranch(o, b);
+    }
+
+    // ---------------------------------------------------------------- users
+    // Profile: owner reads it; created/maintained by functions only.
+    match /users/{uid} {
+      allow get: if isSelf(uid);
+      allow write: if false;
+
+      // Authoritative roles per organization (functions only).
+      match /memberships/{orgId} {
+        allow read: if isSelf(uid);
+        allow write: if false;
+      }
+    }
+
+    // Staff lists query memberships across users (collection group). Org-wide
+    // staff viewers see the whole org; branch-scoped viewers only memberships
+    // that overlap their branches (their query must filter the same way).
+    // (Checks resource.data.orgId, not the document id: a collection-group
+    // query can only be authorized from fields it filters on.)
+    match /{path=**}/memberships/{membershipId} {
+      allow read: if can(resource.data.orgId, 'staff.view')
+        && (allBranches(resource.data.orgId)
+            || resource.data.branchIds.hasAny(orgClaims(resource.data.orgId).b));
+    }
+
+    // ---------------------------------------------------------------- orgs
+    match /orgs/{o} {
+      allow get: if inOrg(o);
+      allow list: if isSA();
+      allow write: if false;
+
+      match /branches/{b} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
+      match /departments/{d} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
+      // Org-wide auditors see everything; branch-scoped auditors only entries
+      // for their branches (queries must filter on branchId).
+      match /auditLogs/{id} {
+        allow read: if can(o, 'audit.view')
+          && (allBranches(o) || inBranch(o, resource.data.get('branchId', '')));
+        allow write: if false;
+      }
+    }
+
+    // Everything else is denied until its module defines explicit rules.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

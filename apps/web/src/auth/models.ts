@@ -17,36 +17,51 @@ export type AuthFailureCode =
   | 'network'
   | 'popupClosed'
   | 'userDisabled'
+  | 'providerDisabled'
+  | 'popupBlocked'
+  | 'unauthorizedDomain'
   | 'unknown';
 
 /** A user-presentable auth error. Raw Firebase messages are never shown. */
 export class AuthFailure extends Error {
-  constructor(readonly code: AuthFailureCode) {
-    super(`AuthFailure(${code})`);
+  /** `firebaseCode` keeps the raw code (e.g. `auth/internal-error`) so unknown errors can be diagnosed. */
+  constructor(
+    readonly code: AuthFailureCode,
+    readonly firebaseCode?: string,
+  ) {
+    super(`AuthFailure(${code}${firebaseCode ? `, ${firebaseCode}` : ''})`);
   }
 
-  static fromFirebaseCode(code: string): AuthFailure {
-    switch (code.replace(/^auth\//, '')) {
+  static fromFirebaseCode(firebaseCode: string): AuthFailure {
+    const failure = (code: AuthFailureCode) => new AuthFailure(code, firebaseCode);
+    switch (firebaseCode.replace(/^auth\//, '')) {
       case 'invalid-credential':
       case 'wrong-password':
       case 'user-not-found':
       case 'invalid-email':
-        return new AuthFailure('invalidCredentials');
+        return failure('invalidCredentials');
       case 'email-already-in-use':
-        return new AuthFailure('emailInUse');
+        return failure('emailInUse');
       case 'weak-password':
-        return new AuthFailure('weakPassword');
+        return failure('weakPassword');
       case 'too-many-requests':
-        return new AuthFailure('tooManyRequests');
+        return failure('tooManyRequests');
       case 'network-request-failed':
-        return new AuthFailure('network');
+        return failure('network');
       case 'popup-closed-by-user':
       case 'cancelled-popup-request':
-        return new AuthFailure('popupClosed');
+        return failure('popupClosed');
       case 'user-disabled':
-        return new AuthFailure('userDisabled');
+        return failure('userDisabled');
+      case 'operation-not-allowed':
+      case 'configuration-not-found':
+        return failure('providerDisabled');
+      case 'popup-blocked':
+        return failure('popupBlocked');
+      case 'unauthorized-domain':
+        return failure('unauthorizedDomain');
       default:
-        return new AuthFailure('unknown');
+        return failure('unknown');
     }
   }
 }

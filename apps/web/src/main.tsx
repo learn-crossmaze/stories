@@ -7,13 +7,15 @@ import { createBrowserRouter, RouterProvider } from 'react-router';
 import { AuthProvider } from './auth/AuthContext';
 import { firebaseAuthRepository } from './auth/repository';
 import { initFirebase } from './config/firebase';
+import { setServices } from './data/services';
 import { routes } from './routes';
 
 const root = createRoot(document.getElementById('root')!);
 
 try {
-  const { auth } = initFirebase();
-  const repo = firebaseAuthRepository(auth);
+  const { auth, db, fns } = initFirebase();
+  setServices({ db, fns });
+  const repo = firebaseAuthRepository(auth, db, fns);
   const router = createBrowserRouter(routes);
   root.render(
     <StrictMode>

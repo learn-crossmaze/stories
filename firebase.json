@@ -5,6 +5,23 @@
     "rules": "firebase/firestore.rules",
     "indexes": "firebase/firestore.indexes.json"
   },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.local",
+        "test",
+        "src"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ],
   "storage": {
     "rules": "firebase/storage.rules"
   },
@@ -82,6 +99,9 @@
     "ui": {
       "enabled": true,
       "port": 4000
+    },
+    "functions": {
+      "port": 5001
     }
   }
 }
