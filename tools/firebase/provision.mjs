@@ -8,7 +8,7 @@
 // or FIREBASE_TOKEN / GOOGLE_APPLICATION_CREDENTIALS in CI.
 // See docs/ENVIRONMENTS.md for what this does and what stays manual.
 
-import { execFileSync, execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createRequire } from 'node:module';
@@ -37,13 +37,22 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const firebaseCli = createRequire(import.meta.url).resolve('firebase-tools/lib/bin/firebase.js');
 
 function firebase(...cmd) {
-  const out = execFileSync(process.execPath, [firebaseCli, ...cmd, '--json', '--non-interactive'], {
+  const run = spawnSync(process.execPath, [firebaseCli, ...cmd, '--json', '--non-interactive'], {
     cwd: root,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 64 * 1024 * 1024,
   });
-  const parsed = JSON.parse(out.slice(out.indexOf('{')));
-  if (parsed.status !== 'success') throw new Error(`${cmd.join(' ')}: ${parsed.error}`);
+  // Trust the CLI's JSON verdict, not its exit code: on Windows with Node 24
+  // firebase-tools can crash while exiting (libuv "UV_HANDLE_CLOSING"
+  // assertion) after printing a successful result.
+  let parsed;
+  try {
+    parsed = JSON.parse(run.stdout.slice(run.stdout.indexOf('{')));
+  } catch {
+    throw new Error(`firebase ${cmd.join(' ')} failed (exit ${run.status}):\n${run.stderr || run.stdout}`);
+  }
+  if (parsed.status !== 'success') throw new Error(`firebase ${cmd.join(' ')}: ${parsed.error}`);
   return parsed.result;
 }
 
