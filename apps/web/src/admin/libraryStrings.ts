@@ -300,4 +300,19 @@ export const lt = {
   actDepositRejected: 'Deposit adjustment rejected',
   actSettlement: 'Deposit settlement started',
   actRefunded: 'Deposit refunded',
+
+  // book details lookup
+  lookupTitle: 'Find book details',
+  lookupPlaceholder: 'Find book details: title, "title author", or ISBN',
+  lookupButton: 'Search',
+  lookupSearching: 'Searching…',
+  lookupHint: 'Searches Google Books and Open Library. Pick a match to fill the form, then check the details before saving.',
+  lookupNone: 'No matches. Try the ISBN, a shorter title, or add the author\'s name.',
+  lookupNoAuthor: 'Author unknown',
+  lookupUse: 'Use this',
+  lookupApplying: 'Filling…',
+  lookupExisting: 'Already in catalogue',
+  lookupFailed: "Book search didn't work. Fill in the details by hand.",
+  lookupCoverNote: (source: string) => `The cover from ${source} will be added when you save.`,
+  lookupCoverSkip: "Don't use this cover",
 };

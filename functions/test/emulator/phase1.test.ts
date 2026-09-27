@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
 import { Timestamp } from 'firebase-admin/firestore';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as branches from '../../src/branches/branches.js';
 import * as numbering from '../../src/branches/numbering.js';
 import * as catalog from '../../src/catalog/catalog.js';
 import * as covers from '../../src/catalog/covers.js';
+import * as bookLookup from '../../src/catalog/lookup.js';
 import * as circ from '../../src/circulation/circulation.js';
 import * as res from '../../src/circulation/reservations.js';
 import * as xfer from '../../src/circulation/transfers.js';
@@ -125,6 +126,56 @@ describe('book covers', () => {
   it('only catalogue editors may change covers, and only images are accepted', async () => {
     expect(await failure(call(covers.setCover, lib, { bookId, image: png }))).toBe('FORBIDDEN');
     expect(await failure(call(covers.setCover, sa, { bookId, image: Buffer.from('<svg onload=alert(1)>').toString('base64') }))).toBe('INVALID_INPUT');
+  });
+});
+
+describe('book details lookup', () => {
+  const realFetch = globalThis.fetch;
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4000, 7)]);
+  /** Fakes the two public catalogues (and a cover host); everything else, e.g. the Storage emulator, is real. */
+  function fakeInternet(opts: { google?: unknown; openLibrary?: unknown; down?: boolean } = {}) {
+    const seen: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const host = new URL(url).hostname;
+      if (!['www.googleapis.com', 'openlibrary.org', 'covers.openlibrary.org'].includes(host)) return realFetch(input, init);
+      seen.push(url);
+      if (opts.down) throw new TypeError('fetch failed');
+      if (host === 'covers.openlibrary.org') return new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } });
+      return Response.json(host === 'openlibrary.org' ? (opts.openLibrary ?? { docs: [] }) : (opts.google ?? { totalItems: 0 }));
+    });
+    return seen;
+  }
+  afterEach(() => vi.restoreAllMocks());
+
+  it('searches both catalogues, merges results and flags titles already in the catalogue', async () => {
+    const seen = fakeInternet({
+      google: { items: [{ volumeInfo: { title: 'Treasure Island', authors: ['Robert Louis Stevenson'], industryIdentifiers: [{ type: 'ISBN_13', identifier: '9780306406157' }] } }] },
+      openLibrary: { docs: [{ title: 'Kidnapped', author_name: ['Robert Louis Stevenson'], first_publish_year: 1886, cover_i: 1 }] },
+    });
+    const res = await call<{ candidates: { title: string; existingBookId: string | null }[] }>(bookLookup.lookup, sa, { q: 'stevenson' }, null);
+    expect(res.candidates.map((c) => [c.title, c.existingBookId])).toEqual([['Treasure Island', bookId], ['Kidnapped', null]]);
+    expect(seen.some((u) => u.includes('q=stevenson'))).toBe(true);
+
+    const byIsbn = fakeInternet();
+    await call(bookLookup.lookup, sa, { q: '0-306-40615-2' }, null);
+    expect(byIsbn.find((u) => u.includes('googleapis'))).toContain('isbn%3A9780306406157');
+    expect(byIsbn.find((u) => u.includes('openlibrary'))).toContain('isbn=9780306406157');
+  });
+
+  it('is for catalogue editors only, and says so plainly when the catalogues are unreachable', async () => {
+    fakeInternet({ down: true });
+    expect(await failure(call(bookLookup.lookup, lib, { q: 'stevenson' }, null))).toBe('FORBIDDEN');
+    expect(await failure(call(bookLookup.lookup, sa, { q: 'stevenson' }, null))).toBe('LOOKUP_UNAVAILABLE');
+  });
+
+  it('imports a cover by URL from the public catalogues only', async () => {
+    fakeInternet();
+    await call(covers.setCover, sa, { bookId, imageUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg' });
+    const path = (await db.doc(`books/${bookId}`).get()).get('coverPath');
+    expect(path).toMatch(/\.jpg$/);
+    expect(await failure(call(covers.setCover, sa, { bookId, imageUrl: 'https://example.com/cover.jpg' }))).toBe('INVALID_INPUT');
+    expect(await failure(call(covers.setCover, sa, { bookId, imageUrl: 'http://covers.openlibrary.org/b/id/1-L.jpg' }))).toBe('INVALID_INPUT');
   });
 });
 

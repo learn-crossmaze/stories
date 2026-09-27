@@ -25,6 +25,7 @@ import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, MultiPick, SelectField, TextArea, TextField, useSubmit } from '../Dialog';
 import { BookCover, Tabs } from '../kit';
+import { BookLookup, type Candidate } from '../BookLookup';
 import { lt } from '../libraryStrings';
 import { BookNumbering } from '../NumberingDialogs';
 import { useWorkspace } from '../Workspace';
@@ -37,6 +38,8 @@ export function useCanEditCatalogue() {
 }
 
 const csv = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
+/** Loose name match for reusing existing authors/publishers ("R. L. Stevenson" ≠ "Robert Louis Stevenson", but case and punctuation don't matter). */
+const sameName = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: () => void; onSaved: (id: string) => void }) {
   const refs = useAsync(async () => ({ authors: await listRefs('authors'), publishers: await listRefs('publishers'), categories: await listRefs('categories') }), []);
@@ -60,6 +63,7 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
     price: book ? String(book.replacementPriceMinor / 100) : '0',
   });
   const [touched, setTouched] = useState(false);
+  const [lookupCover, setLookupCover] = useState<{ url: string; source: string } | null>(null);
   const set = <K extends keyof typeof f>(k: K) => (v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
   const errors = {
     title: f.title.trim() ? undefined : t.required,
@@ -77,6 +81,35 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
     else set(field)([...(f[field] as string[]), id]);
   };
 
+  /** Reuses an existing author/publisher with the same name, or adds it to the catalogue. */
+  const refFor = async (kind: 'authors' | 'publishers', name: string) => {
+    const hit = (refs.data?.[kind] ?? []).find((i) => i.status === 'ACTIVE' && sameName(i.name, name));
+    if (hit) return hit.id;
+    return (await command<{ id: string }>(`${kind}-create`, { name })).id;
+  };
+
+  /** Fills the form from a public-catalogue match; staff review everything before saving. */
+  const applyLookup = async (c: Candidate) => {
+    const authorIds: string[] = [];
+    for (const a of c.authors.slice(0, 5)) authorIds.push(await refFor('authors', a));
+    const publisherId = c.publisher ? await refFor('publishers', c.publisher) : '';
+    refs.reload();
+    setF((s) => ({
+      ...s,
+      title: c.title,
+      subtitle: c.subtitle,
+      isbn: c.isbn ?? '',
+      authorIds: authorIds.length ? [...new Set(authorIds)] : s.authorIds,
+      publisherId: publisherId || s.publisherId,
+      language: c.language && c.language in LANGUAGES ? (c.language as Book['language']) : s.language,
+      genres: c.genres.length ? c.genres : s.genres,
+      year: c.year ? String(c.year) : s.year,
+      synopsis: c.synopsis || s.synopsis,
+      keywords: s.keywords || c.subjects.filter((x) => !x.includes(',') && x.length <= 40).slice(0, 5).join(', '),
+    }));
+    setLookupCover(c.coverUrl ? { url: c.coverUrl, source: c.source } : null);
+  };
+
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
     if (invalid) return;
@@ -87,6 +120,10 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
       keywords: csv(f.keywords), contentTags: csv(f.contentTags), replacementPriceMinor: toMinor(f.price),
     };
     const res = book ? await command<{ bookId: string }>('books-update', { bookId: book.id, ...body }) : await command<{ bookId: string }>('books-create', body);
+    if (!book && lookupCover) {
+      // The book is saved either way; a cover that can't be fetched can be added from a photo later.
+      await command('books-setCover', { bookId: res.bookId, imageUrl: lookupCover.url }).catch((e: unknown) => console.warn('cover import failed', e));
+    }
     onSaved(res.bookId);
     onClose();
   });
@@ -95,6 +132,16 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
   return (
     <Dialog title={book ? lt.editBook : lt.newBook} onClose={onClose}>
       <form onSubmit={submit} noValidate className="form-grid">
+        {!book && <BookLookup onPick={applyLookup} />}
+        {lookupCover && (
+          <div className="span-2 lookup-cover-note">
+            <img src={lookupCover.url} alt="" className="lookup-cover" />
+            <span className="small">{lt.lookupCoverNote(lookupCover.source)}</span>
+            <button type="button" className="btn btn-text" onClick={() => setLookupCover(null)}>
+              {lt.lookupCoverSkip}
+            </button>
+          </div>
+        )}
         <div className="span-2">
           <TextField label={lt.title} value={f.title} onChange={set('title')} error={touched ? errors.title : undefined} />
         </div>

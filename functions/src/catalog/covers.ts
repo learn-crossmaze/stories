@@ -31,6 +31,24 @@ function downloadUrl(bucketName: string, path: string, token: string) {
   return `${host}/v0/b/${bucketName}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
 }
 
+/** Public catalogues whose cover images staff may import by URL (no other hosts: no fetching arbitrary addresses). */
+const COVER_HOSTS = new Set(['books.google.com', 'books.googleusercontent.com', 'covers.openlibrary.org']);
+
+async function download(url: string): Promise<Buffer> {
+  if (!COVER_HOSTS.has(new URL(url).hostname)) throw errors.invalid('Covers can only be imported from Google Books or Open Library.');
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  } catch {
+    throw errors.conflict('COVER_UNAVAILABLE', "The cover couldn't be downloaded. Add it from a photo instead.");
+  }
+  if (!res.ok) throw errors.conflict('COVER_UNAVAILABLE', "The cover couldn't be downloaded. Add it from a photo instead.");
+  const bytes = Buffer.from(await res.arrayBuffer());
+  // Tiny images are "no cover" placeholders.
+  if (bytes.length < 2000) throw errors.conflict('COVER_UNAVAILABLE', 'This book has no usable cover image online.');
+  return bytes;
+}
+
 /**
  * Sets (image: base64 JPEG/PNG/WebP) or removes (image: null) a title's cover.
  * Covers live at covers/{bookId}/{requestId}.{ext} (a retried request writes
@@ -38,7 +56,12 @@ function downloadUrl(bucketName: string, path: string, token: string) {
  */
 export const setCover = command(
   'books-setCover',
-  z.strictObject({ bookId: id, image: z.string().max(Math.ceil((MAX_COVER_BYTES * 4) / 3) + 4).nullable() }),
+  z.strictObject({
+    bookId: id,
+    image: z.string().max(Math.ceil((MAX_COVER_BYTES * 4) / 3) + 4).nullable().default(null),
+    /** Instead of `image`: a cover from a book-details search (Google Books / Open Library only). */
+    imageUrl: z.url({ protocol: /^https$/ }).max(500).optional(),
+  }),
   async ({ actor, input, requestId }, tx) => {
     await actor.requireCatalog('books.edit', tx);
     const ref = db.doc(`books/${input.bookId}`);
@@ -47,8 +70,8 @@ export const setCover = command(
     const previousPath = (snap.get('coverPath') as string | undefined) ?? null;
 
     let cover: { coverUrl: string; coverPath: string } | null = null;
-    if (input.image !== null) {
-      const bytes = Buffer.from(input.image, 'base64');
+    const bytes = input.imageUrl ? await download(input.imageUrl) : input.image !== null ? Buffer.from(input.image, 'base64') : null;
+    if (bytes) {
       const kind = TYPES.find((t) => t.matches(bytes));
       if (!kind) throw errors.invalid('The cover must be a JPEG, PNG or WebP image.');
       if (bytes.length > MAX_COVER_BYTES) throw errors.invalid('The cover image is too large (1.5 MB at most).');

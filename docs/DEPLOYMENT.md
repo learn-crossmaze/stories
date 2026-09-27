@@ -34,6 +34,17 @@ project's Cloud Run CPU quota — don't split actions back into separate exporte
 functions that no longer exist in the code, the CLI asks to delete them: answer **yes**. New Firestore indexes build in the background for a few minutes after deploy; until then the affected
 screens show "couldn't load" and recover on their own.
 
+## Optional: Google Books for "Find book details"
+
+Book search works with Open Library alone. To add Google Books (better coverage of Indian editions):
+
+1. Google Cloud console (project `stories-by-crossmaze`) → **APIs & Services → Library** → enable **Books API**.
+2. **Credentials → Create credentials → API key**; restrict it to the **Books API**.
+3. Create `functions/.env.stories-by-crossmaze` (git-ignored) with `GOOGLE_BOOKS_API_KEY=<the key>` and run
+   `npm run deploy:backend`.
+
+Without a key Google Books' shared anonymous quota is usually exhausted, and the search quietly uses Open Library only.
+
 ## One-time console steps after the first backend deploy
 
 1. **TTL for idempotency records:** Firestore → TTL policies → Create → collection group `idempotency`, field
