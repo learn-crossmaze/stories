@@ -345,6 +345,25 @@ describe('M1.6 reservations and transfers', () => {
   });
 });
 
+describe('member audit trail', () => {
+  it("tags every change to a member with the member, one return entry per member", async () => {
+    const a = await register('Asha');
+    const r = await register('Ravi');
+    await subscribe(a);
+    await subscribe(r);
+    const [c1, c2] = await acquire(bookId, 2);
+    await issue(a, [c1]);
+    await issue(r, [c2]);
+    await giveBack([c1, c2]);
+    const trail = async (m: string) =>
+      (await db.collection(`orgs/${org}/auditLogs`).where('memberId', '==', m).orderBy('at', 'asc').get()).docs.map((d) => d.get('action'));
+    expect(await trail(a)).toEqual(['member.register', 'subscription.create', 'payment.recordOffline', 'circulation.issue', 'circulation.return']);
+    expect(await trail(r)).toEqual(['member.register', 'subscription.create', 'payment.recordOffline', 'circulation.issue', 'circulation.return']);
+    const ret = await db.collection(`orgs/${org}/auditLogs`).where('memberId', '==', a).where('action', '==', 'circulation.return').get();
+    expect(ret.docs[0].get('after').copies).toEqual([c1]);
+  });
+});
+
 describe('numbering settings', () => {
   const setNumbering = (branchId: string, patterns: Record<string, string>, by = sa) =>
     call(numbering.setBranchNumbering, by, { orgId: org, branchId, copy: '', member: '', location: '', employee: '', ...patterns });

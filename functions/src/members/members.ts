@@ -123,7 +123,7 @@ export const register = command(
     if (person.phoneRef) tx.create(person.phoneRef, { memberId: ref.id });
     tx.create(ref, { ...member, createdBy: actor.uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'member.register', entityType: 'member', entityId: ref.id, branchId: input.homeBranchId,
+      action: 'member.register', entityType: 'member', entityId: ref.id, branchId: input.homeBranchId, memberId: ref.id,
       after: { code, audience: member.audience, guardian: person.guardian?.memberId ?? null },
     });
     return { memberId: ref.id, code };
@@ -155,7 +155,7 @@ export const update = command(
     };
     tx.update(snap.ref, { ...changes, updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'member.update', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId,
+      action: 'member.update', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { fullName: member.fullName, phone: member.phone, guardian: member.guardian?.memberId ?? null },
       after: { fullName: changes.fullName, phone: changes.phone, guardian: changes.guardian?.memberId ?? null },
     });
@@ -182,7 +182,7 @@ export const setStatus = command(
     tx.update(snap.ref, { status: input.status, updatedAt: FieldValue.serverTimestamp() });
     if (input.status === 'CLOSED' && member.phone) tx.delete(db.doc(`orgs/${input.orgId}/phoneIndex/${member.phone}`));
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'member.setStatus', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId,
+      action: 'member.setStatus', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { status: member.status }, after: { status: input.status }, reason: input.reason,
     });
     return { memberId: input.memberId };

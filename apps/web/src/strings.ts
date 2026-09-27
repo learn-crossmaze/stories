@@ -45,6 +45,7 @@ export const t = {
   errorGeneric: 'Something went wrong on our side. Please try again.',
   errorNetwork: 'You appear to be offline. Check your connection and try again.',
   errorLoad: "We couldn't load this. Check your connection and try again.",
+  errorIndex: 'This list is still being set up on the server (a database index is building). Try again in a few minutes; if it persists, run the backend deploy again.',
   errorForbidden: "You don't have permission to see this.",
   retry: 'Try again',
   cancel: 'Cancel',
@@ -161,6 +162,7 @@ export const t = {
   auditEntity: 'Record',
   auditActor: 'By',
   auditDetails: 'Details',
+  auditSystem: 'System (automatic)',
   loadMore: 'Load more',
 
   setupTitle: 'Set up administration',

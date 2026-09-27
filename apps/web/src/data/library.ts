@@ -315,6 +315,24 @@ export async function memberSubscriptions(orgId: string, memberId: string, scope
   return snap.docs.map((d) => withId<Subscription>(d));
 }
 
+export interface Payment {
+  id: string;
+  subscriptionId: string | null;
+  purpose: string;
+  direction: 'IN' | 'OUT';
+  lines: { type: string; amountMinor: number }[];
+  amountMinor: number;
+  method: string;
+  reference: string | null;
+  status: string;
+  at: unknown;
+}
+
+export async function memberPayments(orgId: string, memberId: string, scope: Scope): Promise<Payment[]> {
+  const snap = await getDocs(query(collection(db(), `orgs/${orgId}/payments`), where('memberId', '==', memberId), ...scoped('branchId', scope), orderBy('at', 'desc'), limit(30)));
+  return snap.docs.map((d) => withId<Payment>(d));
+}
+
 export async function depositAccount(orgId: string, memberId: string) {
   const s = await getDoc(doc(db(), `orgs/${orgId}/depositAccounts/${memberId}`));
   return s.exists() ? (s.data() as { balanceMinor: number; status: 'OPEN' | 'SETTLING' | 'CLOSED' }) : null;

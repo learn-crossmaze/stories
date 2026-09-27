@@ -28,11 +28,12 @@ import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, SkeletonRows, StatusBadge } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../Dialog';
-import { Notice } from '../kit';
+import { Notice, Tabs } from '../kit';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
 import { BookPicker } from './BookPicker';
 import { MemberDialog } from './Members';
+import { LoanHistory, MemberAudit, PaymentHistory, SubscriptionHistory } from './MemberHistory';
 
 const METHODS = [
   { value: 'OFFLINE_CASH', label: 'Cash' },
@@ -213,6 +214,8 @@ export function MemberDetailPage() {
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [lostLoan, setLostLoan] = useState<Loan | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tab, setTab] = useState<'overview' | 'history' | 'audit'>('overview');
+  const [reloadKey, setReloadKey] = useState(0);
 
   if (member.loading) return <SkeletonRows rows={5} />;
   if (member.error) return <ErrorState message={member.error} onRetry={member.reload} />;
@@ -224,6 +227,7 @@ export function MemberDetailPage() {
     loans.reload();
     reservations.reload();
     deposit.reload();
+    setReloadKey((k) => k + 1);
   };
   const perm = (p: Parameters<typeof can>[1]) => can(claims, p, orgId, b);
   const allSubs = subs.data ?? [];
@@ -290,10 +294,26 @@ export function MemberDetailPage() {
       </header>
       {notice && <Notice tone="ok">{notice}</Notice>}
 
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { value: 'overview' as const, label: lt.tabOverview },
+          { value: 'history' as const, label: lt.tabHistory },
+          ...(perm('audit.view') ? [{ value: 'audit' as const, label: lt.tabAudit }] : []),
+        ]}
+      />
+
+      {tab === 'overview' && (
+      <>
       <div className="panels">
         <section className="card">
           <h2>{lt.subscription}</h2>
-          {current ? (
+          {subs.loading ? (
+            <SkeletonRows rows={2} />
+          ) : subs.error ? (
+            <ErrorState message={subs.error} onRetry={subs.reload} />
+          ) : current ? (
             <>
               <p className="lead">
                 <strong>{current.planSnapshot.name}</strong> · {lt.activeUntil(day(current.endAt))}
@@ -326,7 +346,7 @@ export function MemberDetailPage() {
               </div>
             </div>
           )}
-          {!pending && m.status === 'ACTIVE' && perm('subscriptions.manage') && !next && (
+          {!subs.loading && !subs.error && !pending && m.status === 'ACTIVE' && perm('subscriptions.manage') && !next && (
             <button type="button" className="btn btn-outlined" onClick={() => setDialog(current ? 'renew' : 'subscribe')}>
               {current ? lt.renew : lt.subscribe}
             </button>
@@ -389,6 +409,8 @@ export function MemberDetailPage() {
         <h2>{lt.currentBooks}</h2>
         {loans.loading ? (
           <SkeletonRows rows={2} />
+        ) : loans.error ? (
+          <ErrorState message={loans.error} onRetry={loans.reload} />
         ) : !activeLoans.length ? (
           <p className="muted">{lt.noCurrentBooks}</p>
         ) : (
@@ -436,7 +458,11 @@ export function MemberDetailPage() {
             </button>
           )}
         </div>
-        {!openRes.length ? (
+        {reservations.loading ? (
+          <SkeletonRows rows={1} />
+        ) : reservations.error ? (
+          <ErrorState message={reservations.error} onRetry={reservations.reload} />
+        ) : !openRes.length ? (
           <p className="muted">{lt.noReservations}</p>
         ) : (
           <ul className="plain-list">
@@ -452,19 +478,31 @@ export function MemberDetailPage() {
         )}
       </section>
 
-      {pastLoans.length > 0 && (
+      </>
+      )}
+
+      {tab === 'history' && (
+        <>
+          <section className="section">
+            <h2>{lt.subscriptionHistory}</h2>
+            <SubscriptionHistory subs={allSubs} loading={subs.loading} error={subs.error} onRetry={subs.reload} />
+          </section>
+          {perm('payments.view') && (
+            <section className="section">
+              <h2>{lt.paymentHistory}</h2>
+              <PaymentHistory orgId={orgId} memberId={m.id} scope={scope} reloadKey={reloadKey} />
+            </section>
+          )}
+          <section className="section">
+            <h2>{lt.loanHistory}</h2>
+            {loans.error ? <ErrorState message={loans.error} onRetry={loans.reload} /> : <LoanHistory loans={pastLoans} />}
+          </section>
+        </>
+      )}
+
+      {tab === 'audit' && perm('audit.view') && (
         <section className="section">
-          <h2>{lt.loanHistory}</h2>
-          <ul className="plain-list">
-            {pastLoans.slice(0, 20).map((l) => (
-              <li key={l.id}>
-                <span>{l.bookTitle}</span>
-                <span className="muted small">
-                  {day(l.issuedAt)} → {l.status === 'LOST' ? label('LOST') : day(l.returnedAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <MemberAudit orgId={orgId} memberId={m.id} scope={scope} branchName={branchName} reloadKey={reloadKey} />
         </section>
       )}
 

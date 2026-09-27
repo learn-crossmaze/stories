@@ -7,6 +7,8 @@ export interface AuditEntry {
   entityType: string;
   entityId: string;
   branchId?: string | null;
+  /** The member this change concerns, for the member's audit trail. */
+  memberId?: string | null;
   before?: unknown;
   after?: unknown;
   reason?: string | null;
@@ -33,6 +35,7 @@ export function recordAudit(tx: Transaction, ctx: AuditContext, orgId: string | 
     entityType: entry.entityType,
     entityId: entry.entityId,
     branchId: entry.branchId ?? null,
+    memberId: entry.memberId ?? null,
     before: entry.before ?? null,
     after: entry.after ?? null,
     reason: entry.reason ?? null,

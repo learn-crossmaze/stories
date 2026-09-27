@@ -83,7 +83,7 @@ export const create = command(
     tx.create(ref, { ...sub, createdBy: actor.uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     if (term?.rollover) tx.update(memberSnap.ref, term.rollover);
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'subscription.create', entityType: 'subscription', entityId: ref.id, branchId: member.homeBranchId,
+      action: 'subscription.create', entityType: 'subscription', entityId: ref.id, branchId: member.homeBranchId, memberId: input.memberId,
       after: { memberId: input.memberId, planId: input.planId, planVersion: plan.version, kind, amountDue: sub.amountDue },
     });
     return { subscriptionId: ref.id, amountDue: sub.amountDue };
@@ -101,7 +101,7 @@ export const cancelPending = command(
     if (snap.get('status') !== 'PENDING_PAYMENT') throw errors.conflict('NOT_PENDING', 'Only unpaid subscriptions can be cancelled here.');
     tx.update(ref, { status: 'CANCELLED', updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'subscription.cancel', entityType: 'subscription', entityId: input.subscriptionId, branchId: snap.get('branchId'),
+      action: 'subscription.cancel', entityType: 'subscription', entityId: input.subscriptionId, branchId: snap.get('branchId'), memberId: snap.get('memberId'),
       before: { status: 'PENDING_PAYMENT' }, after: { status: 'CANCELLED' }, reason: input.reason,
     });
     return { subscriptionId: input.subscriptionId };
@@ -190,7 +190,7 @@ export const recordOfflinePayment = command(
       });
     }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'payment.recordOffline', entityType: 'subscription', entityId: input.subscriptionId, branchId,
+      action: 'payment.recordOffline', entityType: 'subscription', entityId: input.subscriptionId, branchId, memberId,
       before: { status: 'PENDING_PAYMENT' },
       after: { status: 'ACTIVE', paymentId: payRef.id, amountMinor: due.totalMinor, method: input.method, startAt: start.toISOString(), endAt: end.toISOString() },
     });

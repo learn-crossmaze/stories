@@ -75,6 +75,7 @@ export interface AuditEntry {
   entityType: string;
   entityId: string;
   branchId: string | null;
+  memberId?: string | null;
   before: unknown;
   after: unknown;
   reason: string | null;
@@ -141,4 +142,22 @@ export async function listAudit(
     return { ...data, id: d.id, at: data.at instanceof Timestamp ? data.at.toDate() : null } as AuditEntry;
   });
   return { entries, cursor: snap.docs.length === AUDIT_PAGE_SIZE ? snap.docs[snap.docs.length - 1] : undefined };
+}
+
+/**
+ * A member's audit trail, newest first: entries tagged with the member, plus
+ * older entries recorded against the member itself (before tagging existed).
+ */
+export async function memberAudit(orgId: string, memberId: string, scope: string[] | 'ALL'): Promise<AuditEntry[]> {
+  const col = collection(services().db, `orgs/${orgId}/auditLogs`);
+  const branch: QueryConstraint[] = scope === 'ALL' ? [] : [where('branchId', 'in', scope.slice(0, 10))];
+  const [tagged, direct] = await Promise.all(
+    (['memberId', 'entityId'] as const).map((field) => getDocs(query(col, where(field, '==', memberId), ...branch, orderBy('at', 'desc'), limit(100)))),
+  );
+  const byId = new Map<string, AuditEntry>();
+  for (const d of [...tagged.docs, ...direct.docs]) {
+    const data = d.data();
+    byId.set(d.id, { ...data, id: d.id, at: data.at instanceof Timestamp ? data.at.toDate() : null } as AuditEntry);
+  }
+  return [...byId.values()].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0)).slice(0, 100);
 }

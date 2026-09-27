@@ -60,6 +60,12 @@ circulation counters (`activeLoanCount`, `allocatedCount`, `waitingCount`, lifet
   built; `householdId` is reserved for it.
 - **Mobile numbers are unique** per organization (`orgs/{o}/phoneIndex/{e164}`); adults must have one.
 - **Closing** a membership requires every book returned and the deposit refunded.
+- **Member profile** (console): *Overview* (current subscription, books held, deposit, reservations), *History*
+  (every subscription, payments in and out, returned books) and *Audit trail* (who did what and when, for staff with
+  `audit.view`). Every audit entry about a member carries `memberId` (register, edits, status, subscriptions,
+  payments, issues, returns — one entry per member —, exchanges, lost books, reservations, deposits); entries written
+  before that field existed still show when they were recorded against the member itself. If a section can't load,
+  the page says so (and explains when a database index is still building) instead of showing it empty.
 
 ## Transfers
 

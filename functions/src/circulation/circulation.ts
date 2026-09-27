@@ -136,8 +136,8 @@ export const issue = command(
       updatedAt: FieldValue.serverTimestamp(),
     });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'circulation.issue', entityType: 'member', entityId: input.memberId, branchId: input.branchId,
-      after: { loanIds, copies: plan.copies.map((c) => c.copy.code) },
+      action: 'circulation.issue', entityType: 'member', entityId: input.memberId, branchId: input.branchId, memberId: input.memberId,
+      after: { loanIds, copies: plan.copies.map((c) => c.copy.code), titles: plan.copies.map((c) => c.copy.bookTitle) },
     });
     return { loanIds };
   },
@@ -157,10 +157,14 @@ export const returnCopies = command(
     for (const [memberId, n] of perMember) {
       tx.update(db.doc(`orgs/${input.orgId}/members/${memberId}`), { activeLoanCount: FieldValue.increment(-n), updatedAt: FieldValue.serverTimestamp() });
     }
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'circulation.return', entityType: 'loan', entityId: items[0].loan.id, branchId: input.branchId,
-      after: { loanIds: items.map((i) => i.loan.id), copies: items.map((i) => i.copy.code) },
-    });
+    // One entry per member, so each member's audit trail shows their returns.
+    for (const memberId of perMember.keys()) {
+      const mine = items.filter((i) => i.loan.get('memberId') === memberId);
+      recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+        action: 'circulation.return', entityType: 'loan', entityId: mine[0].loan.id, branchId: input.branchId, memberId,
+        after: { loanIds: mine.map((i) => i.loan.id), copies: mine.map((i) => i.copy.code), titles: mine.map((i) => i.copy.bookTitle) },
+      });
+    }
     return { loanIds: items.map((i) => i.loan.id), members: [...perMember.keys()] };
   },
 );
@@ -199,7 +203,7 @@ export const exchange = command(
       updatedAt: FieldValue.serverTimestamp(),
     });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'circulation.exchange', entityType: 'member', entityId: input.memberId, branchId: input.branchId,
+      action: 'circulation.exchange', entityType: 'member', entityId: input.memberId, branchId: input.branchId, memberId: input.memberId,
       after: { exchangeId: exRef.id, returned: returns.map((r) => r.copy.code), issued: plan.copies.map((c) => c.copy.code) },
     });
     return { exchangeId: exRef.id, loanIds };
@@ -244,7 +248,7 @@ export const declareLost = command(
       });
     }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'loan.declareLost', entityType: 'loan', entityId: loan.id, branchId,
+      action: 'loan.declareLost', entityType: 'loan', entityId: loan.id, branchId, memberId: loan.get('memberId'),
       before: { status: 'ACTIVE' }, after: { status: 'LOST', chargeMinor: charge, proposedDeductionMinor: proposed, adjustmentId }, reason: input.reason,
     });
     return { adjustmentId, chargeMinor: charge, proposedMinor: proposed };

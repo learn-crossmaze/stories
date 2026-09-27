@@ -26,8 +26,10 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): AsyncState
       (data) => live && setState({ data, error: null, loading: false }),
       (e: unknown) => {
         console.error(e);
-        const denied = (e as { code?: string }).code === 'permission-denied';
-        if (live) setState({ error: denied ? t.errorForbidden : t.errorLoad, loading: false });
+        const code = (e as { code?: string }).code;
+        // failed-precondition: a database index is missing or still building (after a deploy).
+        const message = code === 'permission-denied' ? t.errorForbidden : code === 'failed-precondition' ? t.errorIndex : t.errorLoad;
+        if (live) setState({ error: message, loading: false });
       },
     );
     return () => {

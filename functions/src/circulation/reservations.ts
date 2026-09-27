@@ -71,7 +71,7 @@ export const place = command(
       tx.update(memberSnap.ref, { ...(term.rollover ?? {}), waitingCount: FieldValue.increment(1) });
     }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'reservation.place', entityType: 'reservation', entityId: ref.id, branchId: input.branchId,
+      action: 'reservation.place', entityType: 'reservation', entityId: ref.id, branchId: input.branchId, memberId: input.memberId,
       after: { memberId: input.memberId, bookId: input.bookId, status: copy ? 'ALLOCATED' : 'WAITING', copy: copy?.get('code') ?? null },
     });
     return { reservationId: ref.id, status: copy ? 'ALLOCATED' : 'WAITING', copyCode: copy?.get('code') ?? null };
@@ -102,7 +102,7 @@ export const cancel = command(
       tx.update(memberRef, { waitingCount: FieldValue.increment(-1) });
     }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'reservation.cancel', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'),
+      action: 'reservation.cancel', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'), memberId: res.get('memberId'),
       before: { status }, after: { status: 'CANCELLED' }, reason: input.reason,
     });
     return { reservationId: res.id };
@@ -136,7 +136,7 @@ export async function expireHolds(now = new Date(), batch = 300): Promise<number
         makeAvailable(tx, orgId, copy, {}, { type: 'HOLD_EXPIRED', actorUid: 'system', ref: { reservationId: res.id } }, waiting, holdHours);
       }
       recordAudit(tx, { actorUid: 'system' }, orgId, {
-        action: 'reservation.expire', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'),
+        action: 'reservation.expire', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'), memberId: res.get('memberId'),
         before: { status: 'ALLOCATED' }, after: { status: 'EXPIRED', passedTo: waiting?.id ?? null },
       });
       return true;
