@@ -1,7 +1,12 @@
 # Stories — Cloud Functions API conventions
 
-All app operations are **callable functions** in `asia-south1`, named `<group>-<name>` (e.g. `branches-create`).
-Implementation: `functions/src/core/callable.ts`.
+All app operations are **actions** named `<group>-<name>` (e.g. `branches-create`), implemented in
+`functions/src/core/callable.ts`. They are deployed through **six router functions** in `asia-south1` —
+`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation` (`functions/src/index.ts`) — plus two scheduled
+jobs. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
+action prefix). Each Cloud Function is its own Cloud Run service reserving CPU; ~60 separate functions exceeded the
+project's regional CPU quota, eight services stay well inside it. Routing doesn't change behaviour: the router
+passes the request to the action's own handler, so every check below applies unchanged; unknown actions are rejected.
 
 ## Two kinds of callable
 
@@ -55,4 +60,4 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Reservations | `reservations-place/cancel` | `reservations.manage` |
 | Transfers | `transfers-create/dispatch/cancel` (sending branch), `transfers-receive` (destination) | `books.transfer` |
 
-Scheduled: `subscriptions-expireSweep` (hourly), `reservations-expireHolds` (every 15 minutes), both idempotent.
+Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), both idempotent.

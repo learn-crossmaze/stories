@@ -1,5 +1,5 @@
 import { FirebaseError } from 'firebase/app';
-import { httpsCallable } from 'firebase/functions';
+import { type Functions, httpsCallable } from 'firebase/functions';
 
 import { t } from '../strings';
 import { services } from './services';
@@ -32,14 +32,39 @@ export function toApiError(e: unknown): ApiError {
 }
 
 /**
+ * Actions are grouped into a few deployed functions ("routers") to stay within
+ * the project's Cloud Run CPU quota (functions/src/index.ts). The router is
+ * chosen by the action's prefix; the action name itself is unchanged.
+ */
+const ROUTERS: Record<string, string> = {
+  users: 'admin', platform: 'admin', orgs: 'admin', branches: 'admin', departments: 'admin', staff: 'admin',
+  books: 'catalogue', authors: 'catalogue', publishers: 'catalogue', categories: 'catalogue',
+  copies: 'inventory', locations: 'inventory',
+  members: 'members',
+  plans: 'billing', subscriptions: 'billing', payments: 'billing', deposits: 'billing',
+  circulation: 'circulation', reservations: 'circulation', transfers: 'circulation',
+};
+
+export function routerFor(action: string): string {
+  const router = ROUTERS[action.split('-')[0]];
+  if (!router) throw new Error(`No router for action ${action}`);
+  return router;
+}
+
+/** Calls an action through its router (reads and naturally idempotent actions). */
+export async function callAction<R = unknown>(fns: Functions, action: string, data: Record<string, unknown>): Promise<R> {
+  const res = await httpsCallable<Record<string, unknown>, R>(fns, routerFor(action))({ action, ...data });
+  return res.data;
+}
+
+/**
  * Calls a mutating Cloud Function (a "command"). A fresh requestId makes the
  * call safe to retry: the server returns the stored result instead of
  * repeating the change.
  */
 export async function command<R = unknown>(name: string, data: Record<string, unknown>, requestId = crypto.randomUUID()): Promise<R> {
   try {
-    const res = await httpsCallable<Record<string, unknown>, R>(services().fns, name)({ ...data, requestId });
-    return res.data;
+    return await callAction<R>(services().fns, name, { ...data, requestId });
   } catch (e) {
     throw toApiError(e);
   }

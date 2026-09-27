@@ -73,3 +73,14 @@ describe('toApiError', () => {
     expect(toApiError(new FirebaseError('functions/internal', 'stack trace here')).message).toMatch(/Something went wrong/);
   });
 });
+
+describe('routerFor', () => {
+  it('routes every action prefix to its deployed router', async () => {
+    const { routerFor } = await import('../data/api');
+    expect(routerFor('books-create')).toBe('catalogue');
+    expect(routerFor('payments-recordOffline')).toBe('billing');
+    expect(routerFor('circulation-exchange')).toBe('circulation');
+    expect(routerFor('users-ensureProfile')).toBe('admin');
+    expect(() => routerFor('nope-x')).toThrow();
+  });
+});

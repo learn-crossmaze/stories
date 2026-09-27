@@ -1,10 +1,9 @@
-import { httpsCallable } from 'firebase/functions';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { command } from '../../data/api';
+import { callAction, command } from '../../data/api';
 import { type Book, CONDITIONS, type Condition, copiesOfBook, getBook, label, LANGUAGES, listLocations } from '../../data/library';
 import { services } from '../../data/services';
 import { useAsync } from '../../data/useAsync';
@@ -71,7 +70,7 @@ export function BookDetailPage() {
   const canEdit = useCanEditCatalogue();
   const book = useAsync(() => getBook(bookId), [bookId]);
   const availability = useAsync(
-    async () => (org ? ((await httpsCallable<object, Availability>(services().fns, 'copies-availability')({ orgId: org.id, bookId })).data) : { branches: [] }),
+    async () => (org ? await callAction<Availability>(services().fns, 'copies-availability', { orgId: org.id, bookId }) : { branches: [] }),
     [org?.id, bookId],
   );
   const copies = useAsync(() => (org && branch ? copiesOfBook(org.id, branch.id, bookId) : Promise.resolve([])), [org?.id, branch?.id, bookId]);

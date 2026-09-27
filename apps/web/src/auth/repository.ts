@@ -14,7 +14,9 @@ import {
 } from 'firebase/auth';
 
 import { doc, type Firestore, onSnapshot } from 'firebase/firestore';
-import { type Functions, httpsCallable } from 'firebase/functions';
+import type { Functions } from 'firebase/functions';
+
+import { callAction } from '../data/api';
 
 import { parseClaims, type StoriesClaims, NO_CLAIMS } from './claims';
 import { type AppUser, AuthFailure } from './models';
@@ -89,7 +91,7 @@ export function firebaseAuthRepository(auth: Auth, db: Firestore, fns: Functions
         () => cb(null),
       ),
     ensureProfile: async () => {
-      await httpsCallable(fns, 'users-ensureProfile')({});
+      await callAction(fns, 'users-ensureProfile', {});
     },
     resendVerification: async () => {
       if (auth.currentUser) await guard(() => sendEmailVerification(auth.currentUser!));
