@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
+import { branchScope } from '../auth/claims';
 import { type Branch, getOrgs, listAllOrgs, listBranches, type Org } from '../data/org';
 import { useAsync } from '../data/useAsync';
 
@@ -16,16 +17,28 @@ interface Workspace {
   branchesError: string | null;
   reloadBranches: () => void;
   branchName: (id: string) => string;
+  /** Active branches the user works at in this org (all, for org-wide roles). */
+  myBranches: Branch[];
+  /** The branch the user is working at right now (desk, inventory, members). */
+  branch: Branch | null;
+  setBranchId: (id: string) => void;
 }
 
 const WorkspaceContext = createContext<Workspace | null>(null);
 
 const storageKey = (uid: string) => `stories.org.${uid}`;
-const readStored = (uid: string) => {
+const readStored = (key: string) => {
   try {
-    return localStorage.getItem(storageKey(uid));
+    return localStorage.getItem(key);
   } catch {
     return null;
+  }
+};
+const writeStored = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable: selection just isn't remembered */
   }
 };
 
@@ -35,7 +48,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const uid = user?.uid ?? '';
   const orgIds = Object.keys(claims.o).sort().join(',');
   const orgs = useAsync(() => (claims.sa ? listAllOrgs() : getOrgs(orgIds ? orgIds.split(',') : [])), [claims.sa, orgIds]);
-  const [orgId, setOrgIdState] = useState<string | null>(() => readStored(uid));
+  const [orgId, setOrgIdState] = useState<string | null>(() => readStored(storageKey(uid)));
+  const [branchPick, setBranchPick] = useState<string | null>(null);
 
   const list = useMemo(() => orgs.data ?? [], [orgs.data]);
   const org = list.find((o) => o.id === orgId) ?? list[0] ?? null;
@@ -48,14 +62,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const setOrgId = (id: string) => {
     setOrgIdState(id);
-    try {
-      localStorage.setItem(storageKey(uid), id);
-    } catch {
-      /* storage unavailable: selection just isn't remembered */
-    }
+    setBranchPick(null);
+    writeStored(storageKey(uid), id);
   };
 
   const branchList = branches.data ?? [];
+  const scope = org ? branchScope(claims, org.id) : [];
+  const myBranches = branchList.filter((b) => b.status === 'ACTIVE' && (scope === 'ALL' || scope.includes(b.id)));
+  const branchKey = `stories.branch.${uid}.${org?.id ?? ''}`;
+  const pickedId = branchPick ?? readStored(branchKey);
+  const branch = myBranches.find((b) => b.id === pickedId) ?? myBranches[0] ?? null;
+  const setBranchId = (id: string) => {
+    setBranchPick(id);
+    writeStored(branchKey, id);
+  };
   const value: Workspace = {
     orgs: list,
     orgsLoading: orgs.loading,
@@ -68,6 +88,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     branchesError: branches.error,
     reloadBranches: branches.reload,
     branchName: (id) => (id === '*' ? '*' : (branchList.find((b) => b.id === id)?.name ?? id)),
+    myBranches,
+    branch,
+    setBranchId,
   };
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }

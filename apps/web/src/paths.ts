@@ -12,6 +12,18 @@ export const paths = {
   adminDepartments: '/admin/departments',
   adminStaff: '/admin/staff',
   adminAudit: '/admin/audit',
+  adminDesk: '/admin/desk',
+  adminBooks: '/admin/books',
+  adminBook: (id: string) => `/admin/books/${id}`,
+  adminInventory: '/admin/inventory',
+  adminCopy: (id: string) => `/admin/inventory/${id}`,
+  adminLabels: '/admin/labels',
+  adminReservations: '/admin/reservations',
+  adminTransfers: '/admin/transfers',
+  adminMembers: '/admin/members',
+  adminMember: (id: string) => `/admin/members/${id}`,
+  adminPlans: '/admin/plans',
+  adminDeposits: '/admin/deposits',
 } as const;
 
 /** Pure redirect rule, kept separate so it can be unit tested. */

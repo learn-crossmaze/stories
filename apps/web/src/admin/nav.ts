@@ -8,17 +8,26 @@ export interface NavItem {
   to: string;
   label: string;
   icon: IconName;
+  section: string | null;
   /** Permission needed in the current organization; `superAdmin` for platform pages. */
   requires: Permission | 'superAdmin' | null;
 }
 
 export const NAV: NavItem[] = [
-  { to: paths.admin, label: t.navDashboard, icon: 'dashboard', requires: null },
-  { to: paths.adminOrgs, label: t.navOrganizations, icon: 'building', requires: 'superAdmin' },
-  { to: paths.adminBranches, label: t.navBranches, icon: 'store', requires: 'branches.view' },
-  { to: paths.adminDepartments, label: t.navDepartments, icon: 'folder', requires: 'branches.view' },
-  { to: paths.adminStaff, label: t.navStaff, icon: 'people', requires: 'staff.view' },
-  { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
+  { to: paths.admin, label: t.navDashboard, icon: 'dashboard', section: null, requires: null },
+  { to: paths.adminDesk, label: t.navDesk, icon: 'scan', section: t.sectionLibrary, requires: 'loans.issue' },
+  { to: paths.adminBooks, label: t.navCatalogue, icon: 'book', section: t.sectionLibrary, requires: 'books.view' },
+  { to: paths.adminInventory, label: t.navInventory, icon: 'shelves', section: t.sectionLibrary, requires: 'books.view' },
+  { to: paths.adminReservations, label: t.navReservations, icon: 'bookmark', section: t.sectionLibrary, requires: 'reservations.manage' },
+  { to: paths.adminTransfers, label: t.navTransfers, icon: 'truck', section: t.sectionLibrary, requires: 'books.transfer' },
+  { to: paths.adminMembers, label: t.navMembers, icon: 'person', section: t.sectionMembers, requires: 'members.view' },
+  { to: paths.adminPlans, label: t.navPlans, icon: 'card', section: t.sectionMembers, requires: 'plans.manage' },
+  { to: paths.adminDeposits, label: t.navDepositApprovals, icon: 'wallet', section: t.sectionMembers, requires: 'deposits.approve' },
+  { to: paths.adminOrgs, label: t.navOrganizations, icon: 'building', section: t.sectionOrganization, requires: 'superAdmin' },
+  { to: paths.adminBranches, label: t.navBranches, icon: 'store', section: t.sectionOrganization, requires: 'branches.view' },
+  { to: paths.adminDepartments, label: t.navDepartments, icon: 'folder', section: t.sectionOrganization, requires: 'branches.view' },
+  { to: paths.adminStaff, label: t.navStaff, icon: 'people', section: t.sectionOrganization, requires: 'staff.view' },
+  { to: paths.adminAudit, label: t.navAudit, icon: 'history', section: t.sectionOrganization, requires: 'audit.view' },
 ];
 
 export const allowed = (claims: StoriesClaims, orgId: string | null, requires: NavItem['requires']) =>
