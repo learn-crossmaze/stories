@@ -16,7 +16,7 @@ import { CoverEditor } from '../CoverEditor';
 import { Notice } from '../kit';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
-import { BookDialog, useCanEditCatalogue } from './Catalogue';
+import { BookDialog, useCanAddBooks, useCanEditCatalogue } from './Catalogue';
 import { CopyStatusBadge } from './Inventory';
 
 function AcquireDialog({ orgId, branchId, book, onClose, onDone }: { orgId: string; branchId: string; book: Book; onClose: () => void; onDone: (n: number) => void }) {
@@ -69,6 +69,7 @@ export function BookDetailPage() {
   const { claims } = useAuth();
   const { org, branch } = useWorkspace();
   const canEdit = useCanEditCatalogue();
+  const canAdd = useCanAddBooks();
   const book = useAsync(() => getBook(bookId), [bookId]);
   const availability = useAsync(
     async () => (org ? await callAction<Availability>(services().fns, 'copies-availability', { orgId: org.id, bookId }) : { branches: [] }),
@@ -90,7 +91,8 @@ export function BookDetailPage() {
         <Link to={paths.adminBooks}>{lt.catalogueTitle}</Link> / <span className="mono">{b.code}</span>
       </p>
       <section className="book-hero">
-        <CoverEditor book={b} canEdit={canEdit && b.status === 'ACTIVE'} onChanged={book.reload} />
+        {/* Book creators may add a missing cover; changing or removing one is for catalogue editors. */}
+        <CoverEditor book={b} canEdit={(canEdit || (canAdd && !b.coverUrl)) && b.status === 'ACTIVE'} onChanged={book.reload} />
         <div className="book-facts">
           <h1>{b.title}</h1>
           {b.subtitle && <p className="muted">{b.subtitle}</p>}

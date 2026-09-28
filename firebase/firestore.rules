@@ -23,7 +23,7 @@ service cloud.firestore {
         'audit.view': ['HO', 'FIN', 'HR', 'FO', 'BM'],
         'config.manage': ['HO'],
         'books.view': ['HO', 'FIN', 'FO', 'BM', 'LIB', 'DEL'],
-        'books.create': ['HO'],
+        'books.create': ['HO', 'BM'],
         'books.edit': ['HO'],
         'copies.manage': ['HO', 'FO', 'BM', 'LIB'],
         'books.transfer': ['HO', 'FO', 'BM', 'LIB'],

@@ -129,6 +129,28 @@ describe('book covers', () => {
   });
 });
 
+describe('branch managers add titles', () => {
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('may add books, authors and a missing cover, but not edit the catalogue', async () => {
+    const { id: author } = await call<{ id: string }>(catalog.authors.create, bm, { name: 'Ruskin Bond' });
+    const { bookId: added } = await call<{ bookId: string }>(catalog.create, bm, {
+      title: 'The Blue Umbrella', authorIds: [author], language: 'en', genres: ['FICTION'], ageGroup: 'CHILDREN', readingLevel: 'BEGINNER',
+    });
+    expect((await db.doc(`books/${added}`).get()).get('title')).toBe('The Blue Umbrella');
+    await call(covers.setCover, bm, { bookId: added, image: png });
+    expect((await db.doc(`books/${added}`).get()).get('coverUrl')).toBeTruthy();
+
+    // Changing or removing a cover, editing a title and renaming authors stay with head office.
+    expect(await failure(call(covers.setCover, bm, { bookId: added, image: png }))).toBe('FORBIDDEN');
+    expect(await failure(call(covers.setCover, bm, { bookId: added, image: null }))).toBe('FORBIDDEN');
+    expect(await failure(call(catalog.update, bm, { bookId: added, title: 'Changed', authorIds: [author], language: 'en', genres: ['FICTION'], ageGroup: 'CHILDREN', readingLevel: 'BEGINNER' }))).toBe('FORBIDDEN');
+    expect(await failure(call(catalog.authors.rename, bm, { id: author, name: 'R. Bond' }))).toBe('FORBIDDEN');
+    // Librarians still can't add titles.
+    expect(await failure(call(catalog.authors.create, lib, { name: 'Someone Else' }))).toBe('FORBIDDEN');
+  });
+});
+
 describe('book details lookup', () => {
   const realFetch = globalThis.fetch;
   const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(4000, 7)]);

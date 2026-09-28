@@ -39,6 +39,13 @@ export function useCanEditCatalogue() {
   return claims.sa || (!!org && org.type === 'CORPORATE' && can(claims, 'books.edit', org.id));
 }
 
+/** Adding titles: head office and branch managers of the corporate organization (server re-checks). */
+export function useCanAddBooks() {
+  const { claims } = useAuth();
+  const { org } = useWorkspace();
+  return claims.sa || (!!org && org.type === 'CORPORATE' && can(claims, 'books.create', org.id));
+}
+
 const csv = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
 /** Loose name match for reusing existing authors/publishers ("R. L. Stevenson" ≠ "Robert Louis Stevenson", but case and punctuation don't matter). */
 const sameName = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -295,6 +302,7 @@ function StockLine({ stock, here }: { stock: BranchStock[] | undefined; here: st
 
 export function CataloguePage() {
   const canEdit = useCanEditCatalogue();
+  const canAdd = useCanAddBooks();
   const [q, setQ] = useState('');
   const [age, setAge] = useState<AgeGroup | ''>('');
   const debounced = useDebounced(q);
@@ -350,14 +358,18 @@ export function CataloguePage() {
     <>
       <header className="page-header page-header-row">
         <h1>{lt.catalogueTitle}</h1>
-        {canEdit && (
+        {(canEdit || canAdd) && (
           <div className="row">
-            <button type="button" className="btn btn-outlined" onClick={() => setDialog('refs')}>
-              {lt.referenceData}
-            </button>
-            <button type="button" className="btn btn-outlined" onClick={() => setDialog('numbering')}>
-              {lt.numberingBookTitle}
-            </button>
+            {canEdit && (
+              <>
+                <button type="button" className="btn btn-outlined" onClick={() => setDialog('refs')}>
+                  {lt.referenceData}
+                </button>
+                <button type="button" className="btn btn-outlined" onClick={() => setDialog('numbering')}>
+                  {lt.numberingBookTitle}
+                </button>
+              </>
+            )}
             <button type="button" className="btn btn-filled" onClick={() => setDialog('book')}>
               <Icon name="plus" /> {lt.newBook}
             </button>

@@ -4,7 +4,10 @@
 
 One **shared catalogue** for all organizations: top-level `books`, `authors`, `publishers`, `categories`
 (readable by any signed-in user; written only by Cloud Functions). Only a Super Admin or someone holding
-`books.create`/`books.edit` in a **corporate** organization (head office) can change it — franchises cannot.
+`books.create`/`books.edit` in a **corporate** organization can change it — franchises cannot. Head office
+(`books.edit`) edits and archives titles, authors, publishers and categories and sets book numbering; branch managers
+(`books.create`) add new titles (with the book-details search), the authors/publishers they need, and a cover for a
+title that has none.
 
 | Field | Notes |
 |---|---|
