@@ -209,7 +209,11 @@ h2 { font-size: 22px; line-height: 1.25; }
 .dialog { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; background: var(--surface); border-radius: var(--radius-lg); padding: 24px; box-shadow: 0 20px 60px rgb(0 0 0 / .25); }
 .dialog h2 { margin-bottom: 16px; }
 .dialog form { display: flex; flex-direction: column; gap: 14px; }
+.dialog-wide { width: min(800px, 100%); }
 .dialog .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+/* Fields shrink to their column: a long option (e.g. a publisher's full name) must not widen the form. */
+.dialog .form-grid > * { min-width: 0; }
+.dialog select { max-width: 100%; }
 .dialog .span-2 { grid-column: 1 / -1; }
 @media (max-width: 600px) { .dialog .form-grid { grid-template-columns: 1fr; } }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
@@ -393,8 +397,8 @@ h2 { font-size: 22px; line-height: 1.25; }
 
 /* book details lookup */
 .lookup { display: grid; gap: 6px; padding: 12px; border: 1px dashed var(--outline); border-radius: var(--radius-md, 12px); background: var(--surface-dim); }
-.lookup-bar { display: flex; gap: 8px; }
-.lookup-bar input { flex: 1; min-width: 0; }
+.lookup-bar { display: flex; flex-wrap: wrap; gap: 8px; }
+.lookup-bar input { flex: 1 1 180px; min-width: 0; }
 .lookup-results { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; max-height: 360px; overflow-y: auto; }
 .lookup-results li { display: flex; gap: 12px; align-items: center; padding: 8px; background: var(--surface-raised); border-radius: 8px; }
 .lookup-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
