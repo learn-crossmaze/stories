@@ -1,4 +1,5 @@
 import JsBarcode from 'jsbarcode';
+import QRCode from 'qrcode';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -101,13 +102,29 @@ export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { valu
   );
 }
 
-/** Code 128 barcode as inline SVG. */
+/** Code 128 barcode as inline SVG (for handheld scanners). Keeps a quiet zone: scanners need blank space on both sides. */
 export function Barcode({ value, height = 44 }: { value: string; height?: number }) {
   const ref = useRef<SVGSVGElement>(null);
   useEffect(() => {
-    if (ref.current) JsBarcode(ref.current, value, { format: 'CODE128', height, width: 1.6, margin: 0, displayValue: false });
+    if (ref.current) JsBarcode(ref.current, value, { format: 'CODE128', height, width: 1.6, margin: 10, displayValue: false, background: '#ffffff' });
   }, [value, height]);
   return <svg ref={ref} role="img" aria-label={`Barcode ${value}`} />;
+}
+
+/**
+ * QR code for the same value: laptop webcams and phones read it reliably even
+ * when slightly out of focus or at an angle, unlike the thin bars of Code 128.
+ */
+export function QrCode({ value, className }: { value: string; className?: string }) {
+  const [svg, setSvg] = useState('');
+  useEffect(() => {
+    let live = true;
+    void QRCode.toString(value, { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }).then((s) => live && setSvg(s));
+    return () => {
+      live = false;
+    };
+  }, [value]);
+  return <span className={`qr ${className ?? ''}`} role="img" aria-label={`QR code ${value}`} dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
 /** Wraps branch-level pages: requires a branch the user works at. */

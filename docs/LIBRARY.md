@@ -53,12 +53,19 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 - **State machine** — see [CIRCULATION.md](CIRCULATION.md). Retired copies are never deleted and never return.
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
   exact, no counters to drift). Any signed-in user may call it (it reveals only counts).
-- **Labels:** the console prints A4 sheets (3 × 8) with Code 128 barcodes.
+- **Labels:** the console prints A4 sheets (3 × 8); each label carries a QR code and a Code 128 barcode of the copy
+  code (the copy page shows both too). Webcams read the QR code far more reliably than dense bars; reprint older
+  labels to get it.
 - **Scanning:** USB/Bluetooth scanners work in every scan field (they type the code and press Enter). The camera
-  button next to each scan field reads barcodes with the laptop webcam or a phone camera (Code 128 labels, EAN-13 /
-  ISBN, Code 39, UPC, QR) using ZXing, loaded only when the camera is opened. It keeps scanning book after book
-  (the same code isn't read twice within 2 s); the *Find book details* box has a camera button that reads a book's
-  ISBN barcode and searches. The browser asks for camera permission once per site; it needs https (the live site)
+  button next to each scan field reads codes with the laptop webcam or a phone camera (QR, Data Matrix, Code 128,
+  EAN-13 / ISBN, Code 39, UPC). Decoding runs in a Web Worker (`admin/barcode.worker.ts`, logic in
+  `admin/barcode.ts`) on ZXing, with fixes for webcam pictures: 1-D rows are thresholded locally (ZXing's global
+  threshold turns blurred gaps black on a grey desk), QR is tried with both binarizers and at ×2 / ×¾ scale, and
+  frames alternate a quick look inside the framing guide with a thorough one over the whole picture (bands, sharpened,
+  rotated 90° and tilted ±10–18°). RSS/DataBar is off (its readers invent numbers across frames). A code counts after
+  two matching reads within 1.5 s and isn't reported again while it stays in view (2 s). The *Find book details* box
+  has a camera button that reads a book's ISBN barcode and searches. Hold labels 20–30 cm away in good light; Codabar
+  is rarely read by a webcam. The browser asks for camera permission once per site; it needs https (the live site)
   or localhost.
 
 ## Members (M1.3)

@@ -379,7 +379,7 @@ export const lt = {
   camTitle: 'Camera',
   camPreview: 'Camera preview',
   camStarting: 'Starting the camera…',
-  camHint: 'Hold the barcode inside the frame, about a hand-width from the camera.',
+  camHint: 'Hold the label\'s QR code inside the frame, 20–30 cm from the camera so it looks sharp. Labels without a QR code: print new ones from Inventory → Print labels.',
   camScanned: (code: string) => `Scanned ${code}`,
   camChoose: 'Choose camera',
   camDefault: 'Default camera',
