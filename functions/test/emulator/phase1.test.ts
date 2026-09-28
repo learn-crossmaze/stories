@@ -14,6 +14,7 @@ import * as xfer from '../../src/circulation/transfers.js';
 import { db } from '../../src/core/firebase.js';
 import * as copies from '../../src/inventory/copies.js';
 import * as locations from '../../src/inventory/locations.js';
+import * as me from '../../src/me/me.js';
 import * as members from '../../src/members/members.js';
 import * as orgs from '../../src/orgs/orgs.js';
 import * as staff from '../../src/staff/roles.js';
@@ -369,6 +370,48 @@ describe('M1.4 subscriptions, payments, deposits', () => {
     expect(await failure(issue(m, [c2]))).toBe('NO_ACTIVE_SUBSCRIPTION');
     expect(await failure(call(circ.exchange, lib, { orgId: org, branchId: central, memberId: m, returnBarcodes: [c1], issueBarcodes: [c2] }))).toBe('NO_ACTIVE_SUBSCRIPTION');
     await giveBack([c1]); // returns always allowed
+  });
+});
+
+describe('member self-service', () => {
+  type Overview = { linked: number; memberships: { memberId: string; self: boolean; member: { fullName: string }; plans: { id: string }[]; subscriptions: { id: string; status: string }[]; reservations: { id: string; status: string }[] }[] };
+
+  it('links by verified email, shows own and wards\' records only, and lets members subscribe and reserve', async () => {
+    const parent = await register('Meera Rao', { email: 'Meera@Stories.test' });
+    const kid = await register('Kiran Rao', { dob: '2016-01-01', phone: '', guardianMemberId: parent, guardianRelationship: 'Mother' });
+    await register('Someone Else', { email: 'other@stories.test' });
+
+    // An unverified sign-in with the same email links nothing.
+    const unverified = await createUser('meera@stories.test', { verified: false });
+    expect((await call<Overview>(me.overview, unverified, {}, null)).memberships).toEqual([]);
+
+    const meera = { ...unverified, verified: true };
+    const o = await call<Overview>(me.overview, meera, {}, null);
+    expect(o.linked).toBe(1);
+    expect(o.memberships.map((m) => [m.member.fullName, m.self])).toEqual([['Meera Rao', true], ['Kiran Rao', false]]);
+    expect((await get(`members/${parent}`)).accountHolderUid).toBe(meera.uid);
+
+    // Buy a plan: an unpaid subscription, which the member can also drop.
+    const { subscriptionId } = await call<{ subscriptionId: string }>(me.subscribe, meera, { orgId: org, memberId: parent, planId });
+    await call(me.cancelPending, meera, { orgId: org, subscriptionId });
+    expect((await get(`subscriptions/${subscriptionId}`)).status).toBe('CANCELLED');
+    // Online payment needs the branch's gateway.
+    const again = await call<{ subscriptionId: string }>(me.subscribe, meera, { orgId: org, memberId: parent, planId });
+    expect(await failure(call(me.pay, meera, { orgId: org, subscriptionId: again.subscriptionId, requestId: randomUUID() }, null))).toBe('GATEWAY_NOT_CONFIGURED');
+    await call(subs.recordOfflinePayment, lib, { orgId: org, subscriptionId: again.subscriptionId, method: 'OFFLINE_CASH', amountMinor: 130000 });
+
+    // Reserve for themselves (on the shelf → held) and cancel.
+    await acquire(bookId, 1);
+    const r = await call<{ reservationId: string; status: string }>(me.reserve, meera, { orgId: org, memberId: parent, bookId, branchId: central });
+    expect(r.status).toBe('ALLOCATED');
+    await call(me.cancelReservationByMember, meera, { orgId: org, reservationId: r.reservationId });
+    expect((await get(`reservations/${r.reservationId}`)).status).toBe('CANCELLED');
+
+    // Nobody else can act on these records.
+    const stranger = await createUser('stranger@stories.test');
+    expect(await failure(call(me.subscribe, stranger, { orgId: org, memberId: parent, planId }))).toBe('FORBIDDEN');
+    expect(await failure(call(me.reserve, stranger, { orgId: org, memberId: kid, bookId, branchId: central }))).toBe('FORBIDDEN');
+    expect((await call<Overview>(me.overview, stranger, {}, null)).memberships).toEqual([]);
   });
 });
 

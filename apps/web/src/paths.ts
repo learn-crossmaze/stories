@@ -4,7 +4,7 @@ export const paths = {
   home: '/',
   explore: '/explore',
   myBooks: '/my-books',
-  orders: '/orders',
+  membership: '/membership',
   profile: '/profile',
   admin: '/admin',
   adminOrgs: '/admin/organizations',

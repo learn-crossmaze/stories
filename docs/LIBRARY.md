@@ -109,3 +109,24 @@ after expiry), written when a payment activates a subscription. Branches created
 ## Transfers
 
 See [CIRCULATION.md §Transfers](CIRCULATION.md#transfers).
+
+## Member app (self-service)
+
+Members sign in with the email the branch recorded on their membership (verified: Google sign-in, or the
+verification link for email/password accounts). On the first visit `me-overview` links every unclaimed member record
+with that email to the account (`members.accountHolderUid`, audited; matched case-insensitively via `emailLower`).
+A guardian's account also sees the children whose `guardian.memberId` is theirs, with a switcher between them.
+
+- **Home**: plan, renewal date, books with them (of the plan limit), deposit; prompts for an unpaid plan, a held
+  reservation ready to collect, or a plan ending within 15 days.
+- **Explore**: the catalogue (their age group for children), availability per branch of their library, Reserve /
+  Join the queue (`me-reserve`, same rules as the desk: active plan, plan limit, one per title).
+- **My Books**: borrowed now, reservations (cancel with `me-cancelReservation`), returned books and past reservations.
+- **Membership**: current plan; choose a plan or renew (`me-subscribe`, same rules as the counter incl. the renewal
+  window); an unpaid plan shows the amount (fee + deposit top-up) with **Pay online** (Razorpay payment page via
+  `me-pay` when the branch has online payments on; activated by the webhook, or `me-checkPayment` on return) or
+  "pay at the branch", and can be cancelled (`me-cancelPending`); payments, subscription history, deposit ledger.
+- **Profile**: membership details and branch contact; changes go through the branch.
+
+All `me-*` actions run on the `members` router and check ownership (account holder, or the guardian's account
+holder) instead of staff permissions; members never read other members' data.

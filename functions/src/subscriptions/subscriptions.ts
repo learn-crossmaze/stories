@@ -2,12 +2,13 @@ import { FieldValue, Timestamp, type Transaction } from 'firebase-admin/firestor
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
-import { command } from '../core/callable.js';
+import { type CallContext, command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
 import { addMonths } from '../core/time.js';
 import { loadMember } from '../members/members.js';
+import type { Member } from '../members/model.js';
 import { balanceOf, depositRef, postLedger } from './ledger.js';
 import { DURATIONS, effectivePrice, type Plan } from './plans.js';
 import { currentTerm } from './term.js';
@@ -17,12 +18,19 @@ import { currentTerm } from './term.js';
  * the plan terms and the amounts due; the deposit due is only the top-up the
  * current deposit balance doesn't already cover.
  */
-export const create = command(
-  'subscriptions-create',
-  z.strictObject({ orgId: id, memberId: id, planId: id }),
-  async ({ actor, input, requestId }, tx) => {
+export const createSchema = z.strictObject({ orgId: id, memberId: id, planId: id });
+
+/**
+ * Shared by staff (subscriptions-create) and members buying their own plan
+ * (me-subscribe): `authorize` decides who may act for the member.
+ */
+export async function startSubscription(
+  { actor, input, requestId }: CallContext<z.infer<typeof createSchema>>,
+  tx: Transaction,
+  authorize: (member: Member) => Promise<void>,
+) {
     const { snap: memberSnap, member } = await loadMember(tx, input.orgId, input.memberId);
-    await actor.require('subscriptions.manage', input.orgId, member.homeBranchId, tx);
+    await authorize(member);
     if (member.status !== 'ACTIVE') throw errors.conflict('MEMBER_INACTIVE', 'Reactivate the membership first.');
     const planSnap = await tx.get(db.doc(`orgs/${input.orgId}/plans/${input.planId}`));
     if (!planSnap.exists || planSnap.get('status') !== 'ACTIVE') throw errors.notFound('Active plan');
@@ -87,17 +95,24 @@ export const create = command(
       after: { memberId: input.memberId, planId: input.planId, planVersion: plan.version, kind, amountDue: sub.amountDue },
     });
     return { subscriptionId: ref.id, amountDue: sub.amountDue };
-  },
+}
+
+export const create = command('subscriptions-create', createSchema, (ctx, tx) =>
+  startSubscription(ctx, tx, (member) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, member.homeBranchId, tx)),
 );
 
-export const cancelPending = command(
-  'subscriptions-cancelPending',
-  z.strictObject({ orgId: id, subscriptionId: id, reason }),
-  async ({ actor, input, requestId }, tx) => {
+export const cancelSchema = z.strictObject({ orgId: id, subscriptionId: id, reason });
+
+/** Cancels an unpaid subscription (staff, or the member it belongs to via me-cancelPending). */
+export async function cancelPendingSubscription(
+  { actor, input, requestId }: CallContext<z.infer<typeof cancelSchema>>,
+  tx: Transaction,
+  authorize: (subscription: FirebaseFirestore.DocumentSnapshot) => Promise<void>,
+) {
     const ref = db.doc(`orgs/${input.orgId}/subscriptions/${input.subscriptionId}`);
     const snap = await tx.get(ref);
     if (!snap.exists) throw errors.notFound('Subscription');
-    await actor.require('subscriptions.manage', input.orgId, snap.get('branchId'), tx);
+    await authorize(snap);
     if (snap.get('status') !== 'PENDING_PAYMENT') throw errors.conflict('NOT_PENDING', 'Only unpaid subscriptions can be cancelled here.');
     tx.update(ref, { status: 'CANCELLED', updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
@@ -105,7 +120,10 @@ export const cancelPending = command(
       before: { status: 'PENDING_PAYMENT' }, after: { status: 'CANCELLED' }, reason: input.reason,
     });
     return { subscriptionId: input.subscriptionId };
-  },
+}
+
+export const cancelPending = command('subscriptions-cancelPending', cancelSchema, (ctx, tx) =>
+  cancelPendingSubscription(ctx, tx, (sub) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, sub.get('branchId'), tx)),
 );
 
 const METHODS = ['OFFLINE_CASH', 'OFFLINE_UPI', 'OFFLINE_CARD', 'OFFLINE_BANK_TRANSFER'] as const;

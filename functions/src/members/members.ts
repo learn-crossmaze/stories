@@ -102,6 +102,8 @@ export const register = command(
       isMinor: person.minor,
       phone: person.phone,
       email: input.email || null,
+      // Lower-case copy: members sign in to the app with this email (me-overview links by it).
+      emailLower: input.email ? input.email.toLowerCase() : null,
       address: input.address,
       homeBranchId: input.homeBranchId,
       branchId: input.homeBranchId,
@@ -151,6 +153,8 @@ export const update = command(
       isMinor: person.minor,
       phone: person.phone,
       email: input.email || null,
+      // Lower-case copy: members sign in to the app with this email (me-overview links by it).
+      emailLower: input.email ? input.email.toLowerCase() : null,
       address: input.address,
       guardian: person.guardian,
       searchTokens: memberTokens(input.fullName, member.code, person.phone),

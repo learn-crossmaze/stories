@@ -3,12 +3,13 @@ import { NavLink, Outlet } from 'react-router';
 import { paths } from '../paths';
 import { t } from '../strings';
 import { Icon, type IconName } from '../ui';
+import { MemberDataProvider } from './memberData';
 
 const destinations: [string, IconName, string][] = [
   [paths.home, 'home', t.navHome],
   [paths.explore, 'explore', t.navExplore],
   [paths.myBooks, 'book', t.navMyBooks],
-  [paths.orders, 'truck', t.navOrders],
+  [paths.membership, 'card', t.navMembership],
   [paths.profile, 'person', t.navProfile],
 ];
 
@@ -28,7 +29,9 @@ export function MemberShell() {
         ))}
       </nav>
       <main className="shell-main">
-        <Outlet />
+        <MemberDataProvider>
+          <Outlet />
+        </MemberDataProvider>
       </main>
     </div>
   );
