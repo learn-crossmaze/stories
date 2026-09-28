@@ -32,8 +32,8 @@ describe('navigation', () => {
   const labels = (c: StoriesClaims) => visibleNav(c, 'corp').map((i) => i.label);
 
   it('shows each role only what it may use', () => {
-    expect(labels(claims({}, true))).toHaveLength(15);
-    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Branches', 'Departments', 'Staff & roles', 'Audit log', 'Appearance']);
+    expect(labels(claims({}, true))).toHaveLength(17);
+    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Employees', 'Staff & roles', 'HR settings', 'Branches', 'Departments', 'Audit log', 'Appearance']);
     expect(labels(claims({ corp: { r: ['LIB'], b: ['cen'] } }))).toEqual([
       'Dashboard', 'Circulation desk', 'Catalogue', 'Inventory', 'Reservations', 'Transfers', 'Members', 'Branches', 'Departments', 'Appearance',
     ]);
@@ -42,6 +42,8 @@ describe('navigation', () => {
     ]);
     expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Branches', 'Departments', 'Appearance']);
     expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard', 'Appearance']);
+    expect(labels(claims({ corp: { r: ['BM'], b: ['cen'] } }))).toContain('Employees');
+    expect(labels(claims({ corp: { r: ['BM'], b: ['cen'] } }))).not.toContain('HR settings');
     expect(labels(claims({ corp: { r: ['CM'], b: ['*'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Appearance']);
   });
 });
@@ -92,6 +94,9 @@ describe('routerFor', () => {
     expect(routerFor('payments-recordOffline')).toBe('billing');
     expect(routerFor('circulation-exchange')).toBe('circulation');
     expect(routerFor('users-ensureProfile')).toBe('admin');
+    expect(routerFor('employees-transition')).toBe('hr');
+    expect(routerFor('designations-create')).toBe('hr');
+    expect(routerFor('hr-setChecklists')).toBe('hr');
     expect(() => routerFor('nope-x')).toThrow();
   });
 });

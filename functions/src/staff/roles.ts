@@ -17,9 +17,10 @@ import {
   type OrgType,
   rolesGrant,
 } from '../core/rbac.js';
-import { branchPatterns, reserveCodes } from '../core/numbering.js';
 import { id, reason } from '../core/schemas.js';
 import { ROLES, type Role } from '../generated/rbac.js';
+import { assignEmployeeCode } from '../hr/codes.js';
+import { employeeCodeRef, employeesCol, findEmployeeFor, newEmployee } from '../hr/model.js';
 
 const orgRole = z.enum(Object.keys(ROLES) as [Role, ...Role[]]).refine((r) => !isPlatformRole(r), 'is not an organization role');
 const branchScope = z.array(z.union([z.literal(ALL_BRANCHES), id])).min(1).max(20);
@@ -86,51 +87,6 @@ async function loadTarget(email: string) {
   }
 }
 
-const employeeIdRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employeeIds/${employeeId}`);
-
-/**
- * Employee IDs are unique in the organization (orgs/{o}/employeeIds/{id}) and
- * kept when roles change or are revoked. Reads only; call `commit()` to write.
- */
-async function assignEmployeeId(
-  tx: Transaction,
-  orgId: string,
-  uid: string,
-  current: string | null,
-  requested: string,
-  branch: FirebaseFirestore.DocumentSnapshot | null,
-) {
-  if (requested && requested !== current) {
-    const taken = await tx.get(employeeIdRef(orgId, requested));
-    if (taken.exists && taken.get('uid') !== uid) {
-      throw errors.conflict('EMPLOYEE_ID_TAKEN', `Employee ID ${requested} already belongs to someone else in this organization.`);
-    }
-    return {
-      employeeId: requested,
-      commit() {
-        if (current) tx.delete(employeeIdRef(orgId, current));
-        tx.set(employeeIdRef(orgId, requested), { uid });
-      },
-    };
-  }
-  if (current) return { employeeId: current, commit() {} };
-  const next = await reserveCodes(tx, {
-    kind: 'employee',
-    pattern: branchPatterns(branch).employee,
-    values: { BRANCH: branch?.get('code') },
-    base: `orgs/${orgId}/counters`,
-    taken: async (codes) => (await Promise.all(codes.map((c) => tx.get(employeeIdRef(orgId, c))))).filter((d) => d.exists).map((d) => d.id),
-  });
-  const [employeeId] = next.codes;
-  return {
-    employeeId,
-    commit() {
-      next.commit();
-      tx.create(employeeIdRef(orgId, employeeId), { uid });
-    },
-  };
-}
-
 /**
  * Sets a staff member's roles and branch scope in an organization (replaces
  * any previous roles there). The person must already have a Stories account.
@@ -165,7 +121,16 @@ export const setRoles = command(
     if (!profile.exists) {
       throw errors.conflict('NO_PROFILE', 'This person needs to sign in to Stories once before roles can be granted.');
     }
-    const staffId = await assignEmployeeId(tx, input.orgId, target.uid, existing?.employeeId ?? null, input.employeeId, branches[0] ?? null);
+    // Every staff member has one employee record (People); link or create it, never duplicate it.
+    const email = target.email ?? input.email;
+    const linked = await findEmployeeFor(tx, input.orgId, target.uid, email);
+    if (linked?.get('status') === 'OFFBOARDED') {
+      throw errors.conflict('EMPLOYEE_OFFBOARDED', 'This person has been offboarded. Rehire them in People before granting roles.');
+    }
+    const employeeDoc = linked?.ref ?? employeesCol(input.orgId).doc();
+    const current = (linked?.get('code') as string | undefined) ?? existing?.employeeId ?? null;
+    const stale = existing?.employeeId && existing.employeeId !== current ? await tx.get(employeeCodeRef(input.orgId, existing.employeeId)) : null;
+    const staffId = await assignEmployeeCode(tx, input.orgId, { uid: target.uid, employeeDocId: employeeDoc.id }, current, input.employeeId, branches[0] ?? null);
 
     const membership: Membership = {
       orgId: input.orgId,
@@ -179,6 +144,20 @@ export const setRoles = command(
       status: 'ACTIVE',
     };
     staffId.commit();
+    // A roles-only ID the person had before their HR record was linked is released.
+    if (stale?.exists && stale.id !== staffId.employeeId && stale.get('uid') === target.uid && (stale.get('employeeDocId') ?? employeeDoc.id) === employeeDoc.id) {
+      tx.delete(stale.ref);
+    }
+    if (linked) {
+      tx.update(employeeDoc, { uid: target.uid, email, emailLower: email.toLowerCase(), code: staffId.employeeId, updatedAt: FieldValue.serverTimestamp() });
+    } else {
+      const firstBranch = input.branchIds.includes(ALL_BRANCHES) ? null : input.branchIds[0];
+      tx.create(employeeDoc, {
+        ...newEmployee({ orgId: input.orgId, code: staffId.employeeId, fullName: target.displayName || email, status: 'ACTIVE', source: 'ROLES', uid: target.uid, email, branchId: firstBranch }),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
     tx.set(ref, { ...membership, employeeId: staffId.employeeId, grantedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'staff.setRoles',
@@ -186,7 +165,7 @@ export const setRoles = command(
       entityId: target.uid,
       branchId: input.branchIds.length === 1 && input.branchIds[0] !== ALL_BRANCHES ? input.branchIds[0] : null,
       before: existing ? { roles: existing.roles, branchIds: existing.branchIds, status: existing.status } : null,
-      after: { roles: input.roles, branchIds: input.branchIds, status: 'ACTIVE', employeeId: staffId.employeeId },
+      after: { roles: input.roles, branchIds: input.branchIds, status: 'ACTIVE', employeeId: staffId.employeeId, employeeDocId: employeeDoc.id },
     });
     return { uid: target.uid };
   },

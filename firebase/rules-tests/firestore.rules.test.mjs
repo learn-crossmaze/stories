@@ -75,6 +75,15 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/paymentRequests/plink_2`, { branchId: 'nth', status: 'OPEN' });
     await put(`orgs/${CORP}/employeeIds/EMP-0001`, { uid: 'alice' });
     await put(`orgs/${CORP}/counters/members`, { next: 2 });
+    // HRMS
+    await put(`orgs/${CORP}/employees/e-cen`, { code: 'EMP-0001', uid: 'alice', fullName: 'Alice', branchId: 'cen', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/employees/e-nth`, { code: 'EMP-0002', uid: 'bob', fullName: 'Bob', branchId: 'nth', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/employees/e-ho`, { code: 'EMP-0003', uid: null, fullName: 'Hari', branchId: null, status: 'ACTIVE' });
+    await put(`orgs/${CORP}/employees/e-cen/history/h1`, { type: 'CREATED' });
+    await put(`orgs/${CORP}/employees/e-cen/private/profile`, { pan: 'ABCDE1234F', bank: { last4: '7890' } });
+    await put(`orgs/${CORP}/employees/e-cen/private/bank`, { accountNumber: '001234567890' });
+    await put(`orgs/${CORP}/employees/e-nth/private/profile`, { pan: 'ZZZZZ9999Z' });
+    await put(`orgs/${CORP}/designations/d1`, { name: 'Librarian', status: 'ACTIVE' });
   });
 });
 
@@ -266,6 +275,49 @@ describe('library (Phase 1)', () => {
     await assertFails(setDoc(doc(ho, `orgs/${CORP}/copies/c-cen`), { status: 'RETIRED' }));
     await assertFails(setDoc(doc(ho, `orgs/${CORP}/depositAccounts/m-cen`), { balanceMinor: 0 }));
     await assertFails(setDoc(doc(lib(), `orgs/${CORP}/loans/l-new`), { status: 'ACTIVE' }));
+  });
+});
+
+describe('HRMS employee records', () => {
+  const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
+
+  it('HR sees every record, including head-office staff without a branch', async () => {
+    await assertSucceeds(getDocs(collection(hrAdmin(), `orgs/${CORP}/employees`)));
+    await assertSucceeds(getDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-ho`)));
+    await assertSucceeds(getDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-nth/private/profile`)));
+  });
+
+  it('a branch manager sees their branch only, and no personal details', async () => {
+    await assertSucceeds(getDocs(query(collection(bmCen(), `orgs/${CORP}/employees`), where('branchId', 'in', ['cen']))));
+    await assertFails(getDocs(collection(bmCen(), `orgs/${CORP}/employees`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/employees/e-nth`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/employees/e-ho`)));
+    await assertSucceeds(getDoc(doc(bmCen(), `orgs/${CORP}/employees/e-cen/history/h1`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/employees/e-cen/private/profile`)));
+  });
+
+  it('an employee reads their own record and personal details, nobody else\'s', async () => {
+    await assertSucceeds(getDocs(query(collection(alice(), `orgs/${CORP}/employees`), where('uid', '==', 'alice'))));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/profile`)));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/history/h1`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/employees/e-nth`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/employees/e-nth/private/profile`)));
+  });
+
+  it('the full bank account number is unreadable from any client; nobody writes HR data', async () => {
+    await assertFails(getDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen/private/bank`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/bank`)));
+    await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/employees/e-cen/private/bank`)));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen`), { status: 'OFFBOARDED' }));
+    await assertFails(setDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/profile`), { pan: 'X' }));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/designations/d2`), { name: 'X' }));
+  });
+
+  it('designations are readable in the org only', async () => {
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/designations/d1`)));
+    await assertFails(getDoc(doc(as('fred', claims({ [FRAN]: { r: ['FO'], b: ['*'] } })), `orgs/${CORP}/designations/d1`)));
   });
 });
 

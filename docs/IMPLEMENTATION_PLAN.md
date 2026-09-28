@@ -138,6 +138,8 @@ upfront charge + payment · M3.3 Dispatcher board & assignment · M3.4 Delivery-
 photo proof, failed-delivery flow; handover performs issue/return via circulation functions.
 
 ## PHASE 4 — HRMS (outline)
+
+> Superseded by the phased HRMS plan in docs/HRMS.md (Phase 1 Foundation done).
 M4.1 Employee master, private profile, effective-dated assignments, lifecycle · M4.2 Documents with verification ·
 M4.3 Shifts, holidays, weekly offs · M4.4 QR (rotating signed token) / GPS / assisted attendance, status computation,
 missing-checkout job · M4.5 Corrections workflow + payroll lock · M4.6 Leave policies, balances, requests, approvals ·

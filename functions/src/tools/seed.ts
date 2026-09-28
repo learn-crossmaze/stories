@@ -101,6 +101,7 @@ for (const [email, name, orgId, roles, branchIds, platformRoles] of personas) {
 console.log(`\nSeeded 2 organizations, 2 branches, 3 departments, ${personas.length} users. Password for all: ${PASSWORD}`);
 
 await seedLibrary();
+await seedHr();
 process.exit(0);
 
 // ---------------------------------------------------------------------------
@@ -249,4 +250,64 @@ async function seedLibrary() {
 
   await db.doc('seed/phase1').set({ at: FieldValue.serverTimestamp() });
   console.log(`Seeded ${books.length} books, ${books.length * 2 + 12} copies, 6 plans, 6 members with subscriptions, loans and a reservation.`);
+}
+
+// ---------------------------------------------------------------------------
+// HRMS demo data (docs/HRMS.md): employee records for the seeded staff (the
+// same backfill real organizations run once), designations, and one hire in
+// onboarding. Runs once: guarded by seed/hr.
+
+async function seedHr() {
+  if ((await db.doc('seed/hr').get()).exists) {
+    console.log('HR demo data already present (seed/hr).');
+    return;
+  }
+  const { randomUUID } = await import('node:crypto');
+  const emp = await import('../hr/employees.js');
+  const settings = await import('../hr/settings.js');
+  const saUid = (await auth.getUserByEmail('super@stories.test')).uid;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Callable = { run: (req: any) => unknown };
+  const call = async <R>(fn: Callable, data: Record<string, unknown>): Promise<R> =>
+    (await fn.run({
+      data: { ...data, requestId: randomUUID() },
+      auth: { uid: saUid, token: { email: 'super@stories.test', email_verified: true } },
+      rawRequest: {},
+      acceptsStreaming: false,
+    })) as R;
+
+  const { created } = await call<{ created: number }>(emp.backfill, { orgId: CORP });
+  const titles: Record<string, string> = {};
+  for (const name of ['Head of Operations', 'Finance Manager', 'HR Manager', 'Catalogue Manager', 'Branch Manager', 'Librarian', 'Delivery Executive', 'Library Assistant']) {
+    titles[name] = (await call<{ designationId: string }>(settings.createDesignation, { orgId: CORP, name })).designationId;
+  }
+  const byEmail = async (email: string) => (await db.collection(`orgs/${CORP}/employees`).where('emailLower', '==', email).limit(1).get()).docs[0];
+  const place: [string, string, string | null, string][] = [
+    ['ho@stories.test', 'Head of Operations', null, 'seed-dept-admin'],
+    ['finance@stories.test', 'Finance Manager', null, 'seed-dept-admin'],
+    ['hr@stories.test', 'HR Manager', null, 'seed-dept-admin'],
+    ['catalogue@stories.test', 'Catalogue Manager', null, 'seed-dept-admin'],
+    ['manager@stories.test', 'Branch Manager', CENTRAL, 'seed-dept-circulation'],
+    ['librarian@stories.test', 'Librarian', CENTRAL, 'seed-dept-circulation'],
+    ['delivery@stories.test', 'Delivery Executive', CENTRAL, 'seed-dept-delivery'],
+    ['employee@stories.test', 'Library Assistant', CENTRAL, 'seed-dept-circulation'],
+  ];
+  const managerId = (await byEmail('manager@stories.test'))?.id ?? null;
+  for (const [email, title, branchId, departmentId] of place) {
+    const rec = await byEmail(email);
+    if (!rec) continue;
+    await call(emp.update, {
+      orgId: CORP, employeeId: rec.id, fullName: rec.get('fullName'), phone: '', branchId, departmentId, designationId: titles[title],
+      managerId: branchId && rec.id !== managerId ? managerId : null, employmentType: 'FULL_TIME', joiningDate: '2025-04-01', effectiveDate: '2025-04-01',
+    });
+  }
+  const { employeeId } = await call<{ employeeId: string }>(emp.create, {
+    orgId: CORP, fullName: 'Nikhil Joshi', email: 'nikhil@stories.test', phone: '9876500010', branchId: CENTRAL, departmentId: 'seed-dept-circulation',
+    designationId: titles['Library Assistant'], managerId, employmentType: 'FULL_TIME', joiningDate: '2026-10-15',
+  });
+  await call(emp.transition, { orgId: CORP, employeeId, transition: 'START_ONBOARDING' });
+  await call(emp.checkItem, { orgId: CORP, employeeId, list: 'onboarding', key: 'offer-letter', done: true });
+
+  await db.doc('seed/hr').set({ at: FieldValue.serverTimestamp() });
+  console.log(`Seeded ${created} employee records, ${Object.keys(titles).length} designations and one hire in onboarding.`);
 }

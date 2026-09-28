@@ -68,4 +68,16 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Reservations | `reservations-place/cancel` | `reservations.manage` |
 | Transfers | `transfers-create/dispatch/cancel` (sending branch), `transfers-receive` (destination) | `books.transfer` |
 
+## HRMS callables (`hr` router, docs/HRMS.md)
+
+| Group | Callables | Permission |
+|---|---|---|
+| Employees | `employees-create` (DRAFT record; links a Stories account with the same email), `employees-update` (job changes recorded with `effectiveDate`), `employees-linkAccount`, `employees-backfill` (records for staff who only had roles; safe to repeat) | `employees.edit` at the employee's branch (org-wide for head-office records and backfill) |
+| | `employees-transition` (`START_ONBOARDING, ACTIVATE, RESIGN, WITHDRAW_RESIGNATION, START_OFFBOARDING, COMPLETE_OFFBOARDING, REHIRE`), `employees-checkItem` | `employees.lifecycle` (never on yourself) |
+| | `employees-setPrivate` | `employees.privateData` |
+| | `employees-setBank`, `employees-revealBank` (audited) | `employees.bank` |
+| Settings | `designations-create/rename/archive`, `hr-setChecklists` | `hr.config` |
+
+`staff-setRoles` (admin router) links or creates the person's employee record, so nobody has two.
+
 Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), both idempotent.
