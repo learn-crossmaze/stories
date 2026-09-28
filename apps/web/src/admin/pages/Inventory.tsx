@@ -12,7 +12,7 @@ import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../Dialog';
-import { Barcode, NeedBranch, Notice, QrCode, ScanInput } from '../kit';
+import { NeedBranch, Notice, QrTag, ScanInput } from '../kit';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
 
@@ -278,13 +278,7 @@ export function CopyDetailPage() {
             <Link to={paths.adminBook(c.bookId)}>{c.bookTitle}</Link>
           </p>
         </div>
-        <div className="barcode-box">
-          <div className="barcode-pair">
-            <QrCode value={c.barcode} className="qr-sm" />
-            <Barcode value={c.barcode} />
-          </div>
-          <span className="mono small">{c.barcode}</span>
-        </div>
+        <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} className="qr-tag-card" />
       </header>
       <section className="card">
         <dl className="facts">
@@ -380,15 +374,7 @@ export function LabelsPage() {
         <div className="label-sheet">
           {(copies.data ?? []).map((c) => (
             <div key={c.id} className="label">
-              <div className="label-top">
-                <QrCode value={c.barcode} className="label-qr" />
-                <div className="label-text">
-                  <span className="label-brand">{t.appTitle}</span>
-                  <span className="mono label-code">{c.barcode}</span>
-                  <span className="label-title">{c.bookTitle}</span>
-                </div>
-              </div>
-              <Barcode value={c.barcode} height={30} />
+              <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} brand={t.appTitle} className="qr-tag-label" />
             </div>
           ))}
         </div>

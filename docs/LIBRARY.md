@@ -64,9 +64,10 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   elsewhere, catalogue search shows every branch holding each title (`Central 2/3` = 2 of 3 in-stock copies on the
   shelf; their branch first), the book page lists availability per branch, and scanning a copy held at another branch
   in Inventory says which branch has it and its status (`copies-locate`).
-- **Labels:** the console prints A4 sheets (3 × 8); each label carries a QR code and a Code 128 barcode of the copy
-  code (the copy page shows both too). Webcams read the QR code far more reliably than dense bars; reprint older
-  labels to get it.
+- **Labels:** the console prints A4 sheets (3 × 8). Stories prints **QR codes only** (no 1-D barcodes): each label
+  has the QR code of the copy code with the copy code and the book title (small type) beside it; the copy page shows
+  the same QR tag, and member ID cards carry a QR code of the member code. Older labels with Code 128 bars and books'
+  ISBN barcodes still scan (below).
 - **Scanning:** USB/Bluetooth scanners work in every scan field (they type the code and press Enter). The camera
   button next to each scan field reads codes with the laptop webcam or a phone camera (QR, Data Matrix, Code 128,
   EAN-13 / ISBN, Code 39, UPC). Decoding runs in a Web Worker (`admin/barcode.worker.ts`, logic in
