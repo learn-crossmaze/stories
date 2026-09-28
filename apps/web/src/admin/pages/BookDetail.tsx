@@ -82,6 +82,13 @@ export function BookDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
+  // For an archived title, what in any library still refers to it (then it can't be deleted).
+  const archived = book.data?.status === 'ARCHIVED';
+  const usage = useAsync(
+    () => (archived && canDelete ? callAction<{ summary: string | null }>(services().fns, 'books-usage', { bookId }) : Promise.resolve(null)),
+    [bookId, archived, canDelete],
+  );
+  const inUse = !!usage.data?.summary;
 
   if (book.loading) return <SkeletonRows rows={4} />;
   if (book.error) return <ErrorState message={book.error} onRetry={book.reload} />;
@@ -164,12 +171,16 @@ export function BookDetailPage() {
               </button>
             )}
             {canDelete && b.status === 'ARCHIVED' && (
-              <button type="button" className="btn btn-text danger" onClick={() => setDialog('delete')}>
+              <button type="button" className="btn btn-text danger" disabled={usage.loading || inUse} onClick={() => setDialog('delete')}>
                 {lt.deleteBook}
               </button>
             )}
           </div>
-          {b.status === 'ARCHIVED' && <p className="muted small">{canDelete ? lt.archivedHintDelete : lt.archivedHint}</p>}
+          {b.status === 'ARCHIVED' && (
+            <p className="muted small">
+              {!canDelete ? lt.archivedHint : inUse ? lt.archivedInUse(usage.data!.summary!) : lt.archivedHintDelete}
+            </p>
+          )}
           {actionError && (
             <p className="field-error" role="alert">
               {actionError}

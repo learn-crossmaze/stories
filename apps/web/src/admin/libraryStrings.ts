@@ -43,7 +43,9 @@ export const lt = {
   deleteBookTitle: (title: string) => `Delete “${title}” permanently?`,
   deleteBookBody: 'The title is removed from the catalogue for good and its ISBN can be used again. Only titles no library ever stocked or reserved can be deleted.',
   archivedHint: 'Archived: hidden from discovery and new stock. Restore it to use it again.',
-  archivedHintDelete: 'Archived: hidden from discovery and new stock. Restore it to use it again, or delete it permanently if no library ever stocked it.',
+  archivedHintDelete: 'Archived: hidden from discovery and new stock. Nothing in any library refers to it, so it can be restored or deleted permanently.',
+  archivedInUse: (summary: string) =>
+    `Archived. It can't be deleted: ${summary} in the libraries still refer to it (retired and lost copies and past reservations count, at every branch). It stays archived to keep that history; restore it to use it again.`,
   allTitles: 'All titles',
   activeTitles: 'Active',
   archivedTitles: 'Archived',

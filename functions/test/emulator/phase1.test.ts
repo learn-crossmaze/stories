@@ -116,6 +116,13 @@ describe('M1.1 catalogue', () => {
     await acquire(bookId, 1);
     await call(catalog.archive, cm, { bookId, reason: 'Out of print' });
     expect(await failure(call(catalog.remove, cm, { bookId, reason: 'Out of print' }))).toBe('BOOK_IN_USE');
+    // The book page explains why, counting copies in every status (retired ones too) across all libraries.
+    const copyId = (await db.collection(`orgs/${org}/copies`).where('bookId', '==', bookId).get()).docs[0].id;
+    await call(copies.retire, bm, { orgId: org, copyId, reason: 'Worn out' });
+    const usage = await call<{ summary: string | null; copies: { total: number } }>(catalog.usage, cm, { bookId }, null);
+    expect(usage.summary).toBe('1 copy (1 retired)');
+    expect((await call<{ summary: string | null }>(catalog.usage, cm, { bookId: (await newBook('Unused')) }, null)).summary).toBeNull();
+    expect(await failure(call(catalog.usage, lib, { bookId }, null))).toBe('FORBIDDEN');
 
     // Branch managers may add titles but not delete them; the role exists only in corporate organizations.
     expect(await failure(call(catalog.remove, bm, { bookId, reason: 'Out of print' }))).toBe('FORBIDDEN');
