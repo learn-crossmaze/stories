@@ -7,6 +7,7 @@ import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { bookPattern, existingCodes, reserveCodes } from '../core/numbering.js';
 import { id, name, reason } from '../core/schemas.js';
+import { bucket } from './covers.js';
 import { normalizeIsbn } from './isbn.js';
 import { AGE_GROUPS, GENRES, LANGUAGES, money, READING_LEVELS } from './model.js';
 import { normalizeText, searchTokens } from './search.js';
@@ -208,6 +209,56 @@ export const archive = command('books-archive', z.strictObject({ bookId: id, rea
   });
   return { bookId: input.bookId };
 });
+
+/** Brings an archived title back into the catalogue. */
+export const restore = command('books-restore', z.strictObject({ bookId: id }), async ({ actor, input, requestId }, tx) => {
+  await actor.requireCatalog('books.edit', tx);
+  const ref = db.doc(`books/${input.bookId}`);
+  const snap = await tx.get(ref);
+  if (!snap.exists) throw errors.notFound('Book');
+  if (snap.get('status') !== 'ARCHIVED') throw errors.conflict('BOOK_NOT_ARCHIVED', 'Only an archived title can be restored.');
+  tx.update(ref, { status: 'ACTIVE', updatedAt: FieldValue.serverTimestamp() });
+  recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, null, {
+    action: 'book.restore', entityType: 'book', entityId: input.bookId, before: { status: 'ARCHIVED' }, after: { status: 'ACTIVE' },
+  });
+  return { bookId: input.bookId };
+});
+
+/**
+ * Permanently deletes an archived title that no organization ever stocked or
+ * reserved (history must stay intact, so a title with copies or reservations
+ * can only stay archived). Frees its ISBN; the cover file is removed after commit.
+ */
+export const remove = command(
+  'books-delete',
+  z.strictObject({ bookId: id, reason }),
+  async ({ actor, input, requestId }, tx) => {
+    await actor.requireCatalog('books.delete', tx);
+    const ref = db.doc(`books/${input.bookId}`);
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw errors.notFound('Book');
+    if (snap.get('status') !== 'ARCHIVED') throw errors.conflict('BOOK_NOT_ARCHIVED', 'Archive the title before deleting it.');
+    const [copies, reservations] = await Promise.all([
+      tx.get(db.collectionGroup('copies').where('bookId', '==', input.bookId).limit(1)),
+      tx.get(db.collectionGroup('reservations').where('bookId', '==', input.bookId).limit(1)),
+    ]);
+    if (!copies.empty || !reservations.empty) {
+      throw errors.conflict('BOOK_IN_USE', 'This title has copies or reservations in a library, so it stays archived to keep their history.');
+    }
+    const isbn = snap.get('isbn') as string | null;
+    if (isbn) tx.delete(db.doc(`isbnIndex/${isbn}`));
+    tx.delete(ref);
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, null, {
+      action: 'book.delete', entityType: 'book', entityId: input.bookId, reason: input.reason,
+      before: { code: snap.get('code'), title: snap.get('title'), isbn },
+    });
+    return { bookId: input.bookId, coverPath: (snap.get('coverPath') as string | undefined) ?? null };
+  },
+  async ({ coverPath }) => {
+    // Best effort: an orphaned image is harmless, a failed delete must not fail the call.
+    if (coverPath) await bucket().file(coverPath).delete({ ignoreNotFound: true }).catch(() => undefined);
+  },
+);
 
 /** Refreshes denormalized author/publisher/category names and search tokens on books. */
 async function refreshBooksReferencing(kind: RefKind, refId: string) {

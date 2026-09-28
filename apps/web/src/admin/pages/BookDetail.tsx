@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { callAction, command } from '../../data/api';
+import { callAction, command, toApiError } from '../../data/api';
 import { type Book, CONDITIONS, type Condition, copiesOfBook, getBook, label, LANGUAGES, listLocations } from '../../data/library';
 import { services } from '../../data/services';
 import { useAsync } from '../../data/useAsync';
@@ -16,7 +16,7 @@ import { CoverEditor } from '../CoverEditor';
 import { Notice } from '../kit';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
-import { BookDialog, useCanAddBooks, useCanEditCatalogue } from './Catalogue';
+import { BookDialog, useCanAddBooks, useCanDeleteBooks, useCanEditCatalogue } from './Catalogue';
 import { CopyStatusBadge } from './Inventory';
 
 function AcquireDialog({ orgId, branchId, book, onClose, onDone }: { orgId: string; branchId: string; book: Book; onClose: () => void; onDone: (n: number) => void }) {
@@ -69,6 +69,7 @@ export function BookDetailPage() {
   const { claims } = useAuth();
   const { org, branch } = useWorkspace();
   const canEdit = useCanEditCatalogue();
+  const canDelete = useCanDeleteBooks();
   const canAdd = useCanAddBooks();
   const book = useAsync(() => getBook(bookId), [bookId]);
   const availability = useAsync(
@@ -76,7 +77,10 @@ export function BookDetailPage() {
     [org?.id, bookId],
   );
   const copies = useAsync(() => (org && branch ? copiesOfBook(org.id, branch.id, bookId) : Promise.resolve([])), [org?.id, branch?.id, bookId]);
-  const [dialog, setDialog] = useState<'edit' | 'acquire' | 'archive' | null>(null);
+  const [dialog, setDialog] = useState<'edit' | 'acquire' | 'archive' | 'delete' | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
 
   if (book.loading) return <SkeletonRows rows={4} />;
@@ -92,7 +96,7 @@ export function BookDetailPage() {
       </p>
       <section className="book-hero">
         {/* Book creators may add a missing cover; changing or removing one is for catalogue editors. */}
-        <CoverEditor book={b} canEdit={(canEdit || (canAdd && !b.coverUrl)) && b.status === 'ACTIVE'} onChanged={book.reload} />
+        <CoverEditor book={b} canEdit={canEdit || (canAdd && !b.coverUrl && b.status === 'ACTIVE')} onChanged={book.reload} />
         <div className="book-facts">
           <h1>{b.title}</h1>
           {b.subtitle && <p className="muted">{b.subtitle}</p>}
@@ -128,17 +132,49 @@ export function BookDetailPage() {
           {b.synopsis && <p className="synopsis">{b.synopsis}</p>}
           <div className="row">
             <StatusBadge status={b.status} />
+            {canEdit && (
+              <button type="button" className="btn btn-outlined" onClick={() => setDialog('edit')}>
+                {t.edit}
+              </button>
+            )}
             {canEdit && b.status === 'ACTIVE' && (
-              <>
-                <button type="button" className="btn btn-outlined" onClick={() => setDialog('edit')}>
-                  {t.edit}
-                </button>
-                <button type="button" className="btn btn-text" onClick={() => setDialog('archive')}>
-                  {t.archive}
-                </button>
-              </>
+              <button type="button" className="btn btn-text" onClick={() => setDialog('archive')}>
+                {t.archive}
+              </button>
+            )}
+            {canEdit && b.status === 'ARCHIVED' && (
+              <button
+                type="button"
+                className="btn btn-text"
+                disabled={restoring}
+                onClick={async () => {
+                  setRestoring(true);
+                  setActionError(null);
+                  try {
+                    await command('books-restore', { bookId: b.id });
+                    book.reload();
+                  } catch (e) {
+                    setActionError(toApiError(e).message);
+                  } finally {
+                    setRestoring(false);
+                  }
+                }}
+              >
+                {restoring ? t.saving : lt.restoreBook}
+              </button>
+            )}
+            {canDelete && b.status === 'ARCHIVED' && (
+              <button type="button" className="btn btn-text danger" onClick={() => setDialog('delete')}>
+                {lt.deleteBook}
+              </button>
             )}
           </div>
+          {b.status === 'ARCHIVED' && <p className="muted small">{canDelete ? lt.archivedHintDelete : lt.archivedHint}</p>}
+          {actionError && (
+            <p className="field-error" role="alert">
+              {actionError}
+            </p>
+          )}
         </div>
       </section>
 
@@ -243,6 +279,18 @@ export function BookDetailPage() {
             await command('books-archive', { bookId: b.id, reason });
             book.reload();
             setDialog(null);
+          }}
+        />
+      )}
+      {dialog === 'delete' && (
+        <ConfirmWithReason
+          title={lt.deleteBookTitle(b.title)}
+          body={lt.deleteBookBody}
+          confirmLabel={lt.deleteBook}
+          onClose={() => setDialog(null)}
+          onConfirm={async (reason) => {
+            await command('books-delete', { bookId: b.id, reason });
+            navigate(paths.adminBooks, { replace: true });
           }}
         />
       )}

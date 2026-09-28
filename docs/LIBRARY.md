@@ -7,7 +7,10 @@ One **shared catalogue** for all organizations: top-level `books`, `authors`, `p
 `books.create`/`books.edit` in a **corporate** organization can change it — franchises cannot. Head office
 (`books.edit`) edits and archives titles, authors, publishers and categories and sets book numbering; branch managers
 (`books.create`) add new titles (with the book-details search), the authors/publishers they need, and a cover for a
-title that has none.
+title that has none. A **Catalogue Manager** (corporate orgs) looks after the catalogue: edits titles (archived
+ones too), archives and restores them (`books-restore`), and permanently deletes an archived title (`books-delete`,
+`books.delete`) only if no library ever stocked or reserved it — otherwise it stays archived to keep history. The
+Catalogue page filters by Active / Archived.
 
 | Field | Notes |
 |---|---|

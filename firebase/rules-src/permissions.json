@@ -5,6 +5,7 @@
     "HEAD_OFFICE_ADMIN": { "code": "HO", "scope": "org", "orgTypes": ["CORPORATE"], "label": "Head Office Admin" },
     "FINANCE_ADMIN": { "code": "FIN", "scope": "org", "label": "Finance Admin" },
     "HR_ADMIN": { "code": "HR", "scope": "org", "label": "HR Admin" },
+    "CATALOGUE_MANAGER": { "code": "CM", "scope": "org", "orgTypes": ["CORPORATE"], "label": "Catalogue Manager" },
     "FRANCHISE_OWNER": { "code": "FO", "scope": "org", "orgTypes": ["FRANCHISE"], "label": "Franchise Owner" },
     "BRANCH_MANAGER": { "code": "BM", "scope": "branch", "label": "Branch Manager" },
     "LIBRARIAN": { "code": "LIB", "scope": "branch", "label": "Librarian" },
@@ -13,7 +14,7 @@
   },
   "grantable": {
     "$comment": "Which org roles a holder of each role may grant. SUPER_ADMIN may grant every org role. Branch-scoped grantors may only grant within their own branches.",
-    "HEAD_OFFICE_ADMIN": ["HEAD_OFFICE_ADMIN", "FINANCE_ADMIN", "HR_ADMIN", "BRANCH_MANAGER", "LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"],
+    "HEAD_OFFICE_ADMIN": ["HEAD_OFFICE_ADMIN", "FINANCE_ADMIN", "HR_ADMIN", "CATALOGUE_MANAGER", "BRANCH_MANAGER", "LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"],
     "FRANCHISE_OWNER": ["FINANCE_ADMIN", "HR_ADMIN", "BRANCH_MANAGER", "LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"],
     "HR_ADMIN": ["EMPLOYEE"],
     "BRANCH_MANAGER": ["LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"]
@@ -28,9 +29,10 @@
     "audit.view": ["HO", "FIN", "HR", "FO", "BM"],
     "config.manage": ["HO"],
 
-    "books.view": ["HO", "FIN", "FO", "BM", "LIB", "DEL"],
-    "books.create": ["HO", "BM"],
-    "books.edit": ["HO"],
+    "books.view": ["HO", "FIN", "FO", "BM", "LIB", "DEL", "CM"],
+    "books.create": ["HO", "BM", "CM"],
+    "books.edit": ["HO", "CM"],
+    "books.delete": ["HO", "CM"],
     "copies.manage": ["HO", "FO", "BM", "LIB"],
     "books.transfer": ["HO", "FO", "BM", "LIB"],
     "copies.writeOff": ["HO", "FIN", "FO", "BM"],

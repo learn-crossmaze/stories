@@ -187,6 +187,7 @@ h2 { font-size: 22px; line-height: 1.25; }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
 .btn .icon { width: 20px; height: 20px; }
 .btn-danger { background: var(--danger); color: var(--surface); }
+.btn-text.danger { color: var(--danger); }
 .field-hint { color: var(--on-surface-muted); font-size: 13px; font-weight: 400; }
 .field select, .hours input[type='time'] {
   min-height: 44px; padding: 0 12px; border-radius: var(--radius-md);

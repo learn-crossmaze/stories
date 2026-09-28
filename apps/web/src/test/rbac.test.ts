@@ -42,6 +42,7 @@ describe('navigation', () => {
     ]);
     expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Branches', 'Departments', 'Appearance']);
     expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard', 'Appearance']);
+    expect(labels(claims({ corp: { r: ['CM'], b: ['*'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Appearance']);
   });
 });
 

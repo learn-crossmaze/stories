@@ -46,6 +46,13 @@ export function useCanAddBooks() {
   return claims.sa || (!!org && org.type === 'CORPORATE' && can(claims, 'books.create', org.id));
 }
 
+/** Permanently deleting archived titles: head office and catalogue managers (server re-checks). */
+export function useCanDeleteBooks() {
+  const { claims } = useAuth();
+  const { org } = useWorkspace();
+  return claims.sa || (!!org && org.type === 'CORPORATE' && can(claims, 'books.delete', org.id));
+}
+
 const csv = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
 /** Loose name match for reusing existing authors/publishers ("R. L. Stevenson" ≠ "Robert Louis Stevenson", but case and punctuation don't matter). */
 const sameName = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -305,6 +312,7 @@ export function CataloguePage() {
   const canAdd = useCanAddBooks();
   const [q, setQ] = useState('');
   const [age, setAge] = useState<AgeGroup | ''>('');
+  const [status, setStatus] = useState<Book['status'] | ''>('');
   const debounced = useDebounced(q);
   const [books, setBooks] = useState<Book[]>([]);
   const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
@@ -340,7 +348,7 @@ export function CataloguePage() {
   const load = async (after?: DocumentSnapshot) => {
     setState({ loading: true, error: null });
     try {
-      const page = await searchBooks(debounced, age, after);
+      const page = await searchBooks(debounced, age, after, status);
       setBooks((prev) => (after ? [...prev, ...page.items] : page.items));
       setCursor(page.cursor);
       setState({ loading: false, error: null });
@@ -352,7 +360,7 @@ export function CataloguePage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced, age, attempt]);
+  }, [debounced, age, status, attempt]);
 
   return (
     <>
@@ -385,6 +393,11 @@ export function CataloguePage() {
               {label(a)}
             </option>
           ))}
+        </select>
+        <select value={status} onChange={(e) => setStatus(e.target.value as Book['status'] | '')} aria-label={lt.status}>
+          <option value="">{lt.allTitles}</option>
+          <option value="ACTIVE">{lt.activeTitles}</option>
+          <option value="ARCHIVED">{lt.archivedTitles}</option>
         </select>
       </div>
       {state.error && books.length === 0 ? (
