@@ -1,6 +1,6 @@
 import { describe as suite, expect, it } from 'vitest';
 
-import { describe } from '../admin/pages/MemberHistory';
+import { describe } from '../admin/members/MemberHistory';
 import type { AuditEntry } from '../data/org';
 
 const entry = (action: string, after: unknown = null): AuditEntry => ({

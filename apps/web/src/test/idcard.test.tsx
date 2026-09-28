@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { IdCard } from '../IdCard';
+import { IdCard } from '../shared/IdCard';
 
 describe('member ID card', () => {
   it('shows the name, member code and a QR code of the member code', async () => {

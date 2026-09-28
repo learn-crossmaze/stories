@@ -3,10 +3,14 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from './auth/AuthContext';
 import { isStaff } from './auth/claims';
-import { MemberShell } from './pages/MemberShell';
-import { ExplorePage, HomePage, MembershipPage, MyBooksPage, ProfilePage } from './pages/member';
-import { SetupPage } from './pages/Setup';
-import { SignInPage } from './pages/SignIn';
+import { MemberShell } from './member/MemberShell';
+import { ExplorePage } from './member/ExplorePage';
+import { HomePage } from './member/HomePage';
+import { MembershipPage } from './member/MembershipPage';
+import { MyBooksPage } from './member/MyBooksPage';
+import { ProfilePage } from './member/ProfilePage';
+import { SetupPage } from './public/Setup';
+import { SignInPage } from './public/SignIn';
 import { authRedirect, paths } from './paths';
 import { t } from './strings';
 

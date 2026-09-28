@@ -2,27 +2,27 @@ import { Route, Routes } from 'react-router';
 
 import { AdminShell } from './AdminShell';
 import { NoAccess, Require } from './guards';
-import { AppearanceSettings } from '../AppearanceSettings';
+import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
-import { AuditPage } from './pages/Audit';
-import { BookDetailPage } from './pages/BookDetail';
-import { CataloguePage } from './pages/Catalogue';
-import { DepositApprovalsPage } from './pages/DepositApprovals';
-import { DeskPage } from './pages/Desk';
-import { CopyDetailPage, InventoryPage, LabelsPage } from './pages/Inventory';
-import { MemberDetailPage } from './pages/MemberDetail';
-import { MembersPage } from './pages/Members';
-import { PlansPage } from './pages/Plans';
-import { ReservationsPage } from './pages/Reservations';
-import { TransfersPage } from './pages/Transfers';
-import { BranchesPage } from './pages/Branches';
-import { DashboardPage } from './pages/Dashboard';
-import { DepartmentsPage } from './pages/Departments';
-import { EmployeeProfilePage } from './pages/EmployeeProfile';
-import { HrSettingsPage } from './pages/HrSettings';
-import { PeoplePage } from './pages/People';
-import { OrganizationsPage } from './pages/Organizations';
-import { StaffPage } from './pages/Staff';
+import { AuditPage } from './organization/Audit';
+import { BookDetailPage } from './catalogue/BookDetail';
+import { CataloguePage } from './catalogue/Catalogue';
+import { DepositApprovalsPage } from './members/DepositApprovals';
+import { DeskPage } from './circulation/Desk';
+import { CopyDetailPage, InventoryPage, LabelsPage } from './inventory/Inventory';
+import { MemberDetailPage } from './members/MemberDetail';
+import { MembersPage } from './members/Members';
+import { PlansPage } from './members/Plans';
+import { ReservationsPage } from './circulation/Reservations';
+import { TransfersPage } from './circulation/Transfers';
+import { BranchesPage } from './organization/Branches';
+import { DashboardPage } from './dashboard/Dashboard';
+import { DepartmentsPage } from './organization/Departments';
+import { EmployeeProfilePage } from './people/EmployeeProfile';
+import { HrSettingsPage } from './people/HrSettings';
+import { PeoplePage } from './people/People';
+import { OrganizationsPage } from './organization/Organizations';
+import { StaffPage } from './organization/Staff';
 
 /**
  * Staff console (lazy-loaded chunk). Each page is guarded by the same rule as

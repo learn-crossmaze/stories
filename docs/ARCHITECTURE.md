@@ -140,47 +140,64 @@ helper), and makes concurrency testable.
 
 ## 3. Repository layout
 
+Code is organized **by domain**, and the same domain names are used in the backend, the web app and the docs.
+Each domain on the server is one folder whose `index.ts` lists its actions; `functions/src/routes.ts` maps
+them to the deployed routers.
+
 ```text
 stories/
-├─ apps/
-│  └─ stories_app/                 # the single Flutter app (mobile + web)
-│     ├─ lib/
-│     │  ├─ main_member.dart        # web entrypoint: member site
-│     │  ├─ main_staff.dart         # web entrypoint: staff/admin console
-│     │  ├─ main.dart               # mobile entrypoint: role-gated after login
-│     │  ├─ app/                    # router, theme wiring, flavor config, root providers
-│     │  ├─ core/                   # errors, result types, extensions, firebase bootstrap, logging
-│     │  ├─ features/<feature>/     # data / domain / presentation (only where justified)
-│     │  └─ l10n/                   # ARB files (English first)
-│     ├─ test/  integration_test/
-│     └─ android/ ios/ web/
-├─ packages/
-│  ├─ stories_design_system/       # tokens, theme, components, empty/error/loading states
-│  └─ stories_contracts/           # Dart models for callable requests/responses + enums
-│                                   # (generated from functions/src/contracts → single source)
-├─ functions/                      # Cloud Functions, TypeScript
+├─ apps/web/                        # the web app (React 19 + Vite + TypeScript), npm workspace
+│  └─ src/
+│     ├─ main.tsx  routes.tsx  paths.ts  styles.css
+│     ├─ auth/                      # Firebase Auth context, claims, repository
+│     ├─ config/                    # environment and Firebase bootstrap
+│     ├─ data/                      # Firestore reads and server calls, one file per domain
+│     │    api.ts (routers)  services.ts  common.ts (vocabularies, query helpers)
+│     │    catalogue.ts  inventory.ts  members.ts  billing.ts  circulation.ts  org.ts  hr.ts  me.ts
+│     ├─ shared/                    # UI used by both apps: ui.tsx, format.ts, useAsync, useDebounced,
+│     │                             # appearance, BookCover, QrCode, IdCard
+│     ├─ strings/                   # user-facing text: index.ts (t), library.ts (lt), hr.ts (ht)
+│     ├─ public/                    # SignIn, Setup
+│     ├─ member/                    # member app: MemberShell, memberData, one file per page, common.tsx
+│     ├─ admin/                     # staff console (lazy-loaded chunk)
+│     │  ├─ AdminApp.tsx AdminShell.tsx Workspace.tsx nav.ts guards.tsx grants.ts
+│     │  ├─ components/             # Dialog, kit, CameraScanner, barcode (+ worker)
+│     │  ├─ dashboard/  catalogue/  inventory/  circulation/  members/  organization/  people/
+│     ├─ generated/rbac.ts          # generated from permissions.json (never edit)
+│     └─ test/
+├─ functions/                       # Cloud Functions v2, TypeScript, Node 22
 │  ├─ src/
-│  │  ├─ core/        # auth context, permission checks, idempotency, audit, errors, clock, money
-│  │  ├─ contracts/   # zod schemas = API contract (source for Dart codegen)
-│  │  ├─ auth/ orgs/ branches/ members/ books/ inventory/ circulation/ subscriptions/
-│  │  ├─ deposits/ payments/ delivery/ employees/ attendance/ leave/ payroll/
-│  │  ├─ tasks/ sops/ notifications/ reports/ franchise/ audit/ scheduled/
-│  │  └─ index.ts     # re-exports only
-│  └─ test/           # unit + emulator integration tests
-├─ firebase/
-│  ├─ firestore.rules              # generated from rules/src + permissions.json
-│  ├─ rules-src/                   # rule modules + permission matrix codegen
-│  ├─ storage.rules
-│  ├─ firestore.indexes.json
-│  └─ rules-tests/                 # @firebase/rules-unit-testing
-├─ tools/seed/                     # emulator/dev seed (clearly flagged `seed: true`)
-├─ docs/
-├─ .github/workflows/
-├─ firebase.json  .firebaserc      # aliases: dev / staging / prod
-└─ pubspec.yaml                    # Dart pub workspace root
+│  │  ├─ index.ts                   # deployed functions only (routers, webhook, scheduled jobs)
+│  │  ├─ routes.ts                  # router → actions
+│  │  ├─ core/                      # callable pipeline, router, RBAC actor, audit, errors, numbering, counters
+│  │  ├─ platform/                  # user profiles, Super Admin bootstrap            → admin router
+│  │  ├─ organization/              # orgs, branches, numbering, departments, staff   → admin router
+│  │  ├─ catalogue/                 # books, covers, ISBN lookup, search tokens       → catalogue router
+│  │  ├─ inventory/                 # copies, copy state machine, locations           → inventory router
+│  │  ├─ members/                   # members, member self-service (me-*)             → members router
+│  │  ├─ billing/                   # plans, subscriptions, payments, Razorpay, deposits, expiry sweep → billing router
+│  │  ├─ circulation/               # issue/return/exchange, reservations, transfers  → circulation router
+│  │  ├─ hr/                        # employees, lifecycle, HR settings               → hr router
+│  │  ├─ generated/rbac.ts
+│  │  └─ tools/seed.ts              # emulator demo data
+│  └─ test/  unit/  emulator/
+├─ firebase/                        # rules (generated from rules-src), indexes, storage rules, rules tests
+├─ tools/rbac/generate.mjs          # permissions.json → rules, functions and web RBAC
+└─ docs/
 ```
 
-Dart **pub workspaces** (Dart ≥ 3.6) tie the app and packages together — no Melos needed.
+**Conventions**
+
+- A new action goes in its domain's `index.ts` (`'<prefix>-<verb>': handler`). A new prefix also goes in the web
+  `ROUTERS` table (`apps/web/src/data/api.ts`). `functions/test/unit/routers.test.ts` fails if the two disagree
+  or if a prefix is split across routers.
+- The deployed function names (`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr`,
+  `razorpayWebhook`, `scheduled-*`) never change; moving code between folders does not change them.
+- Cross-domain calls go through exported functions (for example, member self-service calls the billing and
+  circulation cores with an ownership check); a domain never writes another domain's collections except inside
+  those shared cores.
+- Web pages live with their feature; anything used by two features moves to `shared/` (UI), `admin/components/`
+  (console-only UI) or `data/` (reads and calls).
 
 ---
 

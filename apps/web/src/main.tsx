@@ -4,7 +4,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 
-import { applyAppearance, loadAppearance } from './appearance';
+import { applyAppearance, loadAppearance } from './shared/appearance';
 import { AuthProvider } from './auth/AuthContext';
 import { firebaseAuthRepository } from './auth/repository';
 import { initFirebase } from './config/firebase';

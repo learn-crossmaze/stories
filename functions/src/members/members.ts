@@ -1,7 +1,7 @@
 import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
-import { searchTokens } from '../catalog/search.js';
+import { searchTokens } from '../catalogue/search.js';
 import { recordAudit } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';

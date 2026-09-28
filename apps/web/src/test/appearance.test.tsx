@@ -2,8 +2,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applyAppearance, DEFAULT_APPEARANCE, loadAppearance } from '../appearance';
-import { AppearanceSettings } from '../AppearanceSettings';
+import { applyAppearance, DEFAULT_APPEARANCE, loadAppearance } from '../shared/appearance';
+import { AppearanceSettings } from '../shared/AppearanceSettings';
 
 const root = document.documentElement;
 

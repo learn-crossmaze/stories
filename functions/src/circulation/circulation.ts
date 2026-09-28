@@ -9,8 +9,8 @@ import { id, reason } from '../core/schemas.js';
 import { type Copy, findByBarcode, loadCopy, transition } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
-import { balanceOf, depositRef } from '../subscriptions/ledger.js';
-import { requireActiveTerm, type Term } from '../subscriptions/term.js';
+import { balanceOf, depositRef } from '../billing/ledger.js';
+import { requireActiveTerm, type Term } from '../billing/term.js';
 
 const barcodes = z
   .array(z.string().trim().toUpperCase().min(4).max(32))

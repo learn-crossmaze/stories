@@ -21,7 +21,8 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
   (display), Inter (text). Hosted on Firebase Hosting (`stories-by-crossmaze.web.app`); `index.html` is served
   `no-cache`, hashed assets are immutable.
 - **Backend:** Firebase Functions v2, TypeScript, Node 22, region **`asia-south1`**, `maxInstances: 5`, in
-  `functions/`. Zod for input validation. Firebase Admin SDK.
+  `functions/`. Code layout by domain (platform, organization, catalogue, inventory, members, billing,
+  circulation, hr) on both server and web: see docs/ARCHITECTURE.md §3. Zod for input validation. Firebase Admin SDK.
 - **Data:** Cloud Firestore (single database), Cloud Storage (book covers). Money is **integer paise**, currency
   INR. Times are UTC `Timestamp`s; business dates are India time (IST).
 - **Security:** Firestore/Storage rules in `firebase/` — `firestore.rules` is **generated** from

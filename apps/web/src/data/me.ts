@@ -1,8 +1,8 @@
 import { callAction, command } from './api';
-import type { AgeGroup, Duration } from './library';
+import type { AgeGroup, Duration } from './common';
 import { services } from './services';
 
-// Member self-service (functions/src/me/me.ts). Dates arrive as ISO strings.
+// Member self-service (functions/src/members/me.ts). Dates arrive as ISO strings.
 
 export interface MyPlan {
   id: string;

@@ -2,7 +2,7 @@ import { BarcodeFormat, QRCodeWriter } from '@zxing/library';
 import JsBarcode from 'jsbarcode';
 import { describe, expect, it } from 'vitest';
 
-import { createDecoder, rotateSmall } from '../admin/barcode';
+import { createDecoder, rotateSmall } from '../admin/components/barcode';
 
 type Matrix = { getWidth(): number; getHeight(): number; get(x: number, y: number): boolean };
 

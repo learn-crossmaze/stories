@@ -27,7 +27,7 @@ window (days before expiry). **Every edit is a new version** (`plans/{id}/versio
 `orgs/{o}/depositAccounts/{memberId}` (balance, status OPEN / SETTLING / CLOSED) with an append-only ledger
 `transactions`: DEPOSIT_COLLECTED, DEPOSIT_DEDUCTION, DEPOSIT_ADJUSTMENT, DEPOSIT_REFUND — each with amount,
 balance after, reason, reference, created by, approved by. **The balance changes only in the same transaction as a
-ledger entry** (`functions/src/subscriptions/ledger.ts`), so balance = Σ ledger (tested). DEPOSIT_HOLD is not
+ledger entry** (`functions/src/billing/ledger.ts`), so balance = Σ ledger (tested). DEPOSIT_HOLD is not
 needed (the whole balance is held until settlement).
 
 - **Adjustments are maker-checker:** `deposits-proposeAdjustment` (`deposits.adjust`) creates a PENDING request;

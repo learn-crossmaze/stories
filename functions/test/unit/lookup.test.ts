@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fromGoogle, fromOpenLibrary, guessGenres, merge } from '../../src/catalog/lookup.js';
+import { fromGoogle, fromOpenLibrary, guessGenres, merge } from '../../src/catalogue/lookup.js';
 
 // Trimmed real-world response shapes.
 const google = {

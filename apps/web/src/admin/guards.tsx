@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
 import { t } from '../strings';
-import { EmptyState } from '../ui';
+import { EmptyState } from '../shared/ui';
 import { allowed, type NavItem } from './nav';
 import { useWorkspace } from './Workspace';
 

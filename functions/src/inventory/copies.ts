@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
-import { money } from '../catalog/model.js';
+import { money } from '../catalogue/model.js';
 import { makeAvailable, nextWaiting, readCirculationConfig } from '../circulation/allocation.js';
 import { recordAudit } from '../core/audit.js';
 import { command, query } from '../core/callable.js';

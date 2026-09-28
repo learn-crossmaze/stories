@@ -2,14 +2,14 @@ import { createHmac, randomUUID } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import * as branches from '../../src/branches/branches.js';
+import * as branches from '../../src/organization/branches.js';
 import { db } from '../../src/core/firebase.js';
 import * as members from '../../src/members/members.js';
-import * as orgs from '../../src/orgs/orgs.js';
-import * as online from '../../src/payments/online.js';
-import * as staff from '../../src/staff/roles.js';
-import * as plans from '../../src/subscriptions/plans.js';
-import * as subs from '../../src/subscriptions/subscriptions.js';
+import * as orgs from '../../src/organization/orgs.js';
+import * as online from '../../src/billing/online.js';
+import * as staff from '../../src/organization/staff.js';
+import * as plans from '../../src/billing/plans.js';
+import * as subs from '../../src/billing/subscriptions.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
 let sa: TestUser, lib: TestUser;

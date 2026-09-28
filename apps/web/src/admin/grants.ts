@@ -9,7 +9,7 @@ const fitsOrg = (r: Role, orgType: OrgType) => {
   return !types || types.includes(orgType);
 };
 
-/** Roles this user may assign in an org — mirrors functions/src/staff/roles.ts for the UI. */
+/** Roles this user may assign in an org — mirrors functions/src/organization/staff.ts for the UI. */
 export function grantableRoles(claims: StoriesClaims, orgId: string, orgType: OrgType): Role[] {
   if (claims.sa) return ORG_ROLES.filter((r) => fitsOrg(r, orgType));
   const out = new Set<Role>();

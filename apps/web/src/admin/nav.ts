@@ -2,8 +2,8 @@ import { can, type StoriesClaims } from '../auth/claims';
 import type { Permission } from '../generated/rbac';
 import { paths } from '../paths';
 import { t } from '../strings';
-import { ht } from './hrStrings';
-import type { IconName } from '../ui';
+import { ht } from '../strings/hr';
+import type { IconName } from '../shared/ui';
 
 export interface NavItem {
   to: string;
