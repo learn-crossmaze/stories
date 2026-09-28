@@ -377,7 +377,6 @@ h2 { font-size: 22px; line-height: 1.25; }
 .timeline li { position: relative; padding: 0 0 14px 14px; display: flex; flex-direction: column; }
 .timeline li::before { content: ''; position: absolute; left: -21px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--primary); }
 .timeline-when { font-size: 12px; color: var(--on-surface-muted); }
-.barcode-box { display: flex; flex-direction: column; align-items: center; gap: 4px; background: #fff; padding: 10px 14px; border-radius: var(--radius-md); border: 1px solid var(--outline); color: #000; }
 
 .pick-filter { display: flex; gap: 8px; align-items: center; }
 .pick-filter input, .picker input { min-height: 40px; padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--outline); background: var(--surface-raised); color: var(--on-surface); font: inherit; flex: 1; width: 100%; }
@@ -416,18 +415,8 @@ h2 { font-size: 22px; line-height: 1.25; }
 /* Label sheet: A4, 3 × 8 */
 .label-sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; background: #fff; color: #000; }
 .label { height: 37mm; border: 1px dashed #ccc; padding: 3mm 4mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1mm; overflow: hidden; }
-.label svg { max-width: 100%; }
-.label-brand { font: 700 9pt var(--font-display); color: #b4502b; }
-.label-code { font-size: 9pt; }
-.label-title { font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.label-top { display: flex; align-items: center; gap: 2.5mm; width: 100%; }
-.label-text { display: flex; flex-direction: column; gap: .5mm; min-width: 0; }
 .qr { display: inline-block; line-height: 0; background: #fff; }
 .qr svg { width: 100%; height: 100%; }
-.label-qr { flex: none; width: 18mm; height: 18mm; }
-.label > svg { width: 100%; height: 8mm; }
-.barcode-pair { display: flex; align-items: center; gap: 10px; }
-.qr-sm { width: 72px; height: 72px; }
 @media print {
   @page { size: A4; margin: 10mm 7mm; }
   body { background: #fff; }
@@ -527,3 +516,16 @@ h2 { font-size: 22px; line-height: 1.25; }
   body.printing-card .id-card-print { position: fixed; left: 10mm; top: 10mm; }
   body.printing-card .id-card { box-shadow: none; }
 }
+
+/* QR tag: QR code with the copy code and a short title beside it (copy page, labels) */
+.qr-tag { display: flex; align-items: center; gap: 2.5mm; min-width: 0; background: #fff; color: #000; }
+.qr-tag-qr { flex: none; }
+.qr-tag-qr svg { width: 100%; height: 100%; display: block; }
+.qr-tag-text { display: flex; flex-direction: column; gap: .6mm; min-width: 0; }
+.qr-tag-brand { font: 700 8pt/1 var(--font-display); color: #b4502b; }
+.qr-tag-code { font: 700 9pt/1.2 ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+.qr-tag-title { font-size: 7pt; line-height: 1.25; color: #333; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.qr-tag-card { padding: 10px 14px 10px 10px; border-radius: var(--radius-md); border: 1px solid var(--outline); max-width: 320px; }
+.qr-tag-card .qr-tag-qr { width: 96px; height: 96px; }
+.qr-tag-label { width: 100%; height: 100%; }
+.qr-tag-label .qr-tag-qr { width: 26mm; height: 26mm; }

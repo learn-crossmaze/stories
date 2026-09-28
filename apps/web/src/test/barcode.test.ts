@@ -33,7 +33,7 @@ function frame(m: Matrix, scale: number, opts: { blur?: number; tilt?: number; w
   return { gray: out, w, h };
 }
 
-/** Bars exactly as the printed labels draw them (jsbarcode), with a quiet zone either side. */
+/** 1-D bars as a book's ISBN or an older printed label has them (jsbarcode), with a quiet zone either side. */
 function bars(text: string, format: string): Matrix {
   const out: { encodings?: { data: string }[] } = {};
   JsBarcode(out, text, { format });

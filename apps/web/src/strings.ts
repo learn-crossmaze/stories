@@ -218,7 +218,7 @@ export const t = {
   navPlans: 'Subscription plans',
   navDepositApprovals: 'Deposit approvals',
   filterPlaceholder: 'Filter…',
-  scanPlaceholder: 'Scan or type a barcode',
+  scanPlaceholder: 'Scan the QR code or type the code',
   scanAdd: 'Add',
   noBranchTitle: 'No branch to work at',
   noBranchMessage: 'You need a role at an active branch to use this page.',
