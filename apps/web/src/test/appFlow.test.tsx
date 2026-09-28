@@ -82,7 +82,7 @@ describe('app flow', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 
-  it('shows staff the console link on their profile', async () => {
+  it('shows staff the console link in the member menu', async () => {
     const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
     renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/profile');
     expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', '/admin');

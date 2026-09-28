@@ -196,6 +196,13 @@ stories/
 - Cross-domain calls go through exported functions (for example, member self-service calls the billing and
   circulation cores with an ownership check); a domain never writes another domain's collections except inside
   those shared cores.
+- **Menus and page access:** the staff menu is defined once in `apps/web/src/admin/nav.ts` (section, icon, who
+  sees it, who may open the page); routes in `AdminApp.tsx` take their guard from it. Personal actions
+  (appearance, member view, sign out) are in the account menu, not the main menu. On screens under 900px the menu
+  is a drawer behind a Menu button.
+- **Accessibility:** every page has one `<h1>`; `shared/useRouteFocus.ts` names the browser tab after it and moves
+  focus to it after navigation. Both shells have a "Skip to content" link. Dialogs keep focus inside and return
+  it on close. Every interactive element shows a focus outline, and text meets WCAG AA contrast (checked with axe).
 - Web pages live with their feature; anything used by two features moves to `shared/` (UI), `admin/components/`
   (console-only UI) or `data/` (reads and calls).
 

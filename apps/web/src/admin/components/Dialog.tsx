@@ -4,7 +4,7 @@ import { ApiError } from '../../data/api';
 import { t } from '../../strings';
 
 /**
- * Accessible modal: labelled, Escape closes, focus moves in and returns on close.
+ * Accessible modal: labelled, Escape closes, focus moves in, stays in (Tab wraps) and returns on close.
  * Forms get room for two columns; `narrow` suits a short confirmation or a single field.
  */
 export function Dialog({ title, onClose, children, narrow }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean }) {
@@ -13,7 +13,24 @@ export function Dialog({ title, onClose, children, narrow }: { title: string; on
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      // Keep Tab inside the dialog while it is open.
+      if (e.key !== 'Tab' || !ref.current) return;
+      const items = [...ref.current.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
+        (el) =>
+          !el.hasAttribute('disabled') && !el.closest('[hidden]') && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden',
+      );
+      if (!items.length) return;
+      const [first, last] = [items[0], items[items.length - 1]];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);

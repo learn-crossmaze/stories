@@ -26,25 +26,33 @@ describe('claims', () => {
     expect(can(lib, 'branches.manage', 'corp')).toBe(false);
     expect(can(claims({}, true), 'branches.manage', 'anything')).toBe(true);
   });
+
+  it('keeps reference pages open to everyone who could see them before', async () => {
+    const { NAV, allowed } = await import('../admin/nav');
+    const branches = NAV.find((i) => i.label === 'Branches')!;
+    expect(allowed(claims({ corp: { r: ['LIB'], b: ['cen'] } }), 'corp', branches.page ?? branches.requires)).toBe(true);
+  });
 });
 
 describe('navigation', () => {
   const labels = (c: StoriesClaims) => visibleNav(c, 'corp').map((i) => i.label);
 
   it('shows each role only what it may use', () => {
-    expect(labels(claims({}, true))).toHaveLength(17);
-    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Employees', 'Staff & roles', 'HR settings', 'Branches', 'Departments', 'Audit log', 'Appearance']);
+    expect(labels(claims({}, true))).toHaveLength(16);
+    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Employees', 'Roles & access', 'HR settings', 'Branches', 'Departments', 'Audit log']);
     expect(labels(claims({ corp: { r: ['LIB'], b: ['cen'] } }))).toEqual([
-      'Dashboard', 'Circulation desk', 'Catalogue', 'Inventory', 'Reservations', 'Transfers', 'Members', 'Branches', 'Departments', 'Appearance',
+      'Dashboard', 'Circulation desk', 'Catalogue', 'Inventory', 'Reservations', 'Transfers', 'Members',
     ]);
     expect(labels(claims({ corp: { r: ['FIN'], b: ['*'] } }))).toEqual([
-      'Dashboard', 'Catalogue', 'Inventory', 'Members', 'Deposit approvals', 'Branches', 'Departments', 'Audit log', 'Appearance',
+      'Dashboard', 'Catalogue', 'Inventory', 'Members', 'Deposit approvals', 'Audit log',
     ]);
-    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Branches', 'Departments', 'Appearance']);
-    expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard', 'Appearance']);
+    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory']);
+    expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard']);
     expect(labels(claims({ corp: { r: ['BM'], b: ['cen'] } }))).toContain('Employees');
     expect(labels(claims({ corp: { r: ['BM'], b: ['cen'] } }))).not.toContain('HR settings');
-    expect(labels(claims({ corp: { r: ['CM'], b: ['*'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Appearance']);
+    expect(labels(claims({ corp: { r: ['CM'], b: ['*'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory']);
+    // Branch managers run their branch: they see its branch and department lists.
+    expect(labels(claims({ corp: { r: ['BM'], b: ['cen'] } }))).toEqual(expect.arrayContaining(['Branches', 'Departments']));
   });
 });
 

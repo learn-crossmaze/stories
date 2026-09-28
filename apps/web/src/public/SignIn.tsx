@@ -61,7 +61,7 @@ export function SignInPage() {
   }
 
   return (
-    <div className="sign-in">
+    <main className="sign-in">
       <aside className="editorial">
         <Icon name="book" />
         <p className="editorial-title">
@@ -138,7 +138,7 @@ export function SignInPage() {
           {creating ? t.haveAccountButton : t.createAccountButton}
         </button>
       </form>
-    </div>
+    </main>
   );
 }
 

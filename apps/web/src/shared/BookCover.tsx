@@ -4,8 +4,8 @@ export function BookCover({ title, author, seed, url, size = 'md' }: { title: st
   let h = 0;
   for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   const palettes = [
-    ['#b4502b', '#fbe3d7'], ['#55705a', '#ddeadf'], ['#2f6690', '#dbe8f3'], ['#6b4c9a', '#e8e0f3'],
-    ['#8a5a00', '#f6e7c8'], ['#1e2a2f', '#f1eadf'], ['#9c2f4f', '#f6dbe3'], ['#2e7d6b', '#d7eee8'],
+    ['#9a3f1e', '#fbe3d7'], ['#3f5a44', '#ddeadf'], ['#2f6690', '#dbe8f3'], ['#6b4c9a', '#e8e0f3'],
+    ['#8a5a00', '#f6e7c8'], ['#1e2a2f', '#f1eadf'], ['#9c2f4f', '#f6dbe3'], ['#1f5f51', '#d7eee8'],
   ];
   const [ink, paper] = palettes[h % palettes.length];
   return (

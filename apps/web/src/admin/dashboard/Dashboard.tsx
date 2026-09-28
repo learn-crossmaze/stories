@@ -12,6 +12,8 @@ import { Stat } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 
+const today = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+
 interface Todo {
   label: string;
   to: string;
@@ -25,10 +27,7 @@ export function DashboardPage() {
   const { claims, user } = useAuth();
   const { org, orgs, orgsLoading, branches, branchesLoading, branch, myBranches } = useWorkspace();
   const staffVisible = !!org && can(claims, 'staff.view', org.id);
-  const staff = useAsync(
-    () => (org && staffVisible ? listStaff(org.id, branchScope(claims, org.id)) : Promise.resolve(null)),
-    [org?.id, staffVisible],
-  );
+  const staff = useAsync(() => (org && staffVisible ? listStaff(org.id, branchScope(claims, org.id)) : Promise.resolve(null)), [org?.id, staffVisible]);
 
   const desk = !!org && !!branch && can(claims, 'members.view', org.id, branch.id);
   const approver = !!org && can(claims, 'deposits.approve', org.id);
@@ -57,52 +56,63 @@ export function DashboardPage() {
   if (c?.incoming) todos.push({ label: `${c.incoming} ${lt.incomingTransfers.toLowerCase()}`, to: paths.adminTransfers });
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
 
+  const firstName = (user?.displayName ?? '').split(' ')[0];
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? t.goodMorning : hour < 17 ? t.goodAfternoon : t.goodEvening;
+  const orgWide = !!org && branchScope(claims, org.id) === 'ALL';
+
   return (
     <>
       <header className="page-header">
-        <h1>{org?.name ?? t.consoleTitle}{branch && <span className="muted"> · {branch.name}</span>}</h1>
-        <p className="muted">{t.dashboardTitle}</p>
+        <h1>{t.navDashboard}</h1>
+        <p className="muted">
+          {firstName ? `${greeting}, ${firstName}` : greeting} · {today.format(new Date())}
+        </p>
       </header>
-      <section className="card">
-        {todos.length === 0 ? (
-          <p className="all-clear">
-            <Icon name="check" /> {t.dashboardAllClear}
-          </p>
-        ) : (
-          <ul className="todo-list">
-            {todos.map((todo) => (
-              <li key={todo.label}>
-                <Link to={todo.to}>
-                  <Icon name="alert" />
-                  <span>{todo.label}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+
+      <section className="section" aria-labelledby="dash-attention">
+        <h2 id="dash-attention">{t.dashboardAttention}</h2>
+        <div className="card">
+          {todos.length === 0 ? (
+            <p className="all-clear">
+              <Icon name="check" /> {t.dashboardAllClear}
+            </p>
+          ) : (
+            <ul className="todo-list">
+              {todos.map((todo) => (
+                <li key={todo.label}>
+                  <Link to={todo.to}>
+                    <Icon name="alert" />
+                    <span>{todo.label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
-      {c && (
-        <section className="stats" aria-label={lt.deskTitle}>
-          <Stat value={c.issuedToday} label={lt.issuedToday} to={paths.adminDesk} />
-          <Stat value={c.exchangesToday} label={lt.exchangesToday} to={paths.adminDesk} />
-          <Stat value={c.inspection} label={lt.awaitingInspection} to={paths.adminDesk} />
-          <Stat value={c.holds} label={lt.holdsReady} to={paths.adminReservations} />
-          <Stat value={c.waiting} label={lt.waitingReservations} to={paths.adminReservations} />
-          <Stat value={c.incoming} label={lt.incomingTransfers} to={paths.adminTransfers} />
+
+      {c && branch && (
+        <section className="section" aria-labelledby="dash-today">
+          <h2 id="dash-today">{t.dashboardToday(branch.name)}</h2>
+          <div className="stats">
+            <Stat value={c.issuedToday} label={lt.issuedToday} to={paths.adminDesk} />
+            <Stat value={c.exchangesToday} label={lt.exchangesToday} to={paths.adminDesk} />
+            <Stat value={c.holds} label={lt.holdsReady} to={paths.adminReservations} />
+            <Stat value={c.waiting} label={lt.waitingReservations} to={paths.adminReservations} />
+            <Stat value={c.inspection} label={lt.awaitingInspection} to={paths.adminInventory} />
+            <Stat value={c.incoming} label={lt.incomingTransfers} to={paths.adminTransfers} />
+          </div>
         </section>
       )}
-      {org && (
-        <section className="stats" aria-label="Summary">
-          <div className="stat">
-            <span className="stat-value">{shownBranches.length}</span>
-            <span className="stat-label">{t.navBranches}</span>
+
+      {org && (orgWide || activeStaff) && (
+        <section className="section" aria-labelledby="dash-org">
+          <h2 id="dash-org">{org.name}</h2>
+          <div className="stats">
+            <Stat value={shownBranches.length} label={t.navBranches} to={paths.adminBranches} />
+            {activeStaff && <Stat value={activeStaff.length} label={t.dashboardStaffWithAccess} to={paths.adminStaff} />}
           </div>
-          {activeStaff && (
-            <div className="stat">
-              <span className="stat-value">{activeStaff.length}</span>
-              <span className="stat-label">{t.navStaff}</span>
-            </div>
-          )}
         </section>
       )}
     </>

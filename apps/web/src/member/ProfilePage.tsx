@@ -1,13 +1,11 @@
 import { useEffect } from 'react';
-import { Link, useLocation } from 'react-router';
+import { useLocation } from 'react-router';
 
 import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { useAuth } from '../auth/AuthContext';
-import { isStaff } from '../auth/claims';
 import { type IdCardInfo, IdCardPanel } from '../shared/IdCard';
 import { currentTerm, type Membership } from '../data/me';
 import { day } from '../shared/format';
-import { paths } from '../paths';
 import { t } from '../strings';
 import { useMemberData } from './memberData';
 import { MemberSwitcher } from './common';
@@ -24,7 +22,7 @@ const cardInfo = (m: Membership): IdCardInfo => ({
 });
 
 export function ProfilePage() {
-  const { user, repo, claims } = useAuth();
+  const { user, repo } = useAuth();
   const { current } = useMemberData();
   const { hash } = useLocation();
   // "Show my ID card" links here with #id-card: scroll to it once the membership has loaded.
@@ -39,11 +37,6 @@ export function ProfilePage() {
       <section className="profile">
         {user?.displayName && <h2>{user.displayName}</h2>}
         {user?.email && <p className="muted">{t.profileSignedInAs(user.email)}</p>}
-        {isStaff(claims) && (
-          <Link to={paths.admin} className="btn btn-filled">
-            {t.staffConsole}
-          </Link>
-        )}
         <button type="button" className="btn btn-outlined" onClick={() => repo.signOut()}>
           {t.signOut}
         </button>

@@ -1,7 +1,10 @@
+import type { ReactNode } from 'react';
 import { Route, Routes } from 'react-router';
 
 import { AdminShell } from './AdminShell';
 import { NoAccess, Require } from './guards';
+import { navItemFor, type Requirement } from './nav';
+import { paths } from '../paths';
 import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
 import { AuditPage } from './organization/Audit';
@@ -24,37 +27,45 @@ import { PeoplePage } from './people/People';
 import { OrganizationsPage } from './organization/Organizations';
 import { StaffPage } from './organization/Staff';
 
+/** Guards a page with the rule of the menu item it belongs to (the server checks again). */
+function guard(path: string, page: ReactNode, requires?: Requirement) {
+  const item = navItemFor(path);
+  return <Require requires={requires ?? item?.page ?? item?.requires ?? null}>{page}</Require>;
+}
+
+const sub = (path: string) => path.slice(paths.admin.length + 1);
+
 /**
- * Staff console (lazy-loaded chunk). Each page is guarded by the same rule as
- * its navigation item; the server enforces the real permission regardless.
+ * Staff console (lazy-loaded chunk). Each page is guarded by the rule of its
+ * menu item (nav.ts); the server enforces the real permission regardless.
  */
 export default function AdminApp() {
   return (
     <Routes>
       <Route element={<AdminShell />}>
         <Route index element={<DashboardPage />} />
-        <Route path="organizations" element={<Require requires="superAdmin"><OrganizationsPage /></Require>} />
-        <Route path="branches" element={<Require requires="branches.view"><BranchesPage /></Require>} />
-        <Route path="departments" element={<Require requires="branches.view"><DepartmentsPage /></Require>} />
-        <Route path="staff" element={<Require requires="staff.view"><StaffPage /></Require>} />
-        <Route path="people" element={<Require requires="employees.view"><PeoplePage /></Require>} />
-        <Route path="people/:employeeId" element={<Require requires="employees.view"><EmployeeProfilePage /></Require>} />
-        <Route path="hr-settings" element={<Require requires="hr.config"><HrSettingsPage /></Require>} />
-        <Route path="audit" element={<Require requires="audit.view"><AuditPage /></Require>} />
-        <Route path="desk" element={<Require requires="loans.issue"><DeskPage /></Require>} />
-        <Route path="books" element={<Require requires="books.view"><CataloguePage /></Require>} />
-        <Route path="books/:bookId" element={<Require requires="books.view"><BookDetailPage /></Require>} />
-        <Route path="inventory" element={<Require requires="books.view"><InventoryPage /></Require>} />
-        <Route path="inventory/:copyId" element={<Require requires="books.view"><CopyDetailPage /></Require>} />
-        <Route path="labels" element={<Require requires="books.view"><LabelsPage /></Require>} />
-        <Route path="reservations" element={<Require requires="reservations.manage"><ReservationsPage /></Require>} />
-        <Route path="transfers" element={<Require requires="books.transfer"><TransfersPage /></Require>} />
-        <Route path="members" element={<Require requires="members.view"><MembersPage /></Require>} />
-        <Route path="members/:memberId" element={<Require requires="members.view"><MemberDetailPage /></Require>} />
-        <Route path="plans" element={<Require requires="plans.manage"><PlansPage /></Require>} />
-        <Route path="deposits" element={<Require requires="deposits.approve"><DepositApprovalsPage /></Require>} />
+        <Route path={sub(paths.adminOrgs)} element={guard(paths.adminOrgs, <OrganizationsPage />)} />
+        <Route path={sub(paths.adminBranches)} element={guard(paths.adminBranches, <BranchesPage />)} />
+        <Route path={sub(paths.adminDepartments)} element={guard(paths.adminDepartments, <DepartmentsPage />)} />
+        <Route path={sub(paths.adminStaff)} element={guard(paths.adminStaff, <StaffPage />)} />
+        <Route path={sub(paths.adminPeople)} element={guard(paths.adminPeople, <PeoplePage />)} />
+        <Route path={sub(paths.adminEmployee(':employeeId'))} element={guard(paths.adminPeople, <EmployeeProfilePage />)} />
+        <Route path={sub(paths.adminHrSettings)} element={guard(paths.adminHrSettings, <HrSettingsPage />)} />
+        <Route path={sub(paths.adminAudit)} element={guard(paths.adminAudit, <AuditPage />)} />
+        <Route path={sub(paths.adminDesk)} element={guard(paths.adminDesk, <DeskPage />)} />
+        <Route path={sub(paths.adminBooks)} element={guard(paths.adminBooks, <CataloguePage />)} />
+        <Route path={sub(paths.adminBook(':bookId'))} element={guard(paths.adminBooks, <BookDetailPage />)} />
+        <Route path={sub(paths.adminInventory)} element={guard(paths.adminInventory, <InventoryPage />)} />
+        <Route path={sub(paths.adminCopy(':copyId'))} element={guard(paths.adminInventory, <CopyDetailPage />)} />
+        <Route path={sub(paths.adminLabels)} element={guard(paths.adminInventory, <LabelsPage />)} />
+        <Route path={sub(paths.adminReservations)} element={guard(paths.adminReservations, <ReservationsPage />)} />
+        <Route path={sub(paths.adminTransfers)} element={guard(paths.adminTransfers, <TransfersPage />)} />
+        <Route path={sub(paths.adminMembers)} element={guard(paths.adminMembers, <MembersPage />)} />
+        <Route path={sub(paths.adminMember(':memberId'))} element={guard(paths.adminMembers, <MemberDetailPage />)} />
+        <Route path={sub(paths.adminPlans)} element={guard(paths.adminPlans, <PlansPage />)} />
+        <Route path={sub(paths.adminDeposits)} element={guard(paths.adminDeposits, <DepositApprovalsPage />)} />
         <Route
-          path="appearance"
+          path={sub(paths.adminAppearance)}
           element={
             <>
               <header className="page-header">
