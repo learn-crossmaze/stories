@@ -25,7 +25,7 @@ function DepartmentDialog({ orgId, dept, onClose, onSaved }: { orgId: string; de
     onClose();
   });
   return (
-    <Dialog title={dept ? t.rename : t.departmentNew} onClose={onClose}>
+    <Dialog title={dept ? t.rename : t.departmentNew} onClose={onClose} narrow>
       <form onSubmit={submit} noValidate>
         <TextField label={t.departmentName} value={name} onChange={setName} error={touched ? nameError : undefined} />
         <SelectField

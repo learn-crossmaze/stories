@@ -3,8 +3,11 @@ import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } fr
 import { ApiError } from '../data/api';
 import { t } from '../strings';
 
-/** Accessible modal: labelled, Escape closes, focus moves in and returns on close. */
-export function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+/**
+ * Accessible modal: labelled, Escape closes, focus moves in and returns on close.
+ * Forms get room for two columns; `narrow` suits a short confirmation or a single field.
+ */
+export function Dialog({ title, onClose, children, narrow }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean }) {
   const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -19,7 +22,7 @@ export function Dialog({ title, onClose, children, wide }: { title: string; onCl
   }, [onClose]);
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={wide ? 'dialog dialog-wide' : 'dialog'} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
+      <div className={narrow ? 'dialog dialog-narrow' : 'dialog'} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
         <h2 id={titleId}>{title}</h2>
         {children}
       </div>
@@ -94,7 +97,7 @@ export function ConfirmWithReason({
     await onConfirm(reason.trim());
   });
   return (
-    <Dialog title={title} onClose={onClose}>
+    <Dialog title={title} onClose={onClose} narrow>
       <form onSubmit={submit} noValidate>
         <p className="muted">{body}</p>
         <TextField label={t.reasonLabel} hint={t.reasonHint} value={reason} onChange={setReason} error={touched && invalid ? t.required : undefined} />

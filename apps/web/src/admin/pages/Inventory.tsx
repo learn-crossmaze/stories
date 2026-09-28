@@ -33,7 +33,7 @@ function LocationDialog({ orgId, branchId, onClose, onSaved }: { orgId: string; 
     onClose();
   });
   return (
-    <Dialog title={lt.newLocation} onClose={onClose}>
+    <Dialog title={lt.newLocation} onClose={onClose} narrow>
       <form onSubmit={submit} noValidate>
         <TextField label={lt.code} value={f.code} onChange={(code) => setF({ ...f, code })} hint={`e.g. A-03-2. ${lt.locationCodeAuto}`} />
         <TextField label={lt.labelText} value={f.label} onChange={(l) => setF({ ...f, label: l })} hint="e.g. Children · bay 3 · shelf 2" />
