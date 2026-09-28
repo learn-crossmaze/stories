@@ -1,11 +1,12 @@
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { type ReactNode, useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 
 import { AppearanceSettings } from '../AppearanceSettings';
 import { useAuth } from '../auth/AuthContext';
 import { isStaff } from '../auth/claims';
 import { BookCover } from '../BookCover';
+import { type IdCardInfo, IdCardPanel } from '../IdCard';
 import { callAction, toApiError } from '../data/api';
 import { type Book, label, searchBooks } from '../data/library';
 import {
@@ -176,8 +177,9 @@ function HomeBody({ m }: { m: Membership }) {
       <section className="section">
         <h2>{t.meBorrowedNow}</h2>
         {borrowed.length ? <LoanList loans={borrowed} /> : <p className="muted">{t.meNothingBorrowed}</p>}
-        <p>
+        <p className="row">
           <Link to={paths.explore}>{t.meFindBooks}</Link>
+          <Link to={`${paths.profile}#id-card`}>{t.idCardShow}</Link>
         </p>
       </section>
     </>
@@ -658,9 +660,24 @@ function PlanCard({ plan, busy, disabled, onChoose }: { plan: MyPlan; busy: bool
 
 // ------------------------------------------------------------------ Profile
 
+const cardInfo = (m: Membership): IdCardInfo => ({
+  orgName: m.orgName,
+  branchName: m.branch.name,
+  branchPhone: m.branch.phone || null,
+  fullName: m.member.fullName,
+  code: m.member.code,
+  validUntil: currentTerm(m) ? m.member.renewalDueAt : null,
+  guardianName: m.member.guardian?.name ?? null,
+});
+
 export function ProfilePage() {
   const { user, repo, claims } = useAuth();
   const { current } = useMemberData();
+  const { hash } = useLocation();
+  // "Show my ID card" links here with #id-card: scroll to it once the membership has loaded.
+  useEffect(() => {
+    if (hash === '#id-card' && current) document.getElementById('id-card')?.scrollIntoView({ block: 'start' });
+  }, [hash, current]);
   return (
     <>
       <header className="page-header">
@@ -679,8 +696,15 @@ export function ProfilePage() {
         </button>
       </section>
       {current && (
-        <section className="section">
+        <section className="section" id="id-card">
           <MemberSwitcher />
+          <h2>{t.idCardTitle}</h2>
+          <p className="muted">{t.idCardIntro}</p>
+          <IdCardPanel info={cardInfo(current)} />
+        </section>
+      )}
+      {current && (
+        <section className="section">
           <h2>{t.meMembershipDetails}</h2>
           <dl className="facts">
             <dt>{t.meName}</dt>

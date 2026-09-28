@@ -130,3 +130,11 @@ A guardian's account also sees the children whose `guardian.memberId` is theirs,
 
 All `me-*` actions run on the `members` router and check ownership (account holder, or the guardian's account
 holder) instead of staff permissions; members never read other members' data.
+
+### Member ID card
+
+Every member has a credit-card-size ID card (85.6 × 54 mm): library and branch, name, member code, guardian (children),
+plan valid-until date, branch phone, and a **QR code of the member code**. At the desk, scanning it into **Find member**
+(USB scanner or the camera button) opens the member, like typing the code.
+- Staff: member page → **Library ID card** → Print (only the card prints, at real size) or Download (PNG, 300 dpi).
+- Members: Profile → **Library ID card** (also linked from Home) → Download to their phone, or Print.

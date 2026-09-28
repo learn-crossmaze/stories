@@ -30,6 +30,7 @@ import { EmptyState, ErrorState, SkeletonRows, StatusBadge } from '../../ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../Dialog';
 import { Notice, Tabs } from '../kit';
 import { lt } from '../libraryStrings';
+import { IdCardPanel } from '../../IdCard';
 import { useWorkspace } from '../Workspace';
 import { BookPicker } from './BookPicker';
 import { CollectOnlineDialog } from '../OnlinePayments';
@@ -189,7 +190,7 @@ function ReserveDialog({ orgId, memberId, branchId, onClose, onDone }: { orgId: 
   );
 }
 
-type DialogKind = 'edit' | 'subscribe' | 'renew' | 'pay' | 'online' | 'cancelPending' | 'adjust' | 'settle' | 'refund' | 'reserve' | 'suspend' | 'reactivate' | 'close';
+type DialogKind = 'idCard' | 'edit' | 'subscribe' | 'renew' | 'pay' | 'online' | 'cancelPending' | 'adjust' | 'settle' | 'refund' | 'reserve' | 'suspend' | 'reactivate' | 'close';
 
 export function MemberDetailPage() {
   const { memberId = '' } = useParams();
@@ -272,6 +273,11 @@ export function MemberDetailPage() {
         </div>
         <div className="row">
           <StatusBadge status={m.status} />
+          {m.status !== 'CLOSED' && (
+            <button type="button" className="btn btn-outlined" onClick={() => setDialog('idCard')}>
+              {t.idCardTitle}
+            </button>
+          )}
           {perm('members.manage') && m.status !== 'CLOSED' && (
             <>
               <button type="button" className="btn btn-outlined" onClick={() => setDialog('edit')}>
@@ -512,6 +518,21 @@ export function MemberDetailPage() {
         </section>
       )}
 
+      {dialog === 'idCard' && (
+        <Dialog title={t.idCardTitle} onClose={() => setDialog(null)} narrow>
+          <IdCardPanel
+            info={{
+              orgName: org?.name ?? '',
+              branchName: branchName(m.homeBranchId),
+              branchPhone: branches.find((x) => x.id === m.homeBranchId)?.contact.phone ?? null,
+              fullName: m.fullName,
+              code: m.code,
+              validUntil: current ? (toDate(current.endAt)?.toISOString() ?? null) : null,
+              guardianName: m.guardian?.name ?? null,
+            }}
+          />
+        </Dialog>
+      )}
       {dialog === 'edit' && <MemberDialog orgId={orgId} branchId={b} member={m} onClose={() => setDialog(null)} onSaved={() => member.reload()} />}
       {(dialog === 'subscribe' || dialog === 'renew') && <SubscribeDialog orgId={orgId} member={m} renewing={dialog === 'renew'} onClose={() => setDialog(null)} onCreated={refresh} />}
       {dialog === 'online' && pending && (
