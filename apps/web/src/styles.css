@@ -363,7 +363,15 @@ h2 { font-size: 22px; line-height: 1.25; }
 .label svg { max-width: 100%; }
 .label-brand { font: 700 9pt var(--font-display); color: #b4502b; }
 .label-code { font-size: 9pt; }
-.label-title { font-size: 7pt; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.label-title { font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.label-top { display: flex; align-items: center; gap: 2.5mm; width: 100%; }
+.label-text { display: flex; flex-direction: column; gap: .5mm; min-width: 0; }
+.qr { display: inline-block; line-height: 0; background: #fff; }
+.qr svg { width: 100%; height: 100%; }
+.label-qr { flex: none; width: 18mm; height: 18mm; }
+.label > svg { width: 100%; height: 8mm; }
+.barcode-pair { display: flex; align-items: center; gap: 10px; }
+.qr-sm { width: 72px; height: 72px; }
 @media print {
   @page { size: A4; margin: 10mm 7mm; }
   body { background: #fff; }

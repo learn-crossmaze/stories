@@ -1,25 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { GUIDE, type Decoded, type Mode } from './barcode';
 import { lt } from './libraryStrings';
 
-type Controls = { stop: () => void };
-
-/** Formats on library labels (Code 128), book covers (EAN-13 / ISBN) and a few common others. */
-async function makeReader() {
-  // Loaded only when the camera is used, to keep the console quick to open.
-  const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
-  const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-    BarcodeFormat.CODE_128,
-    BarcodeFormat.CODE_39,
-    BarcodeFormat.EAN_13,
-    BarcodeFormat.EAN_8,
-    BarcodeFormat.UPC_A,
-    BarcodeFormat.QR_CODE,
-  ]);
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  return new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 120, delayBetweenScanSuccess: 600 });
-}
+/** Pause between frames sent to the decoder (it runs in a Web Worker, one frame at a time). */
+const SCAN_INTERVAL_MS = 60;
+/** Frames are cropped to the framing guide; full detail is kept (small codes need every pixel) up to this width. */
+const MAX_WIDTH = 1920;
+/** A code is accepted after this many matching reads within 1.5 s (guards against misreads). */
+const CONFIRMATIONS = 2;
 
 function cameraProblem(e: unknown): string {
   const name = (e as { name?: string }).name;
@@ -33,8 +22,8 @@ function cameraProblem(e: unknown): string {
 /**
  * Live camera preview that reads barcodes (laptop webcam or phone camera).
  * `continuous` keeps scanning (the desk scans book after book); otherwise it
- * closes after the first code. The same code isn't reported twice in a row
- * within 2 seconds.
+ * closes after the first code. A code counts only after two matching reads
+ * within 1.5 s, and the same code isn't reported again while it stays in view.
  */
 export function CameraScanner({ onDetect, onClose, continuous = true }: { onDetect: (text: string) => void; onClose: () => void; continuous?: boolean }) {
   const video = useRef<HTMLVideoElement>(null);
@@ -52,41 +41,100 @@ export function CameraScanner({ onDetect, onClose, continuous = true }: { onDete
   const chain = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    let controls: Controls | null = null;
+    let stream: MediaStream | null = null;
+    let worker: Worker | null = null;
+    let timer: number | undefined;
     let cancelled = false;
     setStarting(true);
     setError(null);
+    const stop = () => {
+      window.clearTimeout(timer);
+      worker?.terminate();
+      worker = null;
+      stream?.getTracks().forEach((t) => t.stop());
+      stream = null;
+    };
     const run = chain.current.then(async () => {
       if (cancelled) return;
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no media'), { name: window.isSecureContext ? 'NotFoundError' : 'SecurityError' });
-        const reader = await makeReader();
-        const constraints: MediaStreamConstraints = {
-          video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        const s = await navigator.mediaDevices.getUserMedia({
+          // As sharp as the camera allows: thin bars need pixels.
+          video: deviceId
+            ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+            : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false,
-        };
-        const c = await reader.decodeFromConstraints(constraints, video.current!, (result) => {
-          if (!result || cancelled) return;
-          const text = result.getText().trim();
-          const now = Date.now();
-          if (seen.current && seen.current.text === text && now - seen.current.at < 2000) return;
-          seen.current = { text, at: now };
-          setLast(text);
-          navigator.vibrate?.(60);
-          detect.current(text);
-          if (!continuous) onClose();
         });
-        if (cancelled) {
-          c.stop();
-          return;
-        }
-        controls = c;
+        stream = s;
+        if (cancelled) return stop();
+        const track = s.getVideoTracks()[0];
+        // Continuous autofocus where the webcam supports it (many phones and some USB webcams).
+        await track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => undefined);
+        const v = video.current!;
+        v.srcObject = s;
+        await v.play().catch(() => undefined);
+        if (cancelled) return stop();
+        worker = new Worker(new URL('./barcode.worker.ts', import.meta.url), { type: 'module' });
         setStarting(false);
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+        let candidate: { text: string; count: number; at: number } | null = null;
+        let frame = 0;
+        const accept = (hit: Decoded | null) => {
+          if (!hit) return;
+          const text = hit.text.trim();
+          const now = Date.now();
+          // Passes alternate between frames, so matching reads needn't be on consecutive frames.
+          candidate = candidate && candidate.text === text && now - candidate.at < 1500 ? { text, count: candidate.count + 1, at: now } : { text, count: 1, at: now };
+          const repeat = seen.current && seen.current.text === text && now - seen.current.at < 2000;
+          if (repeat) {
+            seen.current = { text, at: now }; // still in view: keep ignoring it
+          } else if (candidate.count >= CONFIRMATIONS) {
+            seen.current = { text, at: now };
+            candidate = null;
+            setLast(text);
+            navigator.vibrate?.(60);
+            detect.current(text);
+            if (!continuous) onClose();
+          }
+        };
+        const send = () => {
+          if (cancelled || !stream || !worker) return;
+          if (v.readyState < 2 || !v.videoWidth) {
+            timer = window.setTimeout(send, SCAN_INTERVAL_MS);
+            return;
+          }
+          frame += 1;
+          const mode: Mode = frame % 2 ? 'quick' : 'thorough';
+          // Quick frames look inside the framing guide; thorough ones at the whole picture, for labels held
+          // so close that they spill past the guide.
+          const r = mode === 'quick' ? GUIDE : { x: 0, y: 0, w: 1, h: 1 };
+          const sw = Math.round(v.videoWidth * r.w);
+          const sh = Math.round(v.videoHeight * r.h);
+          const scale = Math.min(1, MAX_WIDTH / sw);
+          canvas.width = Math.round(sw * scale);
+          canvas.height = Math.round(sh * scale);
+          ctx.drawImage(v, Math.round(v.videoWidth * r.x), Math.round(v.videoHeight * r.y), sw, sh, 0, 0, canvas.width, canvas.height);
+          const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          worker.postMessage({ id: frame, rgba: data, width: canvas.width, height: canvas.height, mode }, [data.buffer]);
+        };
+        worker.onmessage = (e: MessageEvent<{ id: number; result: Decoded | null }>) => {
+          if (cancelled) return;
+          accept(e.data.result);
+          if (!cancelled) timer = window.setTimeout(send, SCAN_INTERVAL_MS);
+        };
+        worker.onerror = (e) => {
+          console.warn('barcode worker failed', e);
+          if (!cancelled) setError(lt.camFailed);
+        };
+        send();
         // Labels are only readable once permission is granted.
         const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
         if (!cancelled) setCameras(devices);
       } catch (e) {
         console.warn('camera scanner', e);
+        stop();
         if (!cancelled) {
           setError(cameraProblem(e));
           setStarting(false);
@@ -96,7 +144,7 @@ export function CameraScanner({ onDetect, onClose, continuous = true }: { onDete
     chain.current = run;
     return () => {
       cancelled = true;
-      controls?.stop();
+      stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId]);
