@@ -62,7 +62,7 @@
   color-scheme: dark;
 }
 
-/* Personal appearance (src/appearance.ts): accent colour, text size, density, corners, contrast, motion. */
+/* Personal appearance (src/shared/appearance.ts): accent colour, text size, density, corners, contrast, motion. */
 :root[data-accent='teal'] { --primary: #0f766e; --on-primary: #ffffff; --primary-container: #ccfbf1; --on-primary-container: #134e4a; }
 :root[data-scheme='dark'][data-accent='teal'] { --primary: #5eead4; --on-primary: #042f2e; --primary-container: #134e4a; --on-primary-container: #ccfbf1; }
 :root[data-accent='indigo'] { --primary: #4338ca; --on-primary: #ffffff; --primary-container: #e0e7ff; --on-primary-container: #312e81; }

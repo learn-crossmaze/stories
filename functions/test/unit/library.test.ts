@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeIsbn } from '../../src/catalog/isbn.js';
-import { queryToken, searchTokens } from '../../src/catalog/search.js';
+import { normalizeIsbn } from '../../src/catalogue/isbn.js';
+import { queryToken, searchTokens } from '../../src/catalogue/search.js';
 import { addMonths } from '../../src/core/time.js';
 import { canTransition, COPY_STATUSES } from '../../src/inventory/copyState.js';
 import { ageOn, audienceFor, normalizePhone } from '../../src/members/model.js';
-import { effectivePrice } from '../../src/subscriptions/plans.js';
+import { effectivePrice } from '../../src/billing/plans.js';
 
 describe('ISBN', () => {
   it('accepts valid ISBN-13 with or without hyphens', () => {

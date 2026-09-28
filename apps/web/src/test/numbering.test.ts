@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_PATTERNS, patternProblem, previewCode } from '../admin/numbering';
+import { DEFAULT_PATTERNS, patternProblem, previewCode } from '../admin/organization/numbering';
 
 describe('numbering preview', () => {
   it('accepts the defaults and previews them like the server numbers them', () => {

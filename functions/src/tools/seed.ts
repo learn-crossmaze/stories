@@ -115,15 +115,15 @@ async function seedLibrary() {
     return;
   }
   const { randomUUID } = await import('node:crypto');
-  const catalog = await import('../catalog/catalog.js');
+  const catalog = await import('../catalogue/books.js');
   const copies = await import('../inventory/copies.js');
   const locations = await import('../inventory/locations.js');
   const members = await import('../members/members.js');
-  const plans = await import('../subscriptions/plans.js');
-  const subs = await import('../subscriptions/subscriptions.js');
+  const plans = await import('../billing/plans.js');
+  const subs = await import('../billing/subscriptions.js');
   const circ = await import('../circulation/circulation.js');
   const res = await import('../circulation/reservations.js');
-  const sweep = await import('../subscriptions/sweep.js');
+  const sweep = await import('../billing/sweep.js');
 
   const saUid = (await auth.getUserByEmail('super@stories.test')).uid;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

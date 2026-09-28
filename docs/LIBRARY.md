@@ -22,7 +22,7 @@ Catalogue page filters by Active / Archived.
 | `replacementPriceMinor` | paise; charged against the deposit if a copy is lost (else the copy's cost) |
 | `status` | ACTIVE / ARCHIVED (soft delete — history and copies stay) |
 
-**Search** (`functions/src/catalog/search.ts`): `searchTokens` holds normalized words of title, subtitle, authors,
+**Search** (`functions/src/catalogue/search.ts`): `searchTokens` holds normalized words of title, subtitle, authors,
 ISBN, code and keywords plus their 2–12 character prefixes. The app queries one token with `array-contains`
 (prefix search), optionally with an age-group filter, ordered by title. The same scheme powers member search (name,
 member code, mobile). A dedicated search service can replace it later behind the same query functions.

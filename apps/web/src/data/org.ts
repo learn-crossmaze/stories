@@ -125,9 +125,7 @@ export async function listStaff(orgId: string, scope: string[] | 'ALL'): Promise
   const filters: QueryConstraint[] = [where('orgId', '==', orgId)];
   if (scope !== 'ALL') filters.push(where('branchIds', 'array-contains-any', scope.slice(0, 10)));
   const snap = await getDocs(query(collectionGroup(services().db, 'memberships'), ...filters, limit(300)));
-  return snap.docs
-    .map((d) => d.data() as StaffMembership)
-    .sort((a, b) => (a.displayName ?? a.email ?? '').localeCompare(b.displayName ?? b.email ?? ''));
+  return snap.docs.map((d) => d.data() as StaffMembership).sort((a, b) => (a.displayName ?? a.email ?? '').localeCompare(b.displayName ?? b.email ?? ''));
 }
 
 export const AUDIT_PAGE_SIZE = 25;

@@ -11,7 +11,7 @@ import { id, reason } from '../core/schemas.js';
 import { logEvent } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
-import { requireActiveTerm } from '../subscriptions/term.js';
+import { requireActiveTerm } from '../billing/term.js';
 import { makeAvailable, nextWaiting, readCirculationConfig } from './allocation.js';
 
 /**

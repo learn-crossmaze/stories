@@ -3,7 +3,7 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import { useAuth } from '../auth/AuthContext';
 import { branchScope } from '../auth/claims';
 import { type Branch, getOrgs, listAllOrgs, listBranches, type Org } from '../data/org';
-import { useAsync } from '../data/useAsync';
+import { useAsync } from '../shared/useAsync';
 
 interface Workspace {
   orgs: Org[];

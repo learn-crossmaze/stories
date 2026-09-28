@@ -6,7 +6,7 @@ import { rolesIn } from '../auth/claims';
 import { ROLES } from '../generated/rbac';
 import { paths } from '../paths';
 import { t } from '../strings';
-import { Icon } from '../ui';
+import { Icon } from '../shared/ui';
 import { visibleNav } from './nav';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 

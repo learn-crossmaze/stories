@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { auth, db } from '../../src/core/firebase.js';
-import * as branches from '../../src/branches/branches.js';
-import * as departments from '../../src/departments/departments.js';
-import * as orgs from '../../src/orgs/orgs.js';
+import * as branches from '../../src/organization/branches.js';
+import * as departments from '../../src/organization/departments.js';
+import * as orgs from '../../src/organization/orgs.js';
 import * as platform from '../../src/platform/bootstrap.js';
-import * as staff from '../../src/staff/roles.js';
+import * as staff from '../../src/organization/staff.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
 let sa: TestUser;

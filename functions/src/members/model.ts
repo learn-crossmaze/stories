@@ -1,4 +1,4 @@
-import type { AgeGroup } from '../catalog/model.js';
+import type { AgeGroup } from '../catalogue/model.js';
 
 export const ADULT_AGE = 18;
 export const TEEN_AGE = 13;
