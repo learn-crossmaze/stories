@@ -23,6 +23,14 @@ export const ROLES = {
     "scope": "org",
     "label": "HR Admin"
   },
+  "CATALOGUE_MANAGER": {
+    "code": "CM",
+    "scope": "org",
+    "orgTypes": [
+      "CORPORATE"
+    ],
+    "label": "Catalogue Manager"
+  },
   "FRANCHISE_OWNER": {
     "code": "FO",
     "scope": "org",
@@ -105,14 +113,21 @@ export const PERMISSIONS = {
     "FO",
     "BM",
     "LIB",
-    "DEL"
+    "DEL",
+    "CM"
   ],
   "books.create": [
     "HO",
-    "BM"
+    "BM",
+    "CM"
   ],
   "books.edit": [
-    "HO"
+    "HO",
+    "CM"
+  ],
+  "books.delete": [
+    "HO",
+    "CM"
   ],
   "copies.manage": [
     "HO",
@@ -307,6 +322,7 @@ export const GRANTABLE: Partial<Record<Role, readonly Role[]>> = {
     "HEAD_OFFICE_ADMIN",
     "FINANCE_ADMIN",
     "HR_ADMIN",
+    "CATALOGUE_MANAGER",
     "BRANCH_MANAGER",
     "LIBRARIAN",
     "DELIVERY_PERSON",

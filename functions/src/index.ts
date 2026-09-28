@@ -57,6 +57,8 @@ export const catalogue = router({
   'books-create': catalog.create,
   'books-update': catalog.update,
   'books-archive': catalog.archive,
+  'books-restore': catalog.restore,
+  'books-delete': catalog.remove,
   'books-setNumbering': numbering.setBookNumbering,
   'books-setCover': covers.setCover,
   'books-lookup': lookup.lookup,

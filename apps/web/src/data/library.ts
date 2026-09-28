@@ -112,9 +112,10 @@ export async function listRefs(kind: 'authors' | 'publishers' | 'categories'): P
 export const BOOK_PAGE = 25;
 
 /** Catalogue search: one token (prefix) + optional age group, ordered by title. */
-export function searchBooks(q: string, ageGroup: AgeGroup | '', after?: DocumentSnapshot) {
+export function searchBooks(q: string, ageGroup: AgeGroup | '', after?: DocumentSnapshot, status: Book['status'] | '' = '') {
   const token = queryToken(q);
   const c: QueryConstraint[] = [];
+  if (status) c.push(where('status', '==', status));
   if (token) c.push(where('searchTokens', 'array-contains', token));
   if (ageGroup) c.push(where('ageGroup', '==', ageGroup));
   c.push(orderBy('titleNormalized'));

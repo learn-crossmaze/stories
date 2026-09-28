@@ -91,6 +91,38 @@ describe('M1.1 catalogue', () => {
     expect(await failure(call(catalog.authors.create, fo, { name: 'Someone' }))).toBe('FORBIDDEN');
   });
 
+  it('catalogue managers edit, restore and delete archived titles; titles with history stay', async () => {
+    const cm = await createUser('cm@stories.test');
+    await grant(cm, ['CATALOGUE_MANAGER'], ['*']);
+    const spare = await newBook('Kidnapped', '9780141441900');
+    await call(catalog.archive, cm, { bookId: spare, reason: 'Duplicate entry' });
+
+    // Archived titles can still be corrected, then restored or deleted.
+    await call(catalog.update, cm, {
+      bookId: spare, title: 'Kidnapped (1886)', isbn: '9780141441900', authorIds: [authorId], language: 'en', genres: ['FICTION'], ageGroup: 'ADULTS', readingLevel: 'INTERMEDIATE',
+    });
+    expect((await db.doc(`books/${spare}`).get()).get('title')).toBe('Kidnapped (1886)');
+    expect(await failure(call(catalog.remove, lib, { bookId: spare, reason: 'Not needed' }))).toBe('FORBIDDEN');
+    await call(catalog.restore, cm, { bookId: spare });
+    expect((await db.doc(`books/${spare}`).get()).get('status')).toBe('ACTIVE');
+    expect(await failure(call(catalog.remove, cm, { bookId: spare, reason: 'Not needed' }))).toBe('BOOK_NOT_ARCHIVED');
+    await call(catalog.archive, cm, { bookId: spare, reason: 'Duplicate entry' });
+    await call(catalog.remove, cm, { bookId: spare, reason: 'Duplicate entry' });
+    expect((await db.doc(`books/${spare}`).get()).exists).toBe(false);
+    expect((await db.doc('isbnIndex/9780141441900').get()).exists).toBe(false);
+    await newBook('Kidnapped again', '9780141441900'); // the ISBN is free again
+
+    // A title a library stocked keeps its history: it can be archived but not deleted.
+    await acquire(bookId, 1);
+    await call(catalog.archive, cm, { bookId, reason: 'Out of print' });
+    expect(await failure(call(catalog.remove, cm, { bookId, reason: 'Out of print' }))).toBe('BOOK_IN_USE');
+
+    // Branch managers may add titles but not delete them; the role exists only in corporate organizations.
+    expect(await failure(call(catalog.remove, bm, { bookId, reason: 'Out of print' }))).toBe('FORBIDDEN');
+    const fran = (await call<{ orgId: string }>(orgs.create, sa, { name: 'Franchise', type: 'FRANCHISE' })).orgId;
+    expect(await failure(call(staff.setRoles, sa, { orgId: fran, email: cm.email, roles: ['CATALOGUE_MANAGER'], branchIds: ['*'] }))).not.toBe('OK');
+  });
+
   it('keeps denormalized author names and search tokens fresh after a rename', async () => {
     await call(catalog.authors.rename, sa, { id: authorId, name: 'R. L. Stevenson' });
     const book = (await db.doc(`books/${bookId}`).get()).data()!;

@@ -21,6 +21,7 @@ Authentication ≠ authorization. App Check ≠ authorization. The Flutter UI hi
 | HEAD_OFFICE_ADMIN | corporate org + consolidated read of franchise orgs | Branches, catalogue, plans, reports, franchise oversight |
 | FINANCE_ADMIN | org | Payments, refunds, deposits (approve), payroll approval, settlements |
 | HR_ADMIN | org | Employees, documents, attendance/leave config, payroll preparation |
+| CATALOGUE_MANAGER | corporate org | The shared catalogue: add and edit titles (archived ones too), archive, restore and permanently delete archived titles never stocked or reserved, reference data, covers |
 | BRANCH_MANAGER | branch(es) | Operations, approvals (leave, corrections, task skips), branch reports |
 | LIBRARIAN | branch(es) | Circulation, inventory, members at counter, reservations, transfers |
 | DELIVERY_PERSON | branch(es) | Assigned delivery orders only |
@@ -45,7 +46,11 @@ Initial catalogue (excerpt):
 |---|---|---|---|---|---|---|---|---|---|---|
 | books.view | ✓ | ✓ | ✓ | | ✓ | ✓ | ✓ | ✓ | | ✓ |
 | books.create (add titles, authors, publishers, categories; a missing cover) | ✓ | ✓ | | | ✓ | | | | | |
-| books.edit (change/archive titles and reference data, covers, book numbering) | ✓ | ✓ | | | | | | | | |
+| books.edit (change/archive/restore titles and reference data, covers, book numbering) | ✓ | ✓ | | | | | | | | |
+| books.delete (permanently delete an archived title no library ever stocked or reserved) | ✓ | ✓ | | | | | | | | |
+
+The Catalogue Manager (CM, corporate orgs only) holds books.view, books.create, books.edit and books.delete and
+nothing else.
 | copies.manage (acquire, locate, condition) | ✓ | ✓ | | | ✓ | ✓ | | ✓ | | |
 | books.transfer | ✓ | ✓ | | | ✓ | ✓ | | ✓ | | |
 | copies.writeOff (lost/retire) | ✓ | ✓ | ✓ | | ✓ | | | ✓ | | |
@@ -100,13 +105,14 @@ user above a configurable threshold. Same pattern for refunds and payroll approv
 | Grantor | May grant | Branch limit |
 |---|---|---|
 | Super Admin | every org role (respecting org type) | none |
-| Head Office Admin | HO, Finance, HR, Branch Manager, Librarian, Delivery, Employee | org-wide |
+| Head Office Admin | HO, Finance, HR, Catalogue Manager, Branch Manager, Librarian, Delivery, Employee | org-wide |
 | Franchise Owner | Finance, HR, Branch Manager, Librarian, Delivery, Employee (own org) | org-wide |
 | HR Admin | Employee | org-wide |
 | Branch Manager | Librarian, Delivery, Employee | own branches only |
 
 Also enforced: nobody but a Super Admin edits their own roles; a grantor cannot edit or remove someone holding a role
-they cannot grant; org-wide roles (HO/FIN/HR/FO) always cover all branches; Head Office Admin only in corporate orgs,
+they cannot grant; org-wide roles (HO/FIN/HR/CM/FO) always cover all branches; Head Office Admin and Catalogue
+Manager only in corporate orgs,
 Franchise Owner only in franchise orgs; the person must already have signed in once. The first Super Admin is claimed
 once via `/setup` by the email in `functions/.env` (`BOOTSTRAP_SUPER_ADMIN_EMAIL`), which must be verified.
 
