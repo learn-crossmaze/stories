@@ -42,7 +42,7 @@ const ROUTERS: Record<string, string> = {
   users: 'admin', platform: 'admin', orgs: 'admin', branches: 'admin', departments: 'admin', staff: 'admin',
   books: 'catalogue', authors: 'catalogue', publishers: 'catalogue', categories: 'catalogue',
   copies: 'inventory', locations: 'inventory',
-  members: 'members',
+  members: 'members', me: 'members',
   plans: 'billing', subscriptions: 'billing', payments: 'billing', deposits: 'billing',
   circulation: 'circulation', reservations: 'circulation', transfers: 'circulation',
 };

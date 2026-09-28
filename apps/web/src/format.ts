@@ -6,8 +6,15 @@ const dateTimeFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', time
 export const money = (minor: number) => inr.format(minor / 100).replace(/\.00$/, '');
 export const toMinor = (rupees: string) => Math.round(Number(rupees.replace(/[₹,\s]/g, '')) * 100);
 
-const asDate = (v: unknown): Date | null =>
-  v instanceof Date ? v : v && typeof (v as { toDate?: () => Date }).toDate === 'function' ? (v as { toDate: () => Date }).toDate() : null;
+/** Firestore Timestamp, Date, or an ISO date string (member data from the server). */
+const asDate = (v: unknown): Date | null => {
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
+  if (typeof v === 'string') {
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return v && typeof (v as { toDate?: () => Date }).toDate === 'function' ? (v as { toDate: () => Date }).toDate() : null;
+};
 
 export const day = (v: unknown) => {
   const d = asDate(v);

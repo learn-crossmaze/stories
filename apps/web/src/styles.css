@@ -491,3 +491,17 @@ h2 { font-size: 22px; line-height: 1.25; }
 .swatch-dot { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgb(0 0 0 / .15); }
 .appearance-preview { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--outline); border-radius: var(--radius-lg); background: var(--surface-dim); position: sticky; top: 16px; }
 .appearance-preview .field input { min-width: 0; }
+
+/* Member app */
+.member-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.member-card { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.member-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.member-card-head h2 { margin: 0; }
+.pay-card { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; border-color: var(--primary); }
+.plan-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.plan-card { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--outline); border-radius: var(--radius-lg); background: var(--surface-raised); }
+.plan-card .btn { margin-top: auto; align-self: flex-start; }
+.plan-price { font: 600 22px/1.2 var(--font-display); }
+.book-row-button { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.book-panel { display: flex; flex-direction: column; gap: 10px; margin: 0 12px 12px 70px; padding: 12px 16px; border-left: 3px solid var(--primary-container); }
+@media (max-width: 600px) { .book-panel { margin-left: 12px; } }

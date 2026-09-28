@@ -4,7 +4,7 @@ import type { Request } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
-import { command, query, requestIdSchema } from '../core/callable.js';
+import { type CallContext, command, query, requestIdSchema } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id } from '../core/schemas.js';
@@ -103,10 +103,18 @@ export const testGateway = query('branches-testPaymentGateway', z.strictObject({
  * code instead (channel QR_LINK). An open request for the same subscription
  * and channel is reused rather than duplicated.
  */
-export const createRequest = query(
-  'payments-createRequest',
-  z.strictObject({ orgId: id, subscriptionId: id, channel: z.enum(['LINK', 'QR']), requestId: requestIdSchema }),
-  async ({ actor, input }) => {
+export const createRequestSchema = z.strictObject({ orgId: id, subscriptionId: id, channel: z.enum(['LINK', 'QR']), requestId: requestIdSchema });
+
+/**
+ * Shared by staff (payments-createRequest) and members paying for their own
+ * subscription (me-pay). `notify` sends the link by SMS/email; a member paying
+ * in the app opens it directly instead.
+ */
+export async function requestOnlinePayment(
+  { actor, input }: CallContext<z.infer<typeof createRequestSchema>>,
+  authorize: (subscription: FirebaseFirestore.DocumentSnapshot) => Promise<void>,
+  notify: boolean,
+) {
     const col = db.collection(`orgs/${input.orgId}/paymentRequests`);
     const replay = await col.where('requestId', '==', input.requestId).limit(1).get();
     if (!replay.empty) return describe(replay.docs[0]);
@@ -114,7 +122,7 @@ export const createRequest = query(
     const sub = await db.doc(`orgs/${input.orgId}/subscriptions/${input.subscriptionId}`).get();
     if (!sub.exists) throw errors.notFound('Subscription');
     const branchId = sub.get('branchId') as string;
-    await actor.require('payments.recordOffline', input.orgId, branchId);
+    await authorize(sub);
     if (sub.get('status') !== 'PENDING_PAYMENT') throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment (it may already be paid).');
 
     const open = await col.where('subscriptionId', '==', input.subscriptionId).where('status', '==', 'OPEN').get();
@@ -159,7 +167,7 @@ export const createRequest = query(
 
     try {
       if (input.channel === 'LINK') {
-        const { link, expire } = await makeLink(true);
+        const { link, expire } = await makeLink(notify);
         gatewayId = link.id;
         url = link.short_url;
         expiresAt = expire;
@@ -221,7 +229,10 @@ export const createRequest = query(
       });
     });
     return describe(await ref.get());
-  },
+}
+
+export const createRequest = query('payments-createRequest', createRequestSchema, (ctx) =>
+  requestOnlinePayment(ctx, (sub) => ctx.actor.require('payments.recordOffline', ctx.input.orgId, sub.get('branchId')), true),
 );
 
 function describe(d: FirebaseFirestore.DocumentSnapshot) {
@@ -305,6 +316,26 @@ async function fetchPaid(creds: Awaited<ReturnType<typeof loadCredentials>>, cha
   const link = await rzp<PaymentLink>(creds, 'GET', `/payment_links/${gatewayId}`);
   const p = link.status === 'paid' ? link.payments?.find((i) => i.status === 'captured') : undefined;
   return p ? { paymentId: p.payment_id, amountMinor: p.amount, method: p.method ?? null } : null;
+}
+
+/**
+ * Asks Razorpay about every open request for a subscription and applies a
+ * captured payment (for a member returning from the payment page before the
+ * webhook arrives). Returns whether the subscription is now paid.
+ */
+export async function settleOpenRequests(orgId: string, subscriptionId: string): Promise<boolean> {
+  const open = await db.collection(`orgs/${orgId}/paymentRequests`).where('subscriptionId', '==', subscriptionId).where('status', '==', 'OPEN').get();
+  for (const req of open.docs) {
+    const creds = await loadCredentials(null, orgId, req.get('branchId'), { requireEnabled: false });
+    let paid: GatewayPayment | null = null;
+    try {
+      paid = await fetchPaid(creds, req.get('channel'), req.id);
+    } catch (e) {
+      gatewayError(e);
+    }
+    if (paid && (await applyGatewayPayment(orgId, req.id, paid, 'check')).applied) return true;
+  }
+  return (await db.doc(`orgs/${orgId}/subscriptions/${subscriptionId}`).get()).get('status') === 'ACTIVE';
 }
 
 /** Asks Razorpay whether a request has been paid (for when the webhook isn't set up or is delayed). */

@@ -21,6 +21,7 @@ import * as online from './payments/online.js';
 import * as departments from './departments/departments.js';
 import * as inv from './inventory/copies.js';
 import * as loc from './inventory/locations.js';
+import * as me from './me/me.js';
 import * as mem from './members/members.js';
 import * as orgs from './orgs/orgs.js';
 import * as platform from './platform/bootstrap.js';
@@ -96,6 +97,14 @@ export const members = router({
   'members-update': mem.update,
   'members-setStatus': mem.setStatus,
   'members-indexList': mem.indexList,
+  // Member self-service (ownership-checked; same deployed router to stay within the Cloud Run quota).
+  'me-overview': me.overview,
+  'me-subscribe': me.subscribe,
+  'me-cancelPending': me.cancelPending,
+  'me-pay': me.pay,
+  'me-checkPayment': me.checkPayment,
+  'me-reserve': me.reserve,
+  'me-cancelReservation': me.cancelReservationByMember,
 });
 
 /** Plans, subscriptions, counter payments and the deposit ledger. */

@@ -226,7 +226,8 @@ async function seedLibrary() {
   };
   const issue = (memberId: string, barcodes: string[]) => call(circ.issue, { orgId: CORP, branchId: CENTRAL, memberId, barcodes });
 
-  const asha = await member(CORP, CENTRAL, 'Asha Rao', '1988-04-12', '9876500001');
+  // Asha signs in to the member app as member@stories.test (linked by email on first visit; Kiran is her ward).
+  const asha = await member(CORP, CENTRAL, 'Asha Rao', '1988-04-12', '9876500001', { email: 'member@stories.test' });
   await subscribe(CORP, asha, quarterly);
   await issue(asha, [codes[bookIds[23].id][0], codes[bookIds[12].id][0]]);
   const kiran = await member(CORP, CENTRAL, 'Kiran Rao', '2016-08-20', '', { guardianMemberId: asha, guardianRelationship: 'Mother' });

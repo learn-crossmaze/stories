@@ -4,7 +4,7 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from './auth/AuthContext';
 import { isStaff } from './auth/claims';
 import { MemberShell } from './pages/MemberShell';
-import { ExplorePage, HomePage, MyBooksPage, OrdersPage, ProfilePage } from './pages/member';
+import { ExplorePage, HomePage, MembershipPage, MyBooksPage, ProfilePage } from './pages/member';
 import { SetupPage } from './pages/Setup';
 import { SignInPage } from './pages/SignIn';
 import { authRedirect, paths } from './paths';
@@ -46,7 +46,8 @@ export const routes = [
           { path: paths.home, element: <HomePage /> },
           { path: paths.explore, element: <ExplorePage /> },
           { path: paths.myBooks, element: <MyBooksPage /> },
-          { path: paths.orders, element: <OrdersPage /> },
+          { path: paths.membership, element: <MembershipPage /> },
+          { path: '/orders', element: <Navigate to={paths.membership} replace /> },
           { path: paths.profile, element: <ProfilePage /> },
         ],
       },

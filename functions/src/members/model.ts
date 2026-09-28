@@ -32,6 +32,7 @@ export interface Member {
   isMinor: boolean;
   phone: string | null;
   email: string | null;
+  emailLower?: string | null;
   homeBranchId: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
   guardian: { memberId: string; name: string; relationship: string } | null;

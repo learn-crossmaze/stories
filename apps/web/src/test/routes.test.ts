@@ -11,7 +11,7 @@ describe('authRedirect', () => {
   it('sends signed-in users away from sign-in (staff to the console)', () => {
     expect(authRedirect(true, paths.signIn)).toBe(paths.home);
     expect(authRedirect(true, paths.signIn, true)).toBe(paths.admin);
-    expect(authRedirect(true, paths.orders)).toBeNull();
+    expect(authRedirect(true, paths.membership)).toBeNull();
   });
 });
 

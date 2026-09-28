@@ -1,15 +1,16 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type Transaction } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
-import { command } from '../core/callable.js';
+import { type CallContext, command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db, REGION } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
 import { logEvent } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
+import type { Member } from '../members/model.js';
 import { requireActiveTerm } from '../subscriptions/term.js';
 import { makeAvailable, nextWaiting, readCirculationConfig } from './allocation.js';
 
@@ -19,12 +20,18 @@ import { makeAvailable, nextWaiting, readCirculationConfig } from './allocation.
  * the member joins the queue (WAITING) and gets the next copy that frees up.
  * Waiting + held reservations may not exceed the plan limit (D2).
  */
-export const place = command(
-  'reservations-place',
-  z.strictObject({ orgId: id, memberId: id, bookId: id, branchId: id }),
-  async ({ actor, input, requestId }, tx) => {
-    await actor.require('reservations.manage', input.orgId, input.branchId, tx);
+export const placeSchema = z.strictObject({ orgId: id, memberId: id, bookId: id, branchId: id });
+
+/** Shared by staff (reservations-place) and members reserving for themselves (me-reserve). */
+export async function placeReservation(
+  { actor, input, requestId }: CallContext<z.infer<typeof placeSchema>>,
+  tx: Transaction,
+  authorize: (member: Member) => Promise<void>,
+) {
     const { snap: memberSnap, member } = await loadMember(tx, input.orgId, input.memberId);
+    await authorize(member);
+    const branch = await tx.get(db.doc(`orgs/${input.orgId}/branches/${input.branchId}`));
+    if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
     const term = await requireActiveTerm(tx, input.orgId, member);
     const book = await tx.get(db.doc(`books/${input.bookId}`));
     if (!book.exists || book.get('status') !== 'ACTIVE') throw errors.notFound('Active catalogue title');
@@ -75,18 +82,25 @@ export const place = command(
       after: { memberId: input.memberId, bookId: input.bookId, status: copy ? 'ALLOCATED' : 'WAITING', copy: copy?.get('code') ?? null },
     });
     return { reservationId: ref.id, status: copy ? 'ALLOCATED' : 'WAITING', copyCode: copy?.get('code') ?? null };
-  },
+}
+
+export const place = command('reservations-place', placeSchema, (ctx, tx) =>
+  placeReservation(ctx, tx, () => ctx.actor.require('reservations.manage', ctx.input.orgId, ctx.input.branchId, tx)),
 );
 
 /** Cancels a reservation; a held copy passes to the next member waiting or back to the shelf. */
-export const cancel = command(
-  'reservations-cancel',
-  z.strictObject({ orgId: id, reservationId: id, reason }),
-  async ({ actor, input, requestId }, tx) => {
+export const cancelSchema = z.strictObject({ orgId: id, reservationId: id, reason });
+
+/** Shared by staff (reservations-cancel) and members cancelling their own (me-cancelReservation). */
+export async function cancelReservation(
+  { actor, input, requestId }: CallContext<z.infer<typeof cancelSchema>>,
+  tx: Transaction,
+  authorize: (reservation: FirebaseFirestore.DocumentSnapshot) => Promise<void>,
+) {
     const ref = db.doc(`orgs/${input.orgId}/reservations/${input.reservationId}`);
     const res = await tx.get(ref);
     if (!res.exists) throw errors.notFound('Reservation');
-    await actor.require('reservations.manage', input.orgId, res.get('branchId'), tx);
+    await authorize(res);
     const status = res.get('status') as string;
     if (status !== 'WAITING' && status !== 'ALLOCATED') throw errors.conflict('NOT_OPEN', 'This reservation is already closed.');
     const memberRef = db.doc(`orgs/${input.orgId}/members/${res.get('memberId')}`);
@@ -106,7 +120,10 @@ export const cancel = command(
       before: { status }, after: { status: 'CANCELLED' }, reason: input.reason,
     });
     return { reservationId: res.id };
-  },
+}
+
+export const cancel = command('reservations-cancel', cancelSchema, (ctx, tx) =>
+  cancelReservation(ctx, tx, (res) => ctx.actor.require('reservations.manage', ctx.input.orgId, res.get('branchId'), tx)),
 );
 
 /**
