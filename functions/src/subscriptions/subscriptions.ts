@@ -222,6 +222,8 @@ export function writeSettlement(
     updatedAt: FieldValue.serverTimestamp(),
   });
   const memberChanges: Record<string, unknown> = term?.rollover ? { ...term.rollover } : {};
+  // Member list: the plan paid for last and the date to renew by (a pre-paid renewal pushes it out).
+  Object.assign(memberChanges, { planName: subSnap.get('planSnapshot.name'), renewalDueAt: Timestamp.fromDate(end) });
   if (startsLater) memberChanges.nextSubscriptionId = subscriptionId;
   else Object.assign(memberChanges, { activeSubscriptionId: subscriptionId, subscriptionEndsAt: Timestamp.fromDate(end), nextSubscriptionId: null });
   tx.update(memberSnap.ref, { ...memberChanges, updatedAt: FieldValue.serverTimestamp() });

@@ -55,6 +55,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `copies-availabilityMany` (query) — per-branch counts for up to 60 titles (catalogue search) | any signed-in user |
 | | `copies-locate` (query) — which branch holds a copy, by barcode or code | `books.view` in the org (any branch) |
 | Members | `members-register/update/setStatus` | `members.manage` at the home branch |
+| | `members-indexList` (query) — one-time fill of plan/renewal date for a branch's older members | `members.view` at the branch |
 | Plans | `plans-create/update/archive` | `plans.manage` |
 | Subscriptions | `subscriptions-create/cancelPending` | `subscriptions.manage` |
 | Payments | `payments-recordOffline` | `payments.recordOffline` |
