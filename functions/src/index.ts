@@ -82,6 +82,8 @@ export const inventory = router({
   'copies-found': inv.found,
   'copies-retire': inv.retire,
   'copies-availability': inv.availability,
+  'copies-availabilityMany': inv.availabilityMany,
+  'copies-locate': inv.locate,
   'locations-create': loc.create,
   'locations-archive': loc.archive,
 });

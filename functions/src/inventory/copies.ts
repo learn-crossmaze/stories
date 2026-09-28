@@ -277,4 +277,85 @@ export const availability = query(
   },
 );
 
+/**
+ * Where each title in a list of search results is held: in-stock and
+ * available counts per active branch, for every book at once (one read per
+ * copy, grouped here). Same visibility as `copies-availability`: counts only.
+ */
+export const availabilityMany = query(
+  'copies-availabilityMany',
+  z.strictObject({ orgId: id, bookIds: z.array(id).min(1).max(60) }),
+  async ({ input }) => {
+    const bookIds = [...new Set(input.bookIds)];
+    const branchSnap = await db.collection(`orgs/${input.orgId}/branches`).where('status', '==', 'ACTIVE').get();
+    const names = new Map(branchSnap.docs.map((b) => [b.id, b.get('name') as string]));
+    const inStock = new Set<string>(IN_STOCK);
+    const tally = new Map<string, Map<string, { available: number; total: number }>>(bookIds.map((b) => [b, new Map()]));
+    const chunks = Array.from({ length: Math.ceil(bookIds.length / 30) }, (_, i) => bookIds.slice(i * 30, i * 30 + 30));
+    const snaps = await Promise.all(
+      chunks.map((ids) => db.collection(`orgs/${input.orgId}/copies`).where('bookId', 'in', ids).select('bookId', 'currentBranchId', 'status').get()),
+    );
+    for (const d of snaps.flatMap((s) => s.docs)) {
+      const branchId = d.get('currentBranchId') as string;
+      const status = d.get('status') as string;
+      if (!inStock.has(status) || !names.has(branchId)) continue;
+      const perBranch = tally.get(d.get('bookId') as string)!;
+      const t = perBranch.get(branchId) ?? { available: 0, total: 0 };
+      t.total += 1;
+      if (status === 'AVAILABLE') t.available += 1;
+      perBranch.set(branchId, t);
+    }
+    const books: Record<string, { branchId: string; branchName: string; available: number; total: number }[]> = {};
+    for (const [bookId, perBranch] of tally) {
+      books[bookId] = [...perBranch]
+        .map(([branchId, t]) => ({ branchId, branchName: names.get(branchId)!, ...t }))
+        .sort((a, b) => b.available - a.available || a.branchName.localeCompare(b.branchName));
+    }
+    return { books };
+  },
+);
+
+/**
+ * Finds a copy anywhere in the organization by barcode or code, for staff who
+ * can only open copies at their own branches: says which title it is, its
+ * status and which branch holds it, without exposing the rest of the record.
+ */
+export const locate = query(
+  'copies-locate',
+  z.strictObject({ orgId: id, code: z.string().trim().toUpperCase().min(1).max(40) }),
+  async ({ actor, input }) => {
+    await actor.require('books.view', input.orgId);
+    const copies = db.collection(`orgs/${input.orgId}/copies`);
+    let snap: FirebaseFirestore.DocumentSnapshot | null = null;
+    // Barcodes are letters, digits and dashes (see `barcode` above); anything else can't be in the index.
+    if (/^[A-Z0-9-]+$/.test(input.code)) {
+      const indexed = await db.doc(`orgs/${input.orgId}/barcodes/${input.code}`).get();
+      if (indexed.exists) snap = await copies.doc(indexed.get('copyId') as string).get();
+    }
+    if (!snap?.exists) {
+      const byCode = await copies.where('code', '==', input.code).limit(1).get();
+      snap = byCode.docs[0] ?? null;
+    }
+    if (!snap?.exists) throw errors.notFound('Copy');
+    const c = snap.data()!;
+    const branchName = async (branchId: string) => ((await db.doc(`orgs/${input.orgId}/branches/${branchId}`).get()).get('name') as string | undefined) ?? branchId;
+    const [currentBranchName, owningBranchName, canOpen] = await Promise.all([
+      branchName(c.currentBranchId),
+      branchName(c.owningBranchId),
+      actor.can('books.view', input.orgId, c.currentBranchId).then(async (here) => here || actor.can('books.view', input.orgId, c.owningBranchId)),
+    ]);
+    return {
+      copyId: snap.id,
+      code: c.code as string,
+      bookId: c.bookId as string,
+      bookTitle: c.bookTitle as string,
+      status: c.status as string,
+      currentBranchId: c.currentBranchId as string,
+      currentBranchName,
+      owningBranchName,
+      canOpen,
+    };
+  },
+);
+
 export { copyRef };

@@ -299,6 +299,9 @@ h2 { font-size: 22px; line-height: 1.25; }
 .book-row:hover { background: var(--surface-raised); }
 .book-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .book-title { font-weight: 600; }
+.stock { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+.stock-chip { border: 1px solid var(--outline); border-radius: 999px; padding: 1px 8px; color: var(--on-surface-muted); }
+.stock-chip.here { border-color: currentColor; font-weight: 600; }
 .book-meta { display: flex; flex-direction: column; align-items: flex-end; color: var(--on-surface-muted); text-align: right; }
 @media (max-width: 700px) { .book-meta { display: none; } }
 .book-hero { display: flex; gap: 32px; margin-top: 16px; flex-wrap: wrap; }

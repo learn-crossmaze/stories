@@ -16,6 +16,8 @@ import {
   READING_LEVELS,
   type RefItem,
   searchBooks,
+  type BranchStock,
+  stockByBranch,
 } from '../../data/library';
 import { useAsync } from '../../data/useAsync';
 import { useDebounced } from '../../data/useDebounced';
@@ -275,6 +277,22 @@ function RenameDialog({ kind, item, onClose, onSaved }: { kind: RefKind; item: R
   );
 }
 
+/** "Central 2/3 · North 0/1": where a title is, the user's own branch first. */
+function StockLine({ stock, here }: { stock: BranchStock[] | undefined; here: string | undefined }) {
+  if (!stock) return <span className="stock small muted">{lt.stockLoading}</span>;
+  if (!stock.length) return <span className="stock small muted">{lt.stockNone}</span>;
+  const sorted = [...stock].sort((a, b) => Number(b.branchId === here) - Number(a.branchId === here));
+  return (
+    <span className="stock small">
+      {sorted.map((s) => (
+        <span key={s.branchId} className={`stock-chip${s.available ? ' ok' : ''}${s.branchId === here ? ' here' : ''}`} title={lt.stockAt(s.branchName, s.available, s.total)}>
+          {s.branchName} {s.available}/{s.total}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 export function CataloguePage() {
   const canEdit = useCanEditCatalogue();
   const [q, setQ] = useState('');
@@ -285,6 +303,31 @@ export function CataloguePage() {
   const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
   const [attempt, setAttempt] = useState(0);
   const [dialog, setDialog] = useState<'book' | 'refs' | 'numbering' | null>(null);
+  const { org, branch } = useWorkspace();
+  const [stock, setStock] = useState<Record<string, BranchStock[]>>({});
+  const [stockFailed, setStockFailed] = useState(false);
+
+  // Which branches hold each listed title (fetched for the titles not looked up yet).
+  useEffect(() => {
+    const missing = books.map((b) => b.id).filter((id) => !(id in stock));
+    if (!org || !missing.length || stockFailed) return;
+    let live = true;
+    stockByBranch(org.id, missing.slice(0, 60))
+      .then((found) => live && setStock((s) => ({ ...s, ...found })))
+      .catch((e) => {
+        // Branch counts are extra: the list still works without them.
+        console.warn('availability', e);
+        if (live) setStockFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org?.id, books]);
+  useEffect(() => {
+    setStock({});
+    setStockFailed(false);
+  }, [org?.id, attempt]);
 
   const load = async (after?: DocumentSnapshot) => {
     setState({ loading: true, error: null });
@@ -348,6 +391,7 @@ export function CataloguePage() {
                   <span className="book-main">
                     <span className="book-title">{b.title}</span>
                     <span className="muted small">{b.authorNames.join(', ')}</span>
+                    {!stockFailed && <StockLine stock={stock[b.id]} here={branch?.id} />}
                   </span>
                   <span className="book-meta small">
                     <span className="mono">{b.code}</span>

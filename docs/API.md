@@ -52,6 +52,8 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Inventory | `copies-acquire/relocate/recordCondition/inspect/repair/found`, `locations-create/archive` | `copies.manage` at the copy's branch |
 | | `copies-markLost/retire` | `copies.writeOff` |
 | | `copies-availability` (query) | any signed-in user |
+| | `copies-availabilityMany` (query) — per-branch counts for up to 60 titles (catalogue search) | any signed-in user |
+| | `copies-locate` (query) — which branch holds a copy, by barcode or code | `books.view` in the org (any branch) |
 | Members | `members-register/update/setStatus` | `members.manage` at the home branch |
 | Plans | `plans-create/update/archive` | `plans.manage` |
 | Subscriptions | `subscriptions-create/cancelPending` | `subscriptions.manage` |

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
-import { can } from '../../auth/claims';
+import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import type { Branch, Weekday } from '../../data/org';
 import { t } from '../../strings';
@@ -122,11 +122,17 @@ export function BranchesPage() {
   const [gateway, setGateway] = useState<Branch | null>(null);
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
   const manage = can(claims, 'branches.manage', org.id);
+  // Branch staff see only the branches they work at; org-wide roles see them all.
+  const scope = branchScope(claims, org.id);
+  const shown = scope === 'ALL' ? branches : branches.filter((b) => scope.includes(b.id));
 
   return (
     <>
       <header className="page-header page-header-row">
-        <h1>{t.branchesTitle}</h1>
+        <div>
+          <h1>{t.branchesTitle}</h1>
+          {scope !== 'ALL' && <p className="muted">{t.branchesMine}</p>}
+        </div>
         {manage && (
           <button type="button" className="btn btn-filled" onClick={() => setEditing('new')}>
             <Icon name="plus" /> {t.branchNew}
@@ -137,7 +143,7 @@ export function BranchesPage() {
         <SkeletonRows />
       ) : branchesError ? (
         <ErrorState message={branchesError} onRetry={reloadBranches} />
-      ) : branches.length === 0 ? (
+      ) : shown.length === 0 ? (
         <EmptyState icon="store" title={t.branchesEmpty} message={manage ? t.todoCreateBranch : ''} />
       ) : (
         <div className="table-wrap">
@@ -158,7 +164,7 @@ export function BranchesPage() {
               </tr>
             </thead>
             <tbody>
-              {branches.map((b) => (
+              {shown.map((b) => (
                 <tr key={b.id}>
                   <td className="mono">{b.code}</td>
                   <td>{b.name}</td>
