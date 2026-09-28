@@ -14,6 +14,7 @@ import {
   where,
 } from 'firebase/firestore';
 
+import { callAction, toApiError } from './api';
 import { services } from './services';
 
 // Vocabularies mirrored from functions/src/catalog/model.ts and copyState.ts.
@@ -187,6 +188,44 @@ export async function findCopy(orgId: string, branchId: string, scanned: string)
     if (!snap.empty) return withId<Copy>(snap.docs[0]);
   }
   return null;
+}
+
+/** In-stock and on-the-shelf copies of a title at one branch (functions/src/inventory/copies.ts). */
+export interface BranchStock {
+  branchId: string;
+  branchName: string;
+  available: number;
+  total: number;
+}
+
+/** Which branches hold each title (counts only, so staff see every branch). */
+export async function stockByBranch(orgId: string, bookIds: string[]): Promise<Record<string, BranchStock[]>> {
+  if (!bookIds.length) return {};
+  const res = await callAction<{ books: Record<string, BranchStock[]> }>(services().fns, 'copies-availabilityMany', { orgId, bookIds });
+  return res.books;
+}
+
+/** Where a copy is, found anywhere in the organization (for copies held at other branches). */
+export interface CopyWhereabouts {
+  copyId: string;
+  code: string;
+  bookId: string;
+  bookTitle: string;
+  status: CopyStatus;
+  currentBranchId: string;
+  currentBranchName: string;
+  owningBranchName: string;
+  /** The caller works at the holding or owning branch, so the copy page opens. */
+  canOpen: boolean;
+}
+
+export async function locateCopy(orgId: string, scanned: string): Promise<CopyWhereabouts | null> {
+  try {
+    return await callAction<CopyWhereabouts>(services().fns, 'copies-locate', { orgId, code: scanned.trim() });
+  } catch (e) {
+    if (toApiError(e).reason === 'NOT_FOUND') return null;
+    throw e;
+  }
 }
 
 export async function getCopy(orgId: string, copyId: string): Promise<Copy | null> {

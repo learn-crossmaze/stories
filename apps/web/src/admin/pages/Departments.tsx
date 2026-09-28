@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
-import { can } from '../../auth/claims';
+import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { type Department, listDepartments } from '../../data/org';
 import { useAsync } from '../../data/useAsync';
@@ -45,7 +45,13 @@ function DepartmentDialog({ orgId, dept, onClose, onSaved }: { orgId: string; de
 export function DepartmentsPage() {
   const { claims } = useAuth();
   const { org, branchName } = useWorkspace();
-  const depts = useAsync(() => (org ? listDepartments(org.id) : Promise.resolve([])), [org?.id]);
+  // Branch staff see organization-wide departments and those of their own branches.
+  const depts = useAsync(async () => {
+    if (!org) return [];
+    const all = await listDepartments(org.id);
+    const scope = branchScope(claims, org.id);
+    return scope === 'ALL' ? all : all.filter((d) => !d.branchId || scope.includes(d.branchId));
+  }, [org?.id]);
   const [editing, setEditing] = useState<Department | 'new' | null>(null);
   const [archiving, setArchiving] = useState<Department | null>(null);
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;

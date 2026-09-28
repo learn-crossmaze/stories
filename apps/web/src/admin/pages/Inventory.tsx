@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
-import { CONDITIONS, type Condition, type Copy, COPY_STATUSES, type CopyStatus, copyEvents, findCopy, getCopy, label, listCopies, listLocations } from '../../data/library';
+import { CONDITIONS, type Condition, type Copy, COPY_STATUSES, type CopyStatus, copyEvents, type CopyWhereabouts, findCopy, getCopy, label, listCopies, listLocations, locateCopy } from '../../data/library';
 import { useAsync } from '../../data/useAsync';
 import { money, when } from '../../format';
 import { paths } from '../../paths';
@@ -54,6 +54,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
   const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
   const [attempt, setAttempt] = useState(0);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [elsewhere, setElsewhere] = useState<CopyWhereabouts | null>(null);
   const locations = useAsync(() => listLocations(orgId, branchId), [orgId, branchId]);
   const [newLoc, setNewLoc] = useState(false);
   const manage = can(claims, 'copies.manage', orgId, branchId);
@@ -84,9 +85,19 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
           label={lt.findCopy}
           onScan={async (v) => {
             setScanMsg(null);
+            setElsewhere(null);
             const c = await findCopy(orgId, branchId, v);
-            if (c) navigate(paths.adminCopy(c.id));
-            else setScanMsg(lt.copyNotFound);
+            if (c) return navigate(paths.adminCopy(c.id));
+            // Not here: find which branch holds it (staff can't open other branches' copies directly).
+            try {
+              const w = await locateCopy(orgId, v);
+              if (w?.canOpen) navigate(paths.adminCopy(w.copyId));
+              else if (w) setElsewhere(w);
+              else setScanMsg(lt.copyNotFound);
+            } catch (e) {
+              console.warn('locate copy', e);
+              setScanMsg(lt.copyNotFound);
+            }
           }}
         />
         <select value={status} onChange={(e) => setStatus(e.target.value as CopyStatus | '')} aria-label={lt.status}>
@@ -99,6 +110,12 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
         </select>
       </div>
       {scanMsg && <Notice tone="warn">{scanMsg}</Notice>}
+      {elsewhere && (
+        <Notice tone="ok">
+          {lt.copyElsewhere(elsewhere.code, elsewhere.bookTitle, elsewhere.currentBranchName, label(elsewhere.status))}{' '}
+          <Link to={paths.adminBook(elsewhere.bookId)}>{lt.viewBook}</Link>
+        </Notice>
+      )}
       {state.error && copies.length === 0 ? (
         <ErrorState message={state.error} onRetry={() => setAttempt((n) => n + 1)} />
       ) : state.loading && copies.length === 0 ? (

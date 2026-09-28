@@ -188,6 +188,24 @@ describe('M1.2 inventory', () => {
     expect(a.branches).toEqual([{ branchId: central, branchName: 'Central', available: 3, total: 3 }]);
   });
 
+  it('shows every branch holding each search result and locates copies held elsewhere', async () => {
+    const other = await newBook('Kidnapped');
+    await acquire(bookId, 2);
+    const [northCode] = await acquire(bookId, 1, north);
+    await acquire(other, 1, north);
+    const many = await call<{ books: Record<string, { branchName: string; available: number; total: number }[]> }>(copies.availabilityMany, lib2, { orgId: org, bookIds: [bookId, other] }, null);
+    expect(many.books[bookId].map((a) => [a.branchName, a.available, a.total])).toEqual([['Central', 2, 2], ['North', 1, 1]]);
+    expect(many.books[other].map((a) => a.branchName)).toEqual(['North']);
+
+    // lib2 works at Central only: they can't open North's copy, but can find out where it is.
+    const found = await call<{ bookTitle: string; currentBranchName: string; status: string; canOpen: boolean }>(copies.locate, lib2, { orgId: org, code: northCode.toLowerCase() }, null);
+    expect(found).toMatchObject({ bookTitle: 'Treasure Island', currentBranchName: 'North', status: 'AVAILABLE', canOpen: false });
+    expect((await call<{ canOpen: boolean }>(copies.locate, lib, { orgId: org, code: northCode }, null)).canOpen).toBe(true);
+    expect(await failure(call(copies.locate, lib2, { orgId: org, code: 'NOPE-1' }, null))).toBe('NOT_FOUND');
+    const outsider = await createUser('outsider@stories.test');
+    expect(await failure(call(copies.locate, outsider, { orgId: org, code: northCode }, null))).toBe('FORBIDDEN');
+  });
+
   it('retiring keeps the copy and its history; retired copies never return', async () => {
     const [code] = await acquire(bookId, 1);
     const copyId = (await db.doc(`orgs/${org}/barcodes/${code}`).get()).get('copyId');

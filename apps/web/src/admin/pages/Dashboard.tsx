@@ -23,7 +23,7 @@ interface Todo {
  */
 export function DashboardPage() {
   const { claims, user } = useAuth();
-  const { org, orgs, orgsLoading, branches, branchesLoading, branch } = useWorkspace();
+  const { org, orgs, orgsLoading, branches, branchesLoading, branch, myBranches } = useWorkspace();
   const staffVisible = !!org && can(claims, 'staff.view', org.id);
   const staff = useAsync(
     () => (org && staffVisible ? listStaff(org.id, branchScope(claims, org.id)) : Promise.resolve(null)),
@@ -40,6 +40,8 @@ export function DashboardPage() {
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   const activeBranches = branches.filter((b) => b.status === 'ACTIVE');
+  // Branch staff count only the branches they work at.
+  const shownBranches = org && branchScope(claims, org.id) === 'ALL' ? activeBranches : myBranches;
   const activeStaff = staff.data?.filter((m) => m.status === 'ACTIVE') ?? null;
   const todos: Todo[] = [];
   if (user && !user.emailVerified) todos.push({ label: t.todoVerifyEmail, to: paths.setup });
@@ -92,7 +94,7 @@ export function DashboardPage() {
       {org && (
         <section className="stats" aria-label="Summary">
           <div className="stat">
-            <span className="stat-value">{activeBranches.length}</span>
+            <span className="stat-value">{shownBranches.length}</span>
             <span className="stat-label">{t.navBranches}</span>
           </div>
           {activeStaff && (

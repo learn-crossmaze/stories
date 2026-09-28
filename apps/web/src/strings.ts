@@ -131,6 +131,7 @@ export const t = {
   hoursTitle: 'Opening hours',
   closedDay: 'Closed',
   branchesEmpty: 'No branches yet.',
+  branchesMine: 'The branches you work at.',
   branchArchiveTitle: (name: string) => `Archive ${name}?`,
   branchArchiveBody: 'The branch stays in history and reports but can no longer be edited or used.',
   companyOwned: 'Company owned',

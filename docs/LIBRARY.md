@@ -53,6 +53,11 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 - **State machine** — see [CIRCULATION.md](CIRCULATION.md). Retired copies are never deleted and never return.
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
   exact, no counters to drift). Any signed-in user may call it (it reveals only counts).
+- **Branch visibility:** staff with branch-scoped roles (manager, librarian, delivery, employee) see only their own
+  branches on the Branches page, dashboard and departments, and open copies only at their branches. To find a book
+  elsewhere, catalogue search shows every branch holding each title (`Central 2/3` = 2 of 3 in-stock copies on the
+  shelf; their branch first), the book page lists availability per branch, and scanning a copy held at another branch
+  in Inventory says which branch has it and its status (`copies-locate`).
 - **Labels:** the console prints A4 sheets (3 × 8); each label carries a QR code and a Code 128 barcode of the copy
   code (the copy page shows both too). Webcams read the QR code far more reliably than dense bars; reprint older
   labels to get it.
