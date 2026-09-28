@@ -139,7 +139,7 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
 
   const opts = (items: RefItem[] | undefined) => (items ?? []).filter((i) => i.status === 'ACTIVE').map((i) => ({ value: i.id, label: i.name }));
   return (
-    <Dialog title={book ? lt.editBook : lt.newBook} onClose={onClose}>
+    <Dialog title={book ? lt.editBook : lt.newBook} onClose={onClose} wide>
       <form onSubmit={submit} noValidate className="form-grid">
         {!book && <BookLookup onPick={applyLookup} />}
         {lookupCover && (
