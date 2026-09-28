@@ -28,6 +28,7 @@ export const NAV: NavItem[] = [
   { to: paths.adminDepartments, label: t.navDepartments, icon: 'folder', section: t.sectionOrganization, requires: 'branches.view' },
   { to: paths.adminStaff, label: t.navStaff, icon: 'people', section: t.sectionOrganization, requires: 'staff.view' },
   { to: paths.adminAudit, label: t.navAudit, icon: 'history', section: t.sectionOrganization, requires: 'audit.view' },
+  { to: paths.adminAppearance, label: t.navAppearance, icon: 'palette', section: t.sectionPersonal, requires: null },
 ];
 
 export const allowed = (claims: StoriesClaims, orgId: string | null, requires: NavItem['requires']) =>

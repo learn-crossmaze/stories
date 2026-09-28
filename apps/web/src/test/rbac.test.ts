@@ -32,16 +32,16 @@ describe('navigation', () => {
   const labels = (c: StoriesClaims) => visibleNav(c, 'corp').map((i) => i.label);
 
   it('shows each role only what it may use', () => {
-    expect(labels(claims({}, true))).toHaveLength(14);
-    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Branches', 'Departments', 'Staff & roles', 'Audit log']);
+    expect(labels(claims({}, true))).toHaveLength(15);
+    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Branches', 'Departments', 'Staff & roles', 'Audit log', 'Appearance']);
     expect(labels(claims({ corp: { r: ['LIB'], b: ['cen'] } }))).toEqual([
-      'Dashboard', 'Circulation desk', 'Catalogue', 'Inventory', 'Reservations', 'Transfers', 'Members', 'Branches', 'Departments',
+      'Dashboard', 'Circulation desk', 'Catalogue', 'Inventory', 'Reservations', 'Transfers', 'Members', 'Branches', 'Departments', 'Appearance',
     ]);
     expect(labels(claims({ corp: { r: ['FIN'], b: ['*'] } }))).toEqual([
-      'Dashboard', 'Catalogue', 'Inventory', 'Members', 'Deposit approvals', 'Branches', 'Departments', 'Audit log',
+      'Dashboard', 'Catalogue', 'Inventory', 'Members', 'Deposit approvals', 'Branches', 'Departments', 'Audit log', 'Appearance',
     ]);
-    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Branches', 'Departments']);
-    expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard']);
+    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }))).toEqual(['Dashboard', 'Catalogue', 'Inventory', 'Branches', 'Departments', 'Appearance']);
+    expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard', 'Appearance']);
   });
 });
 
