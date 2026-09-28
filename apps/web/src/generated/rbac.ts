@@ -254,6 +254,52 @@ export const PERMISSIONS = {
     "FIN",
     "HR"
   ],
+  "employees.lifecycle": [
+    "HO",
+    "HR",
+    "FO"
+  ],
+  "employees.bank": [
+    "FIN",
+    "HR"
+  ],
+  "hr.config": [
+    "HO",
+    "HR",
+    "FO"
+  ],
+  "documents.verify": [
+    "HR",
+    "FO"
+  ],
+  "attendance.view": [
+    "HO",
+    "HR",
+    "FO",
+    "BM",
+    "FIN"
+  ],
+  "attendance.finalize": [
+    "HR",
+    "FO"
+  ],
+  "leave.adjust": [
+    "HR"
+  ],
+  "salary.view": [
+    "HR",
+    "FIN",
+    "FO"
+  ],
+  "salary.edit": [
+    "HR",
+    "FO"
+  ],
+  "payslips.viewAll": [
+    "HR",
+    "FIN",
+    "FO"
+  ],
   "attendance.manage": [
     "HR",
     "FO",

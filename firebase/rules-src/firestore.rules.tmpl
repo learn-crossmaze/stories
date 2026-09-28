@@ -226,6 +226,44 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // ------------------------------------------------ HRMS (docs/HRMS.md)
+      // Employee records: employee viewers at the employee's branch (org-wide
+      // viewers also see head-office staff, who have no branch) and the
+      // employee themselves. List queries filter on branchId, or on uid for
+      // "my record". All writes go through functions.
+      function employee(o, e) {
+        return get(/databases/$(database)/documents/orgs/$(o)/employees/$(e)).data;
+      }
+      function isEmployee(rec) {
+        return signedIn() && rec.get('uid', null) == request.auth.uid;
+      }
+
+      match /employees/{e} {
+        allow read: if canAt(o, resource.data.branchId, 'employees.view') || isEmployee(resource.data);
+        allow write: if false;
+
+        match /history/{h} {
+          allow read: if canAt(o, employee(o, e).branchId, 'employees.view') || isEmployee(employee(o, e));
+          allow write: if false;
+        }
+
+        // Personal and statutory details (bank account shown masked).
+        match /private/profile {
+          allow read: if canAt(o, employee(o, e).branchId, 'employees.privateData') || isEmployee(employee(o, e));
+          allow write: if false;
+        }
+
+        // Full bank account number: functions only (revealed through an audited call).
+        match /private/bank {
+          allow read, write: if false;
+        }
+      }
+
+      match /designations/{d} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
       // Org-wide auditors see everything; branch-scoped auditors only entries
       // for their branches (queries must filter on branchId).
       match /auditLogs/{id} {

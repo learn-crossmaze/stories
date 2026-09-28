@@ -18,6 +18,9 @@ import { TransfersPage } from './pages/Transfers';
 import { BranchesPage } from './pages/Branches';
 import { DashboardPage } from './pages/Dashboard';
 import { DepartmentsPage } from './pages/Departments';
+import { EmployeeProfilePage } from './pages/EmployeeProfile';
+import { HrSettingsPage } from './pages/HrSettings';
+import { PeoplePage } from './pages/People';
 import { OrganizationsPage } from './pages/Organizations';
 import { StaffPage } from './pages/Staff';
 
@@ -34,6 +37,9 @@ export default function AdminApp() {
         <Route path="branches" element={<Require requires="branches.view"><BranchesPage /></Require>} />
         <Route path="departments" element={<Require requires="branches.view"><DepartmentsPage /></Require>} />
         <Route path="staff" element={<Require requires="staff.view"><StaffPage /></Require>} />
+        <Route path="people" element={<Require requires="employees.view"><PeoplePage /></Require>} />
+        <Route path="people/:employeeId" element={<Require requires="employees.view"><EmployeeProfilePage /></Require>} />
+        <Route path="hr-settings" element={<Require requires="hr.config"><HrSettingsPage /></Require>} />
         <Route path="audit" element={<Require requires="audit.view"><AuditPage /></Require>} />
         <Route path="desk" element={<Require requires="loans.issue"><DeskPage /></Require>} />
         <Route path="books" element={<Require requires="books.view"><CataloguePage /></Require>} />

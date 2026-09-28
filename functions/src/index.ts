@@ -21,6 +21,8 @@ import * as online from './payments/online.js';
 import * as departments from './departments/departments.js';
 import * as inv from './inventory/copies.js';
 import * as loc from './inventory/locations.js';
+import * as emp from './hr/employees.js';
+import * as hrSettings from './hr/settings.js';
 import * as me from './me/me.js';
 import * as mem from './members/members.js';
 import * as orgs from './orgs/orgs.js';
@@ -138,10 +140,27 @@ export const circulation = router({
   'transfers-cancel': xfer.cancel,
 });
 
-/** Scheduled jobs (idempotent). */
+/** HRMS: employee records, lifecycle and HR settings (docs/HRMS.md). */
+export const hr = router({
+  'employees-create': emp.create,
+  'employees-update': emp.update,
+  'employees-transition': emp.transition,
+  'employees-checkItem': emp.checkItem,
+  'employees-setPrivate': emp.setPrivate,
+  'employees-setBank': emp.setBank,
+  'employees-revealBank': emp.revealBank,
+  'employees-linkAccount': emp.linkAccount,
+  'employees-backfill': emp.backfill,
+  'designations-create': hrSettings.createDesignation,
+  'designations-rename': hrSettings.renameDesignation,
+  'designations-archive': hrSettings.archiveDesignation,
+  'hr-setChecklists': hrSettings.setChecklists,
+});
+
 /** Razorpay webhook (payment_link.paid, qr_code.credited); URL per branch: …/razorpayWebhook?o=<orgId>&b=<branchId>. */
 export const razorpayWebhook = onRequest({ region: REGION }, (req, res) => online.handleWebhook(req, res).then(() => undefined));
 
+/** Scheduled jobs (idempotent). */
 export const scheduled = {
   expireSubscriptions: sweep.expireSweep,
   expireHolds: res.expireHoldsSweep,

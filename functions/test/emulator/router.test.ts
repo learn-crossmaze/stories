@@ -22,5 +22,12 @@ describe('routers', () => {
     expect(await failure(call(fns.admin, sa, { action: 'nope' }))).toBe('not-found');
     expect(await failure(call(fns.admin, sa, { action: 'books-create' }))).toBe('not-found');
     expect(await failure(call(fns.admin, sa, { action: 'toString' }))).toBe('not-found');
+    expect(await failure(call(fns.hr, sa, { action: 'books-create' }))).toBe('not-found');
+  });
+
+  it('route HR actions through the hr router', async () => {
+    const { orgId } = await call<{ orgId: string }>(fns.admin, sa, { action: 'orgs-create', name: 'HR Org', type: 'CORPORATE' });
+    const { designationId } = await call<{ designationId: string }>(fns.hr, sa, { action: 'designations-create', orgId, name: 'Librarian' });
+    expect((await db.doc(`orgs/${orgId}/designations/${designationId}`).get()).get('name')).toBe('Librarian');
   });
 });

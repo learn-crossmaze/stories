@@ -13,14 +13,14 @@ import { canManageMember, grantableRoles, isOrgWide } from '../grants';
 import { lt } from '../libraryStrings';
 import { useWorkspace } from '../Workspace';
 
-function RolesDialog({ org, member, onClose, onSaved }: { org: Org; member?: StaffMembership; onClose: () => void; onSaved: () => void }) {
+export function RolesDialog({ org, member, email: presetEmail, onClose, onSaved }: { org: Org; member?: StaffMembership; email?: string; onClose: () => void; onSaved: () => void }) {
   const { claims } = useAuth();
   const { branches } = useWorkspace();
   const scope = branchScope(claims, org.id);
   const offered = grantableRoles(claims, org.id, org.type);
   const branchChoices = branches.filter((b) => b.status === 'ACTIVE' && (scope === 'ALL' || scope.includes(b.id)));
 
-  const [email, setEmail] = useState(member?.email ?? '');
+  const [email, setEmail] = useState(member?.email ?? presetEmail ?? '');
   const [roles, setRoles] = useState<Role[]>(member?.status === 'ACTIVE' ? member.roles : []);
   const [allBranches, setAllBranches] = useState(member ? member.branchIds.includes('*') : false);
   const [picked, setPicked] = useState<string[]>(member?.branchIds.filter((b) => b !== '*') ?? []);
@@ -48,7 +48,7 @@ function RolesDialog({ org, member, onClose, onSaved }: { org: Org; member?: Sta
   return (
     <Dialog title={member ? t.staffEditRoles : t.staffAdd} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <TextField label={t.staffEmail} type="email" value={email} onChange={setEmail} hint={member ? undefined : t.staffEmailHint} error={touched ? errors.email : undefined} disabled={!!member} />
+        <TextField label={t.staffEmail} type="email" value={email} onChange={setEmail} hint={member ? undefined : t.staffEmailHint} error={touched ? errors.email : undefined} disabled={!!member || !!presetEmail} />
         <TextField label={lt.employeeId} value={employeeId} onChange={setEmployeeId} hint={lt.employeeIdHint} error={touched ? errors.employeeId : undefined} />
         <fieldset className="choices">
           <legend>{t.staffRoles}</legend>
