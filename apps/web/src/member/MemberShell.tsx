@@ -1,9 +1,14 @@
 import { NavLink, Outlet } from 'react-router';
 
+import { useAuth } from '../auth/AuthContext';
+import { isStaff } from '../auth/claims';
 import { paths } from '../paths';
-import { t } from '../strings';
 import { Icon, type IconName } from '../shared/ui';
+import { useRouteFocus } from '../shared/useRouteFocus';
+import { t } from '../strings';
 import { MemberDataProvider } from './memberData';
+
+const MAIN_ID = 'main';
 
 const destinations: [string, IconName, string][] = [
   [paths.home, 'home', t.navHome],
@@ -15,9 +20,14 @@ const destinations: [string, IconName, string][] = [
 
 /** Member navigation: bottom bar on phones, side rail on wider screens (CSS). */
 export function MemberShell() {
+  const { claims } = useAuth();
+  useRouteFocus(MAIN_ID, t.appTitle);
   return (
     <div className="shell">
-      <nav className="shell-nav" aria-label="Main">
+      <a className="skip-link" href={`#${MAIN_ID}`}>
+        {t.skipToContent}
+      </a>
+      <nav className="shell-nav" aria-label={t.mainMenu}>
         <span className="shell-logo" aria-hidden="true">
           <Icon name="book" />
         </span>
@@ -27,8 +37,14 @@ export function MemberShell() {
             <span>{label}</span>
           </NavLink>
         ))}
+        {isStaff(claims) && (
+          <NavLink to={paths.admin} className="nav-item nav-item-staff">
+            <Icon name="console" />
+            <span>{t.staffConsole}</span>
+          </NavLink>
+        )}
       </nav>
-      <main className="shell-main">
+      <main className="shell-main" id={MAIN_ID} tabIndex={-1}>
         <MemberDataProvider>
           <Outlet />
         </MemberDataProvider>
