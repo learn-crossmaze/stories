@@ -1,5 +1,6 @@
 import { Link } from 'react-router';
 
+import { AppearanceSettings } from '../AppearanceSettings';
 import { useAuth } from '../auth/AuthContext';
 import { isStaff } from '../auth/claims';
 import { paths } from '../paths';
@@ -62,6 +63,11 @@ export function ProfilePage() {
         <button type="button" className="btn btn-outlined" onClick={() => repo.signOut()}>
           {t.signOut}
         </button>
+      </section>
+      <section className="section">
+        <h2>{t.navAppearance}</h2>
+        <p className="muted">{t.apIntro}</p>
+        <AppearanceSettings />
       </section>
     </>
   );

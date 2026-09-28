@@ -2,6 +2,8 @@ import { Route, Routes } from 'react-router';
 
 import { AdminShell } from './AdminShell';
 import { NoAccess, Require } from './guards';
+import { AppearanceSettings } from '../AppearanceSettings';
+import { t } from '../strings';
 import { AuditPage } from './pages/Audit';
 import { BookDetailPage } from './pages/BookDetail';
 import { CataloguePage } from './pages/Catalogue';
@@ -45,6 +47,18 @@ export default function AdminApp() {
         <Route path="members/:memberId" element={<Require requires="members.view"><MemberDetailPage /></Require>} />
         <Route path="plans" element={<Require requires="plans.manage"><PlansPage /></Require>} />
         <Route path="deposits" element={<Require requires="deposits.approve"><DepositApprovalsPage /></Require>} />
+        <Route
+          path="appearance"
+          element={
+            <>
+              <header className="page-header">
+                <h1>{t.navAppearance}</h1>
+                <p className="muted">{t.apIntro}</p>
+              </header>
+              <AppearanceSettings />
+            </>
+          }
+        />
         <Route path="*" element={<NoAccess />} />
       </Route>
     </Routes>

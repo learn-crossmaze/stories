@@ -4,11 +4,16 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 
+import { applyAppearance, loadAppearance } from './appearance';
 import { AuthProvider } from './auth/AuthContext';
 import { firebaseAuthRepository } from './auth/repository';
 import { initFirebase } from './config/firebase';
 import { setServices } from './data/services';
 import { routes } from './routes';
+
+// Personal appearance; a "system" theme follows the device's light/dark switch while the app is open.
+applyAppearance(loadAppearance());
+window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance(loadAppearance()));
 
 const root = createRoot(document.getElementById('root')!);
 
