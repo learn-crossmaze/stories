@@ -139,7 +139,7 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
 
   const opts = (items: RefItem[] | undefined) => (items ?? []).filter((i) => i.status === 'ACTIVE').map((i) => ({ value: i.id, label: i.name }));
   return (
-    <Dialog title={book ? lt.editBook : lt.newBook} onClose={onClose} wide>
+    <Dialog title={book ? lt.editBook : lt.newBook} onClose={onClose}>
       <form onSubmit={submit} noValidate className="form-grid">
         {!book && <BookLookup onPick={applyLookup} />}
         {lookupCover && (
@@ -274,7 +274,7 @@ function RenameDialog({ kind, item, onClose, onSaved }: { kind: RefKind; item: R
     onClose();
   });
   return (
-    <Dialog title={t.rename} onClose={onClose}>
+    <Dialog title={t.rename} onClose={onClose} narrow>
       <form onSubmit={submit} noValidate>
         <TextField label={lt.refName} value={name} onChange={setName} />
         <FormError error={error} />
