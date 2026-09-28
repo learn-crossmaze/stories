@@ -45,6 +45,8 @@ export interface Branch {
   contact: { phone: string; email: string };
   operatingHours: { day: Weekday; open: string; close: string }[];
   weeklyOffs: Weekday[];
+  /** Set once the member list fields were filled for this branch's older members. */
+  memberListIndexedAt?: unknown;
   /** Numbering pattern overrides for codes created at this branch. */
   numbering?: Partial<Record<'copy' | 'member' | 'location' | 'employee', string>>;
   /** Online payment gateway (secrets are never stored here). */

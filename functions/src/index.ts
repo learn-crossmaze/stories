@@ -92,6 +92,7 @@ export const members = router({
   'members-register': mem.register,
   'members-update': mem.update,
   'members-setStatus': mem.setStatus,
+  'members-indexList': mem.indexList,
 });
 
 /** Plans, subscriptions, counter payments and the deposit ledger. */

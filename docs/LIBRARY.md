@@ -95,6 +95,14 @@ circulation counters (`activeLoanCount`, `allocatedCount`, `waitingCount`, lifet
   before that field existed still show when they were recorded against the member itself. If a section can't load,
   the page says so (and explains when a database index is still building) instead of showing it empty.
 
+
+**Member list** (Members page): every member at the branch, 50 at a time, with plan, renewal date ("in 6 days",
+"ended yesterday"), books out and status. Chips filter by subscription with counts — active, renewal due within 15
+days, expired, never subscribed — plus status and age-group filters; search (name, code, mobile) combines with them.
+Members carry `planName` and `renewalDueAt` (end of the latest paid term, pushed out by a pre-paid renewal and kept
+after expiry), written when a payment activates a subscription. Branches created before this get them filled once by
+`members-indexList` on the first visit (flagged by `memberListIndexedAt` on the branch).
+
 ## Transfers
 
 See [CIRCULATION.md §Transfers](CIRCULATION.md#transfers).

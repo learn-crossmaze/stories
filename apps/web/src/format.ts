@@ -25,3 +25,14 @@ export const since = (v: unknown) => {
   const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
   return days === 0 ? 'today' : days === 1 ? '1 day' : `${days} days`;
 };
+
+/** "in 5 days" / "today" / "3 days ago" relative to now. */
+export const relativeDays = (v: unknown) => {
+  const d = asDate(v);
+  if (!d) return '';
+  const days = Math.round((d.getTime() - Date.now()) / 86_400_000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'tomorrow';
+  if (days === -1) return 'yesterday';
+  return days > 0 ? `in ${days} days` : `${-days} days ago`;
+};

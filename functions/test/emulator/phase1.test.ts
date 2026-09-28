@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as branches from '../../src/branches/branches.js';
@@ -330,6 +330,31 @@ describe('M1.4 subscriptions, payments, deposits', () => {
     expect(await failure(issue(m, [c2]))).toBe('NO_ACTIVE_SUBSCRIPTION');
     expect(await failure(call(circ.exchange, lib, { orgId: org, branchId: central, memberId: m, returnBarcodes: [c1], issueBarcodes: [c2] }))).toBe('NO_ACTIVE_SUBSCRIPTION');
     await giveBack([c1]); // returns always allowed
+  });
+});
+
+describe('member list', () => {
+  it('keeps plan and renewal date on the member, and fills them in once for older members', async () => {
+    const paid = await register('Paid');
+    const never = await register('Never');
+    await subscribe(paid);
+    const sub = (await db.collection(`orgs/${org}/subscriptions`).where('memberId', '==', paid).get()).docs[0];
+    const m = await get(`members/${paid}`);
+    expect(m.planName).toBe('Monthly Two');
+    expect(m.renewalDueAt.toMillis()).toBe(sub.get('endAt').toMillis());
+    expect((await get(`members/${never}`)).renewalDueAt).toBeNull();
+
+    // Members from before the list existed have neither field; the one-time fill computes them.
+    await path(`members/${paid}`).update({ planName: FieldValue.delete(), renewalDueAt: FieldValue.delete() });
+    await path(`members/${never}`).update({ planName: FieldValue.delete(), renewalDueAt: FieldValue.delete() });
+    expect(await failure(call(members.indexList, fin, { orgId: org, branchId: 'no-such-branch' }, null))).toBe('NOT_FOUND');
+    expect((await call<{ updated: number }>(members.indexList, lib2, { orgId: org, branchId: central }, null)).updated).toBe(2);
+    expect((await get(`members/${paid}`)).planName).toBe('Monthly Two');
+    expect((await get(`members/${paid}`)).renewalDueAt.toMillis()).toBe(sub.get('endAt').toMillis());
+    expect((await get(`members/${never}`)).renewalDueAt).toBeNull();
+    expect((await call<{ updated: number }>(members.indexList, lib2, { orgId: org, branchId: central }, null)).updated).toBe(0);
+    const outsider = await createUser('outsider@stories.test');
+    expect(await failure(call(members.indexList, outsider, { orgId: org, branchId: central }, null))).toBe('FORBIDDEN');
   });
 });
 

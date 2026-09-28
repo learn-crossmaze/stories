@@ -1,12 +1,26 @@
-import { useState } from 'react';
+import type { DocumentSnapshot } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
-import { label, type Member, searchMembers } from '../../data/library';
+import {
+  AGE_GROUPS,
+  indexMemberList,
+  label,
+  listMembers,
+  type Member,
+  memberCounts,
+  type MemberFilters,
+  RENEWAL_DUE_DAYS,
+  type RenewalFilter,
+  renewalState,
+  searchMembers,
+} from '../../data/library';
 import { useAsync } from '../../data/useAsync';
 import { useDebounced } from '../../data/useDebounced';
+import { day, relativeDays } from '../../format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../ui';
@@ -118,14 +132,93 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
   );
 }
 
+const RENEWAL_TONE: Record<Exclude<RenewalFilter, ''>, string> = { ACTIVE: 'ok', DUE: 'warn', EXPIRED: 'danger', NONE: 'muted' };
+
+/** Plan and renewal date, with how soon it is (text, never colour alone). */
+function RenewalCell({ m }: { m: Member }) {
+  const state = renewalState(m);
+  if (state === 'NONE') return <span className="muted">{lt.noSubscription}</span>;
+  return (
+    <>
+      <span className="nowrap">{day(m.renewalDueAt)}</span>
+      <div>
+        <span className={`badge badge-${RENEWAL_TONE[state]} nowrap`}>{state === 'EXPIRED' ? lt.expiredAgo(relativeDays(m.renewalDueAt)) : relativeDays(m.renewalDueAt)}</span>
+      </div>
+    </>
+  );
+}
+
 function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string }) {
   const { claims } = useAuth();
   const navigate = useNavigate();
+  const { branch } = useWorkspace();
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
+  const [filters, setFilters] = useState<MemberFilters>({ status: '', audience: '', renewal: '' });
   const [registering, setRegistering] = useState(false);
-  const results = useAsync(() => (debounced.trim().length >= 2 ? searchMembers(orgId, branchId, debounced) : Promise.resolve(null)), [orgId, branchId, debounced]);
+  const [rows, setRows] = useState<Member[]>([]);
+  const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
+  const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+  const [attempt, setAttempt] = useState(0);
+  // Older branches get plan and renewal dates filled in once, before the first listing.
+  const [indexed, setIndexed] = useState(false);
   const manage = can(claims, 'members.manage', orgId, branchId);
+  const searching = debounced.trim().length >= 2;
+  const set = <K extends keyof MemberFilters>(k: K) => (v: MemberFilters[K]) => setFilters((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    let live = true;
+    setIndexed(false);
+    (branch?.id === branchId && branch.memberListIndexedAt ? Promise.resolve() : indexMemberList(orgId, branchId))
+      .catch((e) => console.warn('member list index', e))
+      .finally(() => live && setIndexed(true));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, branchId]);
+
+  const counts = useAsync(() => (indexed ? memberCounts(orgId, branchId) : Promise.resolve(null)), [orgId, branchId, indexed, attempt]);
+
+  const load = async (after?: DocumentSnapshot) => {
+    setState({ loading: true, error: null });
+    try {
+      if (searching) {
+        // Search matches name, code or mobile; the filters then narrow those matches.
+        const found = (await searchMembers(orgId, branchId, debounced)).filter(
+          (m) =>
+            (!filters.status || m.status === filters.status) &&
+            (!filters.audience || m.audience === filters.audience) &&
+            (!filters.renewal || renewalState(m) === filters.renewal || (filters.renewal === 'ACTIVE' && renewalState(m) === 'DUE')),
+        );
+        setRows(found);
+        setCursor(undefined);
+      } else {
+        const p = await listMembers(orgId, branchId, filters, after);
+        setRows((prev) => (after ? [...prev, ...p.items] : p.items));
+        setCursor(p.cursor);
+      }
+      setState({ loading: false, error: null });
+    } catch (e) {
+      console.error(e);
+      setState({ loading: false, error: t.errorLoad });
+    }
+  };
+  useEffect(() => {
+    if (indexed) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, branchId, indexed, debounced, filters, attempt]);
+
+  const c = counts.data;
+  const chips: { key: RenewalFilter; label: string; n: number | undefined }[] = [
+    { key: '', label: lt.allMembers, n: c?.ALL },
+    { key: 'ACTIVE', label: lt.subActive, n: c?.ACTIVE },
+    { key: 'DUE', label: lt.subDue(RENEWAL_DUE_DAYS), n: c?.DUE },
+    { key: 'EXPIRED', label: lt.subExpired, n: c?.EXPIRED },
+    { key: 'NONE', label: lt.subNone, n: c?.NONE },
+  ];
+  const filtered = !!(filters.status || filters.audience || filters.renewal || searching);
+
   return (
     <>
       <div className="toolbar">
@@ -136,46 +229,96 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
           </button>
         )}
       </div>
-      {results.data === null ? (
-        <p className="muted">{lt.membersHint}</p>
-      ) : results.loading ? (
-        <SkeletonRows rows={3} />
-      ) : results.error ? (
-        <ErrorState message={results.error} onRetry={results.reload} />
-      ) : !results.data?.length ? (
-        <EmptyState icon="person" title={lt.membersEmpty} message="" />
+      <div className="filter-chips" role="group" aria-label={lt.subscription}>
+        {chips.map((chip) => (
+          <button key={chip.key || 'all'} type="button" className="chip" aria-pressed={filters.renewal === chip.key} onClick={() => set('renewal')(chip.key)}>
+            {chip.label}
+            {chip.n !== undefined && <span className="chip-count">{chip.n}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="toolbar">
+        <select value={filters.status} onChange={(e) => set('status')(e.target.value as MemberFilters['status'])} aria-label={lt.status}>
+          <option value="">{lt.allStatuses}</option>
+          {(['ACTIVE', 'SUSPENDED', 'CLOSED'] as const).map((st) => (
+            <option key={st} value={st}>
+              {label(st)}
+            </option>
+          ))}
+        </select>
+        <select value={filters.audience} onChange={(e) => set('audience')(e.target.value as MemberFilters['audience'])} aria-label={lt.ageGroup}>
+          <option value="">{lt.allAges}</option>
+          {AGE_GROUPS.map((a) => (
+            <option key={a} value={a}>
+              {label(a)}
+            </option>
+          ))}
+        </select>
+        {filtered && (
+          <button
+            type="button"
+            className="btn btn-text"
+            onClick={() => {
+              setQ('');
+              setFilters({ status: '', audience: '', renewal: '' });
+            }}
+          >
+            {lt.clearFilters}
+          </button>
+        )}
+      </div>
+      {state.error && rows.length === 0 ? (
+        <ErrorState message={state.error} onRetry={() => setAttempt((n) => n + 1)} />
+      ) : (!indexed || state.loading) && rows.length === 0 ? (
+        <SkeletonRows rows={6} />
+      ) : rows.length === 0 ? (
+        <EmptyState icon="person" title={filtered ? lt.membersEmpty : lt.membersNone} message="" />
       ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">{lt.fullName}</th>
-                <th scope="col">{lt.memberSince}</th>
-                <th scope="col">{lt.mobile}</th>
-                <th scope="col">{lt.ageGroup}</th>
-                <th scope="col">{lt.books}</th>
-                <th scope="col">{lt.status}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.data.map((m) => (
-                <tr key={m.id}>
-                  <td>
-                    <Link to={paths.adminMember(m.id)}>{m.fullName}</Link>
-                    {m.guardian && <div className="muted small">{lt.guardian}: {m.guardian.name}</div>}
-                  </td>
-                  <td className="mono">{m.code}</td>
-                  <td className="nowrap">{m.phone ?? '—'}</td>
-                  <td>{label(m.audience)}</td>
-                  <td>{m.activeLoanCount}</td>
-                  <td>
-                    <StatusBadge status={m.status} />
-                  </td>
+        <>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">{lt.fullName}</th>
+                  <th scope="col">{lt.memberSince}</th>
+                  <th scope="col">{lt.mobile}</th>
+                  <th scope="col">{lt.plan}</th>
+                  <th scope="col">{lt.renewalDate}</th>
+                  <th scope="col">{lt.books}</th>
+                  <th scope="col">{lt.status}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {rows.map((m) => (
+                  <tr key={m.id}>
+                    <td>
+                      <Link to={paths.adminMember(m.id)}>{m.fullName}</Link>
+                      <div className="muted small">
+                        {label(m.audience)}
+                        {m.guardian && ` · ${lt.guardian}: ${m.guardian.name}`}
+                      </div>
+                    </td>
+                    <td className="mono">{m.code}</td>
+                    <td className="nowrap">{m.phone ?? '—'}</td>
+                    <td>{m.planName ?? '—'}</td>
+                    <td>
+                      <RenewalCell m={m} />
+                    </td>
+                    <td>{m.activeLoanCount}</td>
+                    <td>
+                      <StatusBadge status={m.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {cursor && (
+            <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
+              {state.loading ? t.loading : t.loadMore}
+            </button>
+          )}
+        </>
       )}
       {registering && <MemberDialog orgId={orgId} branchId={branchId} onClose={() => setRegistering(false)} onSaved={(id) => navigate(paths.adminMember(id))} />}
     </>

@@ -39,6 +39,10 @@ export interface Member {
   activeSubscriptionId: string | null;
   nextSubscriptionId: string | null;
   subscriptionEndsAt: FirebaseFirestore.Timestamp | null;
+  /** Plan of the latest paid term (for the member list; kept after it expires). */
+  planName?: string | null;
+  /** End of the latest paid term, including a pre-paid renewal: the date to renew by (kept after it expires). */
+  renewalDueAt?: FirebaseFirestore.Timestamp | null;
   activeLoanCount: number;
   allocatedCount: number;
   waitingCount: number;

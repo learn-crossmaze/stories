@@ -157,6 +157,10 @@ h2 { font-size: 22px; line-height: 1.25; }
 .badge-ok { color: var(--success); }
 .badge-warn { color: #b7791f; }
 .badge-muted { color: var(--on-surface-muted); }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--outline); border-radius: 999px; padding: 6px 14px; background: var(--surface-raised); color: var(--on-surface); font: inherit; font-size: 14px; cursor: pointer; }
+.chip[aria-pressed='true'] { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.chip-count { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 .skeleton-list { display: flex; flex-direction: column; gap: 10px; }
 .skeleton-row { height: 44px; border-radius: var(--radius-md); background: linear-gradient(90deg, var(--surface-dim), var(--surface-raised), var(--surface-dim)); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
