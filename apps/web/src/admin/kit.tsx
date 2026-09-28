@@ -1,5 +1,4 @@
 import JsBarcode from 'jsbarcode';
-import QRCode from 'qrcode';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -99,17 +98,7 @@ export function Barcode({ value, height = 44 }: { value: string; height?: number
  * QR code for the same value: laptop webcams and phones read it reliably even
  * when slightly out of focus or at an angle, unlike the thin bars of Code 128.
  */
-export function QrCode({ value, className }: { value: string; className?: string }) {
-  const [svg, setSvg] = useState('');
-  useEffect(() => {
-    let live = true;
-    void QRCode.toString(value, { type: 'svg', margin: 2, errorCorrectionLevel: 'M' }).then((s) => live && setSvg(s));
-    return () => {
-      live = false;
-    };
-  }, [value]);
-  return <span className={`qr ${className ?? ''}`} role="img" aria-label={`QR code ${value}`} dangerouslySetInnerHTML={{ __html: svg }} />;
-}
+export { QrCode } from '../QrCode';
 
 /** Wraps branch-level pages: requires a branch the user works at. */
 export function NeedBranch({ children }: { children: (branchId: string) => ReactNode }) {
