@@ -63,11 +63,14 @@ export const setCover = command(
     imageUrl: z.url({ protocol: /^https$/ }).max(500).optional(),
   }),
   async ({ actor, input, requestId }, tx) => {
-    await actor.requireCatalog('books.edit', tx);
+    const editor = await actor.canCatalog('books.edit', tx);
+    if (!editor) await actor.requireCatalog('books.create', tx);
     const ref = db.doc(`books/${input.bookId}`);
     const snap = await tx.get(ref);
     if (!snap.exists) throw errors.notFound('Book');
     const previousPath = (snap.get('coverPath') as string | undefined) ?? null;
+    // Book creators (e.g. branch managers) may add a missing cover; changing or removing one is for catalogue editors.
+    if (!editor && (previousPath || (input.image === null && !input.imageUrl))) throw errors.forbidden('Only head office can change or remove a cover.');
 
     let cover: { coverUrl: string; coverPath: string } | null = null;
     const bytes = input.imageUrl ? await download(input.imageUrl) : input.image !== null ? Buffer.from(input.image, 'base64') : null;

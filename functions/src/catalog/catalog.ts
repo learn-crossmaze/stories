@@ -21,7 +21,8 @@ function refCommands(kind: RefKind) {
     `${kind}-create`,
     z.strictObject({ name }),
     async ({ actor, input, requestId }, tx) => {
-      await actor.requireCatalog('books.edit', tx);
+      // Adding a book may need a new author or publisher, so book creators can add them (renaming and archiving stay with editors).
+      await actor.requireCatalog('books.create', tx);
       const normalized = normalizeText(input.name);
       const dup = await tx.get(db.collection(kind).where('nameNormalized', '==', normalized).where('status', '==', 'ACTIVE').limit(1));
       if (!dup.empty) throw errors.conflict('DUPLICATE_NAME', `${LABEL[kind]} "${input.name}" already exists.`);

@@ -108,7 +108,8 @@ export const PERMISSIONS = {
     "DEL"
   ],
   "books.create": [
-    "HO"
+    "HO",
+    "BM"
   ],
   "books.edit": [
     "HO"
