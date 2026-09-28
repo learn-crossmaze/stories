@@ -2,7 +2,7 @@ import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
-import { command } from '../core/callable.js';
+import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { bookPattern, existingCodes, reserveCodes } from '../core/numbering.js';
@@ -224,6 +224,51 @@ export const restore = command('books-restore', z.strictObject({ bookId: id }), 
   return { bookId: input.bookId };
 });
 
+const USAGE_LIMIT = 500;
+type Tally = { total: number; byStatus: Record<string, number> };
+export interface BookUsage {
+  copies: Tally;
+  reservations: Tally;
+}
+
+/**
+ * Everything in any library that still points at a title: copies in every
+ * status (retired and lost ones too) and reservations in every status, across
+ * all branches and organizations (the catalogue is shared). Counts stop at USAGE_LIMIT.
+ */
+async function bookUsage(bookId: string, get: (q: FirebaseFirestore.Query) => Promise<FirebaseFirestore.QuerySnapshot>): Promise<BookUsage> {
+  const tally = (s: FirebaseFirestore.QuerySnapshot): Tally => {
+    const byStatus: Record<string, number> = {};
+    for (const d of s.docs) byStatus[d.get('status')] = (byStatus[d.get('status')] ?? 0) + 1;
+    return { total: s.size, byStatus };
+  };
+  const [copies, reservations] = await Promise.all([
+    get(db.collectionGroup('copies').where('bookId', '==', bookId).select('status').limit(USAGE_LIMIT)),
+    get(db.collectionGroup('reservations').where('bookId', '==', bookId).select('status').limit(USAGE_LIMIT)),
+  ]);
+  return { copies: tally(copies), reservations: tally(reservations) };
+}
+
+/** "2 copies (1 retired, 1 lost) and 1 reservation (1 collected)". */
+function describeUsage(u: BookUsage): string {
+  const words: Record<string, string> = { UNDER_INSPECTION: 'under inspection', IN_TRANSIT: 'in transit', FULFILLED: 'collected', ALLOCATED: 'on hold' };
+  const part = (t: Tally, one: string, many: string) => {
+    if (!t.total) return null;
+    const detail = Object.entries(t.byStatus)
+      .map(([s, n]) => `${n} ${words[s] ?? s.toLowerCase()}`)
+      .join(', ');
+    return `${t.total} ${t.total === 1 ? one : many} (${detail})`;
+  };
+  return [part(u.copies, 'copy', 'copies'), part(u.reservations, 'reservation', 'reservations')].filter(Boolean).join(' and ');
+}
+
+/** What still refers to a title (for the book page before offering "Delete permanently"). */
+export const usage = query('books-usage', z.strictObject({ bookId: id }), async ({ actor, input }) => {
+  await db.runTransaction((tx) => actor.requireCatalog('books.edit', tx));
+  const u = await bookUsage(input.bookId, (q) => q.get());
+  return { ...u, summary: u.copies.total || u.reservations.total ? describeUsage(u) : null };
+});
+
 /**
  * Permanently deletes an archived title that no organization ever stocked or
  * reserved (history must stay intact, so a title with copies or reservations
@@ -238,12 +283,9 @@ export const remove = command(
     const snap = await tx.get(ref);
     if (!snap.exists) throw errors.notFound('Book');
     if (snap.get('status') !== 'ARCHIVED') throw errors.conflict('BOOK_NOT_ARCHIVED', 'Archive the title before deleting it.');
-    const [copies, reservations] = await Promise.all([
-      tx.get(db.collectionGroup('copies').where('bookId', '==', input.bookId).limit(1)),
-      tx.get(db.collectionGroup('reservations').where('bookId', '==', input.bookId).limit(1)),
-    ]);
-    if (!copies.empty || !reservations.empty) {
-      throw errors.conflict('BOOK_IN_USE', 'This title has copies or reservations in a library, so it stays archived to keep their history.');
+    const found = await bookUsage(input.bookId, (q) => tx.get(q));
+    if (found.copies.total || found.reservations.total) {
+      throw errors.conflict('BOOK_IN_USE', `${describeUsage(found)} still refer to this title, so it stays archived to keep their history.`);
     }
     const isbn = snap.get('isbn') as string | null;
     if (isbn) tx.delete(db.doc(`isbnIndex/${isbn}`));
