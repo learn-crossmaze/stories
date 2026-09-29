@@ -42,3 +42,23 @@ export function recordAudit(tx: Transaction, ctx: AuditContext, orgId: string | 
     at: FieldValue.serverTimestamp(),
   });
 }
+
+/** Records an audit entry outside a transaction (for reads worth tracing, e.g. opening a private document). */
+export async function recordAuditNow(ctx: AuditContext, orgId: string, entry: AuditEntry) {
+  const batch = db.batch();
+  batch.create(db.collection(`orgs/${orgId}/auditLogs`).doc(), {
+    actorUid: ctx.actorUid,
+    actorEmail: ctx.actorEmail ?? null,
+    requestId: ctx.requestId ?? null,
+    action: entry.action,
+    entityType: entry.entityType,
+    entityId: entry.entityId,
+    branchId: entry.branchId ?? null,
+    memberId: entry.memberId ?? null,
+    before: entry.before ?? null,
+    after: entry.after ?? null,
+    reason: entry.reason ?? null,
+    at: FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
+}

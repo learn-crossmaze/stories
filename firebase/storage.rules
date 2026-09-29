@@ -8,6 +8,10 @@ service firebase.storage {
       allow read, write: if false;
     }
 
+    // Employee documents (hr/{orgId}/{employeeId}/…) stay closed to every
+    // client: they are uploaded and opened only through the documents-* calls,
+    // which check permissions and audit each opening.
+
     // Book covers are public (catalogue artwork). Uploads go through the
     // books-setCover function, which checks catalogue permissions.
     match /covers/{bookId}/{file} {

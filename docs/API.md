@@ -76,8 +76,11 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `employees-transition` (`START_ONBOARDING, ACTIVATE, RESIGN, WITHDRAW_RESIGNATION, START_OFFBOARDING, COMPLETE_OFFBOARDING, REHIRE`), `employees-checkItem` | `employees.lifecycle` (never on yourself) |
 | | `employees-setPrivate` | `employees.privateData` |
 | | `employees-setBank`, `employees-revealBank` (audited) | `employees.bank` |
-| Settings | `designations-create/rename/archive`, `hr-setChecklists` | `hr.config` |
+| Settings | `designations-create/rename/archive`, `hr-setChecklists`, `documentTypes-save/archive` | `hr.config` |
+| Documents | `documents-upload` (base64 PDF/JPEG/PNG, 5 MB), `documents-remove` | `documents.verify` or `employees.edit` at the employee's branch; the employee for self-upload types (and to withdraw a pending upload) |
+| | `documents-review` (`VERIFY` / `REJECT` with reason; never your own upload) | `documents.verify` |
+| | `documents-open` (query, audited) | as upload, or the employee |
 
 `staff-setRoles` (admin router) links or creates the person's employee record, so nobody has two.
 
-Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), both idempotent.
+Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), `scheduled-expireDocuments` (daily 00:30 IST), all idempotent.

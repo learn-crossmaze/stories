@@ -84,6 +84,9 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/employees/e-cen/private/bank`, { accountNumber: '001234567890' });
     await put(`orgs/${CORP}/employees/e-nth/private/profile`, { pan: 'ZZZZZ9999Z' });
     await put(`orgs/${CORP}/designations/d1`, { name: 'Librarian', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/employees/e-cen/documents/doc1`, { orgId: CORP, branchId: 'cen', employeeUid: 'alice', status: 'VERIFIED', typeName: 'PAN card' });
+    await put(`orgs/${CORP}/employees/e-nth/documents/doc2`, { orgId: CORP, branchId: 'nth', employeeUid: 'bob', status: 'PENDING', typeName: 'Aadhaar card' });
+    await put(`orgs/${CORP}/documentTypes/medical`, { name: 'Medical certificate', status: 'ACTIVE' });
   });
 });
 
@@ -313,6 +316,22 @@ describe('HRMS employee records', () => {
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen`), { status: 'OFFBOARDED' }));
     await assertFails(setDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/profile`), { pan: 'X' }));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/designations/d2`), { name: 'X' }));
+  });
+
+  it('documents: HR sees the queue, employees their own, branch managers and finance none', async () => {
+    await assertSucceeds(getDocs(query(collectionGroup(hrAdmin(), 'documents'), where('orgId', '==', CORP), where('status', '==', 'PENDING'))));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/documents/doc1`)));
+    await assertSucceeds(getDocs(query(collection(alice(), `orgs/${CORP}/employees/e-cen/documents`), where('employeeUid', '==', 'alice'))));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/employees/e-nth/documents/doc2`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/employees/e-cen/documents/doc1`)));
+    await assertFails(getDoc(doc(as('farah', claims({ [CORP]: { r: ['FIN'], b: ['*'] } })), `orgs/${CORP}/employees/e-cen/documents/doc1`)));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen/documents/doc1`), { status: 'VERIFIED' }));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/documentTypes/medical`)));
+    // The profile's Documents tab lists one employee's documents without filters.
+    await assertSucceeds(getDocs(collection(hrAdmin(), `orgs/${CORP}/employees/e-nth/documents`)));
+    await assertSucceeds(getDocs(collection(alice(), `orgs/${CORP}/employees/e-cen/documents`)));
+    await assertFails(getDocs(collection(alice(), `orgs/${CORP}/employees/e-nth/documents`)));
+    await assertFails(getDocs(collection(bmCen(), `orgs/${CORP}/employees/e-cen/documents`)));
   });
 
   it('designations are readable in the org only', async () => {

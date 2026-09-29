@@ -3,7 +3,9 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { branchCounts } from '../../data/circulation';
+import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
 import { listStaff } from '../../data/org';
+import { ht } from '../../strings/hr';
 import { useAsync } from '../../shared/useAsync';
 import { paths } from '../../paths';
 import { t } from '../../strings';
@@ -36,6 +38,12 @@ export function DashboardPage() {
     [org?.id, branch?.id, desk, approver],
   );
 
+  const verifier = !!org && can(claims, 'documents.verify', org.id);
+  const docs = useAsync(async () => {
+    if (!org || !verifier) return null;
+    return documentQueue(org.id, branchScope(claims, org.id), await listDocumentTypes(org.id));
+  }, [org?.id, verifier]);
+
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   const activeBranches = branches.filter((b) => b.status === 'ACTIVE');
@@ -54,6 +62,10 @@ export function DashboardPage() {
   const c = counts.data;
   if (c?.inspection) todos.push({ label: `${c.inspection} ${lt.awaitingInspection.toLowerCase()}`, to: paths.adminDesk });
   if (c?.incoming) todos.push({ label: `${c.incoming} ${lt.incomingTransfers.toLowerCase()}`, to: paths.adminTransfers });
+  const d = docs.data;
+  if (d?.pending.length) todos.push({ label: ht.todoDocsPending(d.pending.length), to: paths.adminDocuments });
+  if (d?.expired.length) todos.push({ label: ht.todoDocsExpired(d.expired.length), to: paths.adminDocuments });
+  if (d?.expiring.length) todos.push({ label: ht.todoDocsExpiring(d.expiring.length), to: paths.adminDocuments });
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
 
   const firstName = (user?.displayName ?? '').split(' ')[0];

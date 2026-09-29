@@ -147,3 +147,13 @@ export function newEmployee(fields: {
     source: fields.source,
   };
 }
+
+/** Whether `actor` holds `perm` for an employee's branch (head-office records need all branches). */
+export async function canFor(actor: Actor, perm: Permission, orgId: string, branchId: string | null, tx: Transaction): Promise<boolean> {
+  try {
+    await requireFor(actor, perm, orgId, branchId, tx);
+    return true;
+  } catch {
+    return false;
+  }
+}
