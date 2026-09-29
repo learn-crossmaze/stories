@@ -8,7 +8,7 @@ import { dateKeyIST } from './time.js';
 
 /**
  * Numbering patterns ("nomenclature") for the codes Stories generates, e.g.
- * `COPY-{BOOK}-{SEQ:2}` → COPY-000123-04. Each branch may override the
+ * `BK{BOOK}-CP{SEQ:2}` → BK000123-CP04. Each branch may override the
  * defaults for the codes it creates (branches/{b}.numbering); book codes are
  * global because the catalogue is shared (config/numbering). Changing a
  * pattern only affects new records — printed labels never change.
@@ -23,11 +23,17 @@ export type BranchKind = (typeof BRANCH_KINDS)[number];
 
 export const DEFAULT_PATTERNS: Record<CodeKind, string> = {
   book: 'BOOK-{SEQ:6}',
-  copy: 'COPY-{BOOK}-{SEQ:2}',
-  member: 'MEM-{SEQ:6}',
-  location: '{KIND}-{SEQ:3}',
-  employee: 'EMP-{SEQ:4}',
+  copy: 'BK{BOOK}-CP{SEQ:2}',
+  member: '{BRANCH}-M{SEQ:6}',
+  location: '{BRANCH}-{KIND}-{SEQ:3}',
+  employee: '{BRANCH}-E{SEQ:4}',
 };
+
+/** The defaults before September 2026, still in use where a branch chose them explicitly. */
+export const LEGACY_PATTERNS = { copy: 'COPY-{BOOK}-{SEQ:2}', member: 'MEM-{SEQ:6}', location: '{KIND}-{SEQ:3}', employee: 'EMP-{SEQ:4}' } as const;
+
+/** {BRANCH} for records without a branch (head-office staff). */
+export const HEAD_OFFICE_CODE = 'HO';
 
 const DATE_TOKENS = ['YYYY', 'YY', 'MM'];
 export const TOKENS: Record<CodeKind, string[]> = {
@@ -110,15 +116,14 @@ export function bookNumber(book: DocumentSnapshot): string {
  * Counter documents: codes whose fixed parts render the same share one
  * running number, so a pattern never repeats a code (and a pattern with {YY}
  * starts again at 1 each year). Books always share one catalogue number,
- * which {BOOK} relies on being unique. The default patterns keep the counters
- * used before patterns were configurable.
+ * which {BOOK} relies on being unique. The first default patterns keep the
+ * counters used before patterns were configurable, and a book's copies keep
+ * counting on from its earlier copies under the current default too.
  */
 function counterPath(kind: CodeKind, pattern: string, values: TokenValues, base: string, now: Date, bookCode?: string) {
   if (kind === 'book') return 'counters/books';
-  if (pattern === DEFAULT_PATTERNS[kind]) {
-    if (kind === 'copy') return `${base}/copies-${bookCode}`;
-    if (kind === 'member') return `${base}/members`;
-  }
+  if (kind === 'copy' && (pattern === LEGACY_PATTERNS.copy || pattern === DEFAULT_PATTERNS.copy)) return `${base}/copies-${bookCode}`;
+  if (kind === 'member' && pattern === LEGACY_PATTERNS.member) return `${base}/members`;
   return `${base}/${kind}:${fill(pattern, values, now, () => '#')}`;
 }
 

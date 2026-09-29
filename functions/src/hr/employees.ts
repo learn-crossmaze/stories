@@ -7,7 +7,7 @@ import { syncClaims } from '../core/claims.js';
 import { errors } from '../core/errors.js';
 import { auth, db } from '../core/firebase.js';
 import { ALL_BRANCHES, type Actor, type Membership } from '../core/rbac.js';
-import { reserveCodes } from '../core/numbering.js';
+import { branchPatterns, HEAD_OFFICE_CODE, renderCode, reserveCodes } from '../core/numbering.js';
 import { id, name } from '../core/schemas.js';
 import { dateKeyIST } from '../core/time.js';
 import { assignEmployeeCode } from './codes.js';
@@ -486,20 +486,39 @@ export const backfill = command(
       const claimed = idx?.exists && idx.get('employeeDocId');
       return !match && (!m.employeeId || claimed);
     });
-    const fresh = needCode.length
-      ? await reserveCodes(tx, {
-          kind: 'employee',
-          pattern: 'EMP-{SEQ:4}',
-          values: {},
-          base: `orgs/${input.orgId}/counters`,
-          count: needCode.length,
-          taken: async (codes) => (await Promise.all(codes.map((c) => tx.get(employeeCodeRef(input.orgId, c))))).filter((d) => d.exists).map((d) => d.id),
-        })
-      : null;
+    // New IDs follow each person's first branch's employee pattern (head office for organization-wide staff).
+    // People whose codes share fixed parts share one counter, so they are reserved together.
+    const branchOf = (m: Membership) => (m.branchIds.includes(ALL_BRANCHES) ? null : (m.branchIds[0] ?? null));
+    const branchIds = [...new Set(needCode.map(branchOf).filter((b): b is string => !!b))];
+    const branchDocs = new Map((await Promise.all(branchIds.map((b) => tx.get(db.doc(`orgs/${input.orgId}/branches/${b}`))))).map((d) => [d.id, d]));
+    const groups = new Map<string, { pattern: string; values: { BRANCH: string }; members: Membership[] }>();
+    for (const m of needCode) {
+      const branch = branchDocs.get(branchOf(m) ?? '');
+      const pattern = branchPatterns(branch?.exists ? branch : null).employee;
+      const values = { BRANCH: (branch?.get('code') as string | undefined) ?? HEAD_OFFICE_CODE };
+      const key = renderCode(pattern, values, 0);
+      const group = groups.get(key) ?? { pattern, values, members: [] };
+      group.members.push(m);
+      groups.set(key, group);
+    }
+    const freshCode = new Map<Membership, string>();
+    const commits: (() => void)[] = [];
+    for (const { pattern, values, members } of groups.values()) {
+      const next = await reserveCodes(tx, {
+        kind: 'employee',
+        pattern,
+        values,
+        base: `orgs/${input.orgId}/counters`,
+        count: members.length,
+        taken: async (codes) => (await Promise.all(codes.map((c) => tx.get(employeeCodeRef(input.orgId, c))))).filter((d) => d.exists).map((d) => d.id),
+      });
+      members.forEach((m, i) => freshCode.set(m, next.codes[i]));
+      commits.push(next.commit);
+    }
 
     let created = 0;
     let linked = 0;
-    fresh?.commit();
+    for (const commit of commits) commit();
     batch.forEach((m, i) => {
       const email = m.email?.toLowerCase() ?? null;
       const match = email ? unlinkedByEmail.get(email) : undefined;
@@ -516,8 +535,8 @@ export const backfill = command(
       }
       const ref = employeesCol(input.orgId).doc();
       const reuse = m.employeeId && !(indexes[i]?.exists && indexes[i]!.get('employeeDocId'));
-      const code = reuse ? m.employeeId! : fresh!.codes[needCode.indexOf(m)];
-      const branchId = m.branchIds.includes(ALL_BRANCHES) ? null : (m.branchIds[0] ?? null);
+      const code = reuse ? m.employeeId! : freshCode.get(m)!;
+      const branchId = branchOf(m);
       tx.create(ref, {
         ...newEmployee({ orgId: input.orgId, code, fullName: m.displayName || m.email || code, status: 'ACTIVE', source: 'BACKFILL', uid: m.uid, email, branchId }),
         createdAt: FieldValue.serverTimestamp(),

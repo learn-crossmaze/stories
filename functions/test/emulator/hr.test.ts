@@ -58,7 +58,7 @@ describe('employee records', () => {
     const newcomer = await createUser('new@stories.test');
     await db.doc(`users/${newcomer.uid}`).delete(); // account exists but has not signed in yet
     const { employeeId, code, linked } = await hire('Neha Kapoor', { email: 'NEW@stories.test', phone: '9876543210' });
-    expect(code).toBe('EMP-0004');
+    expect(code).toBe('CEN-E0002'); // Central's second (HR and finance are head office: HO-E0001, HO-E0002)
     expect(linked).toBe(true); // the Stories account exists
     expect((await employee(employeeId)).status).toBe('DRAFT');
 
@@ -104,18 +104,25 @@ describe('employee records', () => {
       orgId: org, orgName: 'Stories Corporate', orgType: 'CORPORATE', uid: noCode.uid, email: noCode.email, displayName: null,
       roles: ['EMPLOYEE'], branchIds: ['*'], status: 'ACTIVE',
     });
+    const northie = await createUser('northie@stories.test');
+    await db.doc(`users/${northie.uid}/memberships/${org}`).set({
+      orgId: org, orgName: 'Stories Corporate', orgType: 'CORPORATE', uid: northie.uid, email: northie.email, displayName: 'North Person',
+      roles: ['EMPLOYEE'], branchIds: [north], status: 'ACTIVE',
+    });
     expect(await failure(call(emp.backfill, bm, { orgId: org }))).toBe('FORBIDDEN');
-    expect(await call(emp.backfill, hr, { orgId: org })).toEqual({ created: 2, linked: 0, remaining: 0 });
+    expect(await call(emp.backfill, hr, { orgId: org })).toEqual({ created: 3, linked: 0, remaining: 0 });
     const recs = await employees();
     const legacy = recs.find((d) => d.get('uid') === old.uid)!;
     expect(legacy.get('code')).toBe('LEGACY-7');
     expect(legacy.get('branchId')).toBe(north);
     const fresh = recs.find((d) => d.get('uid') === noCode.uid)!;
-    expect(fresh.get('code')).toMatch(/^EMP-\d{4}$/);
+    expect(fresh.get('code')).toMatch(/^HO-E\d{4}$/); // organization-wide staff: head office
+    // Branch staff get their first branch's pattern.
+    expect((await employees()).find((d) => d.get('uid') === northie.uid)!.get('code')).toBe('NTH-E0001');
     expect(fresh.get('branchId')).toBeNull();
     expect((await db.doc(`users/${noCode.uid}/memberships/${org}`).get()).get('employeeId')).toBe(fresh.get('code'));
     expect(await call(emp.backfill, hr, { orgId: org })).toEqual({ created: 0, linked: 0, remaining: 0 });
-    expect(await employees()).toHaveLength(5);
+    expect(await employees()).toHaveLength(6);
   });
 
   it('records job changes with their effective date in the history', async () => {

@@ -5,7 +5,9 @@ import { DEFAULT_PATTERNS, patternProblem, previewCode } from '../admin/organiza
 describe('numbering preview', () => {
   it('accepts the defaults and previews them like the server numbers them', () => {
     for (const [kind, p] of Object.entries(DEFAULT_PATTERNS)) expect(patternProblem(kind as keyof typeof DEFAULT_PATTERNS, p)).toBeNull();
-    expect(previewCode(DEFAULT_PATTERNS.copy, {}, 3)).toBe('COPY-000123-03');
+    expect(previewCode(DEFAULT_PATTERNS.copy, {}, 3)).toBe('BK000123-CP03');
+    expect(previewCode(DEFAULT_PATTERNS.member, { BRANCH: 'CEN' }, 45)).toBe('CEN-M000045');
+    expect(previewCode(DEFAULT_PATTERNS.employee, { BRANCH: 'CEN' }, 12)).toBe('CEN-E0012');
     expect(previewCode('{BRANCH}-{KIND}{SEQ:2}', { BRANCH: 'NTH' }, 1)).toBe('NTH-SH01');
     expect(previewCode('M{YY}-{SEQ:4}', {}, 7, new Date('2026-12-31T20:00:00Z'))).toBe('M27-0007');
   });
