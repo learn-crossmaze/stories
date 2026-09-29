@@ -66,6 +66,7 @@ nothing else.
 | payments.refund | ✓ | | ✓ | | | | | | | |
 | delivery.manage / delivery.assign | ✓ | | | | ✓ | ✓ | | ✓ | | |
 | delivery.execute (assigned only) | | | | | | | ✓ | | | |
+| employees.add (add employee records; branch managers at their own branches) | ✓ | ✓ | | ✓ | branch | | | ✓ | | |
 | employees.view / employees.edit | ✓ | ✓ | | ✓ | view (branch) | | | ✓ (own org) | self | |
 | employees.privateData | ✓ | | ✓ (bank) | ✓ | | | | | self | |
 | employees.lifecycle (onboarding, resignation, offboarding checklists) | ✓ | ✓ | | ✓ | | | | ✓ | | |

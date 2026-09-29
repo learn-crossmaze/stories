@@ -7,7 +7,7 @@ import { syncClaims } from '../core/claims.js';
 import { errors } from '../core/errors.js';
 import { auth, db } from '../core/firebase.js';
 import { ALL_BRANCHES, type Actor, type Membership } from '../core/rbac.js';
-import { branchPatterns, HEAD_OFFICE_CODE, renderCode, reserveCodes } from '../core/numbering.js';
+import { employeeNumbering, renderCode, reserveCodes, type TokenValues } from '../core/numbering.js';
 import { id, name } from '../core/schemas.js';
 import { dateKeyIST } from '../core/time.js';
 import { assignEmployeeCode } from './codes.js';
@@ -120,7 +120,8 @@ export const create = command(
   z.strictObject({ orgId: id, fullName: name, email: optionalEmail, phone, employeeId: code, ...placement }),
   async (ctx, tx) => {
     const { actor, input } = ctx;
-    await requireFor(actor, 'employees.edit', input.orgId, input.branchId, tx);
+    // HR adds anyone; branch managers add people at their own branches (docs/HRMS.md §4).
+    await requireFor(actor, 'employees.add', input.orgId, input.branchId, tx);
     const { branch, fields } = await resolvePlacement(tx, input.orgId, null, input);
     const ref = employeesCol(input.orgId).doc();
 
@@ -491,11 +492,11 @@ export const backfill = command(
     const branchOf = (m: Membership) => (m.branchIds.includes(ALL_BRANCHES) ? null : (m.branchIds[0] ?? null));
     const branchIds = [...new Set(needCode.map(branchOf).filter((b): b is string => !!b))];
     const branchDocs = new Map((await Promise.all(branchIds.map((b) => tx.get(db.doc(`orgs/${input.orgId}/branches/${b}`))))).map((d) => [d.id, d]));
-    const groups = new Map<string, { pattern: string; values: { BRANCH: string }; members: Membership[] }>();
+    const orgDoc = needCode.length ? await tx.get(db.doc(`orgs/${input.orgId}`)) : null;
+    const groups = new Map<string, { pattern: string; values: TokenValues; members: Membership[] }>();
     for (const m of needCode) {
-      const branch = branchDocs.get(branchOf(m) ?? '');
-      const pattern = branchPatterns(branch?.exists ? branch : null).employee;
-      const values = { BRANCH: (branch?.get('code') as string | undefined) ?? HEAD_OFFICE_CODE };
+      const branch = branchDocs.get(branchOf(m) ?? '') ?? null;
+      const { pattern, values } = employeeNumbering(branch, orgDoc);
       const key = renderCode(pattern, values, 0);
       const group = groups.get(key) ?? { pattern, values, members: [] };
       group.members.push(m);

@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { command } from '../../data/api';
 import { getBookNumbering } from '../../data/catalogue';
-import type { Branch } from '../../data/org';
+import type { Branch, Org } from '../../data/org';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ErrorState } from '../../shared/ui';
@@ -47,6 +47,37 @@ function TokenHelp({ kinds }: { kinds: CodeKind[] }) {
         ))}
       </dl>
     </details>
+  );
+}
+
+/** Head-office numbering: employee IDs for staff without a branch, and the code {BRANCH} stands for. */
+export function HeadOfficeNumberingDialog({ org, onClose, onSaved }: { org: Org; onClose: () => void; onSaved: () => void }) {
+  const [pattern, setPattern] = useState(org.numbering?.employee || DEFAULT_PATTERNS.employee);
+  const [code, setCode] = useState(org.headOfficeCode || 'HO');
+  const [touched, setTouched] = useState(false);
+  const hoCode = code.trim().toUpperCase();
+  const codeError = /^[A-Z0-9]{2,8}$/.test(hoCode) ? undefined : lt.hoCodeInvalid;
+  const { busy, error, submit } = useSubmit(async () => {
+    setTouched(true);
+    const p = pattern.trim().toUpperCase();
+    if (patternProblem('employee', p) || codeError) return;
+    await command('orgs-setNumbering', { orgId: org.id, employee: p === DEFAULT_PATTERNS.employee ? '' : p, headOfficeCode: hoCode === 'HO' ? '' : hoCode });
+    onSaved();
+    onClose();
+  });
+  return (
+    <Dialog title={lt.hoNumberingTitle} onClose={onClose}>
+      <form onSubmit={submit} noValidate className="form-grid">
+        <p className="span-2 muted">{lt.hoNumberingIntro}</p>
+        <TextField label={lt.hoCode} hint={lt.hoCodeHint} value={code} onChange={setCode} error={touched ? codeError : undefined} />
+        <PatternInput kind="employee" value={pattern} onChange={setPattern} branchCode={codeError ? 'HO' : hoCode} touched={touched} />
+        <TokenHelp kinds={['employee']} />
+        <div className="span-2">
+          <FormError error={error} />
+          <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

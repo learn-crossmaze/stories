@@ -263,6 +263,12 @@ export const lt = {
   // numbering
   numbering: 'Numbering',
   numberingTitle: (branch: string) => `Numbering at ${branch}`,
+  hoNumberingButton: 'Head office numbering',
+  hoNumberingTitle: 'Head office numbering',
+  hoNumberingIntro: 'Employee IDs for head-office staff (people without a branch). Only new IDs change; existing IDs stay as they are.',
+  hoCode: 'Head office code',
+  hoCodeHint: 'What {BRANCH} stands for in head-office IDs, e.g. HO or HQ.',
+  hoCodeInvalid: 'Use 2–8 letters or digits.',
   numberingIntro:
     'Patterns for the codes this branch creates. Only new records use a changed pattern — existing codes and printed labels stay as they are.',
   numberingCopy: 'Book copies',

@@ -127,6 +127,19 @@ function counterPath(kind: CodeKind, pattern: string, values: TokenValues, base:
   return `${base}/${kind}:${fill(pattern, values, now, () => '#')}`;
 }
 
+/**
+ * Pattern and values for a new employee ID: the branch's employee pattern,
+ * or for head-office staff (no branch) the organization's head-office
+ * pattern and code (orgs/{o}.numbering.employee, orgs/{o}.headOfficeCode).
+ */
+export function employeeNumbering(branch: DocumentSnapshot | null, org: DocumentSnapshot | null): { pattern: string; values: TokenValues } {
+  if (branch?.exists) return { pattern: branchPatterns(branch).employee, values: { BRANCH: branch.get('code') as string } };
+  return {
+    pattern: (org?.get('numbering.employee') as string | undefined) || DEFAULT_PATTERNS.employee,
+    values: { BRANCH: (org?.get('headOfficeCode') as string | undefined) || HEAD_OFFICE_CODE },
+  };
+}
+
 /** Patterns in effect at a branch (its overrides over the defaults). */
 export function branchPatterns(branch: DocumentSnapshot | null): Record<BranchKind, string> {
   const own = (branch?.get('numbering') ?? {}) as Partial<Record<BranchKind, string>>;

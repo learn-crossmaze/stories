@@ -5,7 +5,8 @@ import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
-import { BRANCH_KINDS, patternField } from '../core/numbering.js';
+import { BRANCH_KINDS, HEAD_OFFICE_CODE, patternField } from '../core/numbering.js';
+import { requireFor } from '../hr/model.js';
 import { id } from '../core/schemas.js';
 
 /**
@@ -39,6 +40,37 @@ export const setBranchNumbering = command(
       after: { numbering },
     });
     return { branchId: input.branchId };
+  },
+);
+
+/**
+ * Sets how head-office staff (no branch) are numbered: the employee ID
+ * pattern ('' = the default) and the code {BRANCH} stands for ('' = HO).
+ * Needs branches.manage across all branches. New IDs only.
+ */
+export const setHeadOfficeNumbering = command(
+  'orgs-setNumbering',
+  z.strictObject({
+    orgId: id,
+    employee: patternField('employee'),
+    headOfficeCode: z.union([z.literal(''), z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,8}$/, 'must be 2–8 letters or digits')]).default(''),
+  }),
+  async ({ actor, input, requestId }, tx) => {
+    await requireFor(actor, 'branches.manage', input.orgId, null, tx);
+    const ref = db.doc(`orgs/${input.orgId}`);
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw errors.notFound('Organization');
+    const before = { employee: (snap.get('numbering.employee') as string | undefined) ?? null, headOfficeCode: (snap.get('headOfficeCode') as string | undefined) ?? null };
+    const after = { employee: input.employee || null, headOfficeCode: input.headOfficeCode || null };
+    tx.update(ref, { numbering: { employee: after.employee }, headOfficeCode: after.headOfficeCode, updatedAt: FieldValue.serverTimestamp() });
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'org.numbering',
+      entityType: 'org',
+      entityId: input.orgId,
+      before,
+      after: { ...after, effective: `${after.employee ?? 'default'} with ${after.headOfficeCode ?? HEAD_OFFICE_CODE}` },
+    });
+    return { orgId: input.orgId };
   },
 );
 

@@ -25,6 +25,9 @@ export interface Org {
   name: string;
   type: OrgType;
   status: 'ACTIVE' | 'SUSPENDED';
+  /** Head-office numbering (staff without a branch): employee ID pattern and the code {BRANCH} stands for. */
+  numbering?: { employee?: string | null } | null;
+  headOfficeCode?: string | null;
 }
 
 export interface Address {

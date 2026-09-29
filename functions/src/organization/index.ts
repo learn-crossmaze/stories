@@ -9,6 +9,7 @@ import * as staff from './staff.js';
 export const routes = {
   'orgs-create': orgs.create,
   'orgs-update': orgs.update,
+  'orgs-setNumbering': numbering.setHeadOfficeNumbering,
   'branches-create': branches.create,
   'branches-update': branches.update,
   'branches-archive': branches.archive,

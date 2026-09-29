@@ -61,6 +61,9 @@ export const ht = {
   effectiveHint: 'For job changes. Recorded in the history.',
   changeNote: 'Note (optional)',
   employeeIdHint: 'Leave blank to number automatically with the branch pattern.',
+  accessStepTitle: 'Give Stories access (optional)',
+  accessStepIntro: 'This person has a Stories account. Choose what they can do and where, or skip and do it later from their Access tab.',
+  accessStepSkip: 'Skip for now',
 
   tabOverview: 'Overview',
   tabPersonal: 'Personal',

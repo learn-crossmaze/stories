@@ -74,6 +74,7 @@ DRAFT ──start onboarding──▶ ONBOARDING ──mark as joined──▶ A
 |---|---|
 | employees.view | HO, HR, FO, BM (own branches) |
 | employees.edit | HO, HR, FO |
+| employees.add | HO, HR, FO, BM (own branches; head-office staff need all branches) |
 | employees.lifecycle | HO, HR, FO |
 | employees.privateData | HR, FIN |
 | employees.bank | HR, FIN |
@@ -91,6 +92,10 @@ Records without a branch (head office staff) need the permission across all bran
 
 - **Employees** (Admin → People, `/admin/people`): status chips with counts, search by name, ID or email, a branch filter, "Add
   employee", and the backfill notice.
+- **One way in:** people are added only through **Add employee** (HR, head office, franchise owner; branch managers at
+  their own branches). When the email belongs to an existing Stories account, an optional last step, **Give Stories
+  access**, picks roles and branches (starting from the employee's branch); *Skip for now* leaves it for the
+  profile's Access tab. The employee ID is set on the record only.
 - **Employee profile** (`/admin/people/:id`) has six tabs:
   - Overview: job and contact details.
   - Personal: personal and statutory details, visible to HR and finance.
@@ -102,7 +107,9 @@ Records without a branch (head office staff) need the permission across all bran
   - Onboarding & exit: status actions and checklists.
   - History: effective-dated changes.
   - Access: link a Stories account, see and manage roles.
-- **Staff & roles**: unchanged, and now under People.
+- **Roles & access** (Organization): a review of everyone who can sign in, with roles and branches. It has no *Add*
+  button and no employee ID field: *Manage* opens the person's profile on the Access tab (`?tab=access`); *Revoke*
+  stays. Memberships without an employee record (older data) still open the roles dialog.
 - **Settings → Job titles & checklists** (`/admin/settings/jobs`): designations, and the onboarding and offboarding checklist templates.
 
 ## 6. Known limits (Phase 1)

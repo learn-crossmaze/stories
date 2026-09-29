@@ -44,12 +44,16 @@ also barcodes), shelves 16, others 24.
 
 ## Employee IDs
 
-- An employee ID is assigned the first time someone is given roles in an organization, using the employee pattern of
-  their first branch. Organization-wide staff (no branch) use the default pattern with `HO` as the branch code, e.g.
-  HO-E0001. Staff given records by the
-  **backfill** (People → Employees) are numbered the same way: their first branch's pattern, or HO.
-- HR (or whoever manages the person's roles) can type a specific ID instead in **Staff & roles → Edit**. IDs are unique
-  within the organization (`orgs/{o}/employeeIds/{id}`, not readable by clients).
+- An employee ID is assigned when the person is added in **People → Employees → Add employee** (or, for older data,
+  the first time they are given roles), using the employee pattern of their branch.
+- **Head office** (staff without a branch) has its own setting: **Branches → Head office numbering** (`branches.manage`
+  across all branches: head office admin, franchise owner). It sets the head-office employee ID pattern (default
+  `{BRANCH}-E{SEQ:4}`) and the code `{BRANCH}` stands for (default `HO`), e.g. HO-E0001 or HQ-S001. Stored on
+  `orgs/{o}` as `numbering.employee` and `headOfficeCode`; set with `orgs-setNumbering`. New IDs only.
+- Staff given records by the **backfill** (People → Employees) are numbered the same way: their first branch's
+  pattern, or head office's.
+- A specific ID can be typed instead when adding the employee. IDs are unique within the organization
+  (`orgs/{o}/employeeIds/{id}`, not readable by clients). Roles & access no longer edits IDs.
 - The ID stays when roles change or are removed. Staff who had roles before this feature get an ID the next time
   their roles are saved.
 

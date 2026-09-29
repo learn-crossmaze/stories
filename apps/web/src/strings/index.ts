@@ -298,6 +298,10 @@ export const t = {
 
   staffTitle: 'Roles & access',
   staffAdd: 'Add staff member',
+  staffIntro: 'Everyone who can sign in to this organization, with their roles and branches. Manage opens the person’s Access tab.',
+  staffAddVia: 'To add someone, go to People → Employees.',
+  staffManage: 'Manage',
+  staffGiveAccess: 'Give access',
   staffEditRoles: 'Edit roles',
   staffEmail: 'Email address',
   staffEmailHint: 'The person must have signed up to Stories with this email.',

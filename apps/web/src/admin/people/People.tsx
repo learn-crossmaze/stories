@@ -14,6 +14,8 @@ import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } f
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
+import { grantableRoles } from '../grants';
+import { RolesDialog } from '../organization/Staff';
 import { useWorkspace } from '../Workspace';
 
 const STATUS_TONE: Record<string, string> = {
@@ -32,7 +34,18 @@ export function EmployeeStatusBadge({ status }: { status: string }) {
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 /** Create (DRAFT record) or edit an employee's details and job placement. */
-export function EmployeeDialog({ org, employee, onClose, onSaved }: { org: Org; employee?: Employee; onClose: () => void; onSaved: (id: string) => void }) {
+export function EmployeeDialog({
+  org,
+  employee,
+  onClose,
+  onSaved,
+}: {
+  org: Org;
+  employee?: Employee;
+  onClose: () => void;
+  /** For a new record, also its email, branch and whether a Stories account was linked. */
+  onSaved: (id: string, added?: { email: string; branchId: string | null; linked: boolean }) => void;
+}) {
   const { claims } = useAuth();
   const { branches } = useWorkspace();
   const scope = branchScope(claims, org.id);
@@ -89,8 +102,8 @@ export function EmployeeDialog({ org, employee, onClose, onSaved }: { org: Org; 
       await command('employees-update', { ...body, employeeId: employee.id, effectiveDate, note: note.trim() });
       onSaved(employee.id);
     } else {
-      const res = await command<{ employeeId: string }>('employees-create', { ...body, employeeId: code.trim().toUpperCase() });
-      onSaved(res.employeeId);
+      const res = await command<{ employeeId: string; linked: boolean }>('employees-create', { ...body, employeeId: code.trim().toUpperCase() });
+      onSaved(res.employeeId, { email: body.email, branchId: body.branchId, linked: res.linked });
     }
     onClose();
   });
@@ -183,6 +196,10 @@ export function PeoplePage() {
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const people = useAsync(() => (org ? listEmployees(org.id, scope) : Promise.resolve([])), [org?.id, JSON.stringify(scope)]);
   const canEdit = !!org && can(claims, 'employees.edit', org.id);
+  const canAdd = !!org && can(claims, 'employees.add', org.id);
+  // After adding someone with a Stories account: the optional "give access" step.
+  const [access, setAccess] = useState<{ id: string; email: string; branchId: string | null } | null>(null);
+  const canGrant = !!org && can(claims, 'staff.manageRoles', org.id) && grantableRoles(claims, org.id, org.type).length > 0;
   // Staff with roles but no record (added before People existed); org-wide editors can fix it.
   const unrecorded = useAsync(async () => {
     if (!org || !canEdit || scope !== 'ALL' || !can(claims, 'staff.view', org.id)) return 0;
@@ -225,7 +242,7 @@ export function PeoplePage() {
           <h1>{ht.employeesTitle}</h1>
           <p className="muted">{ht.employeesIntro}</p>
         </div>
-        {canEdit && (
+        {canAdd && (
           <button type="button" className="btn btn-filled" onClick={() => setAdding(true)}>
             <Icon name="plus" /> {ht.addEmployee}
           </button>
@@ -317,7 +334,25 @@ export function PeoplePage() {
           </table>
         </div>
       )}
-      {adding && <EmployeeDialog org={org} onClose={() => setAdding(false)} onSaved={(id) => navigate(paths.adminEmployee(id))} />}
+      {adding && (
+        <EmployeeDialog
+          org={org}
+          onClose={() => setAdding(false)}
+          onSaved={(id, added) => (added?.linked && added.email && canGrant ? setAccess({ id, email: added.email, branchId: added.branchId }) : navigate(paths.adminEmployee(id)))}
+        />
+      )}
+      {access && (
+        <RolesDialog
+          org={org}
+          email={access.email}
+          branchIds={access.branchId ? [access.branchId] : []}
+          title={ht.accessStepTitle}
+          intro={ht.accessStepIntro}
+          cancelLabel={ht.accessStepSkip}
+          onClose={() => navigate(paths.adminEmployee(access.id))}
+          onSaved={() => undefined}
+        />
+      )}
     </>
   );
 }

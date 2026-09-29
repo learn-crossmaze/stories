@@ -5,6 +5,7 @@ import * as departments from '../../src/organization/departments.js';
 import { db } from '../../src/core/firebase.js';
 import * as emp from '../../src/hr/employees.js';
 import * as hrSettings from '../../src/hr/settings.js';
+import * as numbering from '../../src/organization/numbering.js';
 import * as orgs from '../../src/organization/orgs.js';
 import * as staff from '../../src/organization/staff.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
@@ -123,6 +124,27 @@ describe('employee records', () => {
     expect((await db.doc(`users/${noCode.uid}/memberships/${org}`).get()).get('employeeId')).toBe(fresh.get('code'));
     expect(await call(emp.backfill, hr, { orgId: org })).toEqual({ created: 0, linked: 0, remaining: 0 });
     expect(await employees()).toHaveLength(6);
+  });
+
+  it('branch managers add employees at their own branches only', async () => {
+    const { code } = await call<{ code: string }>(emp.create, bm, { orgId: org, fullName: 'Kiran Rao', branchId: central });
+    expect(code).toMatch(/^CEN-E\d{4}$/);
+    expect(await failure(call(emp.create, bm, { orgId: org, fullName: 'Asha North', branchId: north }))).toBe('FORBIDDEN');
+    expect(await failure(call(emp.create, bm, { orgId: org, fullName: 'Hari Office', branchId: null }))).toBe('FORBIDDEN');
+    expect(await failure(call(emp.create, fin, { orgId: org, fullName: 'Nope', branchId: central }))).toBe('FORBIDDEN');
+  });
+
+  it('numbers head-office staff with the organization head-office pattern and code', async () => {
+    expect((await hire('Office One', { branchId: null })).code).toBe('HO-E0003'); // HR and finance are HO-E0001 and HO-E0002
+    expect(await failure(call(numbering.setHeadOfficeNumbering, hr, { orgId: org, employee: '{BRANCH}-S{SEQ:3}', headOfficeCode: 'HQ' }))).toBe('FORBIDDEN');
+    expect(await failure(call(numbering.setHeadOfficeNumbering, sa, { orgId: org, employee: '{BOOK}-{SEQ}', headOfficeCode: '' }))).toBe('INVALID_INPUT');
+    await call(numbering.setHeadOfficeNumbering, sa, { orgId: org, employee: '{BRANCH}-S{SEQ:3}', headOfficeCode: 'hq' });
+    expect((await hire('Office Two', { branchId: null })).code).toBe('HQ-S001');
+    // Branch staff keep their branch's pattern.
+    expect((await hire('Branch Person')).code).toMatch(/^CEN-E\d{4}$/);
+    // Back to the defaults.
+    await call(numbering.setHeadOfficeNumbering, sa, { orgId: org, employee: '', headOfficeCode: '' });
+    expect((await hire('Office Three', { branchId: null })).code).toBe('HO-E0004');
   });
 
   it('records job changes with their effective date in the history', async () => {

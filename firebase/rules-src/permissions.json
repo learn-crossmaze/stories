@@ -58,6 +58,7 @@
 
     "employees.view": ["HO", "HR", "FO", "BM"],
     "employees.edit": ["HO", "HR", "FO"],
+    "employees.add": ["HO", "HR", "FO", "BM"],
     "employees.privateData": ["FIN", "HR"],
     "employees.lifecycle": ["HO", "HR", "FO"],
     "employees.bank": ["FIN", "HR"],
