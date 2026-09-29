@@ -126,6 +126,16 @@ verification link for email/password accounts). On the first visit `me-overview`
 with that email to the account (`members.accountHolderUid`, audited; matched case-insensitively via `emailLower`).
 A guardian's account also sees the children whose `guardian.memberId` is theirs, with a switcher between them.
 
+**Self sign-up.** Anyone signed in with a verified email but no membership sees **Become a member** (on every member
+page, including Membership): they pick the library and branch (`me-joinOptions` lists active branches of active
+organizations), enter name, date of birth and mobile, and `me-join` creates their member record at that branch
+(numbered with the branch's member pattern, `accountHolderUid` = them, email = their sign-in email, `source: SELF`,
+audited as `member.selfRegister`). They then choose a plan and billing option and pay online or at the branch, as
+below. Rules: adults only (a child is added by a parent); one own membership per organization; an email the branch
+already registered is linked instead (reload); the mobile number must not belong to another member.
+**Add a child** (Membership page, own adult membership): `me-addChild` creates the child's record at the same branch
+with the member as guardian; the child appears in the switcher with their plans to buy.
+
 - **Home**: plan, renewal date, books with them (of the plan limit), deposit; prompts for an unpaid plan, a held
   reservation ready to collect, or a plan ending within 15 days.
 - **Explore**: the catalogue (their age group for children), availability per branch of their library, Reserve /

@@ -14,6 +14,7 @@ import {
 } from '../data/me';
 import { day, money } from '../shared/format';
 import { t } from '../strings';
+import { AddChild } from './JoinMembership';
 import { useMemberData } from './memberData';
 import { Page, WithMembership, PlanBadge } from './common';
 
@@ -249,6 +250,7 @@ function MembershipBody({ m }: { m: Membership }) {
           </ul>
         )}
       </section>
+      <AddChild member={m} />
     </>
   );
 }

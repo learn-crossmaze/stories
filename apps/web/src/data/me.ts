@@ -148,3 +148,17 @@ export function currentTerm(m: Membership): MySubscription | null {
 }
 
 export const pendingSubscription = (m: Membership) => m.subscriptions.find((s) => s.status === 'PENDING_PAYMENT') ?? null;
+
+/** Libraries (organizations) and their branches a signed-in person can join. */
+export interface JoinOptions {
+  organizations: { orgId: string; orgName: string; branches: { id: string; name: string; code: string; city: string }[] }[];
+}
+export const loadJoinOptions = () => callAction<JoinOptions>(services().fns, 'me-joinOptions', {});
+
+/** Self sign-up: become a member of a branch, linked to this account. */
+export const joinLibrary = (input: { orgId: string; branchId: string; fullName: string; dob: string; phone: string }) =>
+  command<{ memberId: string; code: string }>('me-join', { ...input, address: null });
+
+/** Adds a child (under 18) with the signed-in member as guardian. */
+export const addChild = (m: Membership, input: { fullName: string; dob: string; relationship: string }) =>
+  command<{ memberId: string; code: string }>('me-addChild', { orgId: m.orgId, guardianMemberId: m.memberId, ...input });

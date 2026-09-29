@@ -662,3 +662,37 @@ describe('numbering settings', () => {
     expect((await db.doc(`books/${await newBook('Catriona')}`).get()).get('code')).toBe('BOOK-000003');
   });
 });
+
+describe('member self sign-up', () => {
+  it('a signed-in adult joins a branch, adds a child and buys plans for both', async () => {
+    const tara = await createUser('tara@example.com');
+    const options = await call<{ organizations: { orgId: string; branches: { id: string; name: string }[] }[] }>(me.joinOptions, tara, {}, null);
+    expect(options.organizations.find((o) => o.orgId === org)?.branches.map((b) => b.name).sort()).toEqual(['Central', 'North']);
+
+    const unverified = await createUser('late@example.com', { verified: false });
+    expect(await failure(call(me.join, unverified, { orgId: org, branchId: north, fullName: 'Late Reader', dob: '1990-01-01', phone: '9811100001' }))).toBe('EMAIL_NOT_VERIFIED');
+    expect(await failure(call(me.join, tara, { orgId: org, branchId: north, fullName: 'Tara Young', dob: '2012-01-01', phone: '9811100002' }))).toBe('INVALID_INPUT');
+
+    const { memberId, code } = await call<{ memberId: string; code: string }>(me.join, tara, { orgId: org, branchId: north, fullName: 'Tara Menon', dob: '1991-03-04', phone: '98111 00003' });
+    expect(code).toMatch(/^NTH-M\d{6}$/);
+    expect(await get(`members/${memberId}`)).toMatchObject({ accountHolderUid: tara.uid, emailLower: 'tara@example.com', homeBranchId: north, audience: 'ADULTS', source: 'SELF' });
+    expect(await failure(call(me.join, tara, { orgId: org, branchId: central, fullName: 'Tara Again', dob: '1991-03-04', phone: '9811100004' }))).toBe('ALREADY_MEMBER');
+    // A phone number already used by a member is refused.
+    const other = await createUser('other@example.com');
+    expect(await failure(call(me.join, other, { orgId: org, branchId: central, fullName: 'Other', dob: '1980-01-01', phone: '9811100003' }))).toBe('DUPLICATE_PHONE');
+
+    const child = await call<{ memberId: string }>(me.addChild, tara, { orgId: org, guardianMemberId: memberId, fullName: 'Ishaan Menon', dob: '2017-06-01', relationship: 'Mother' });
+    expect(await get(`members/${child.memberId}`)).toMatchObject({ audience: 'CHILDREN', homeBranchId: north, guardian: { memberId, relationship: 'Mother' } });
+    expect(await failure(call(me.addChild, other, { orgId: org, guardianMemberId: memberId, fullName: 'Not Mine', dob: '2017-06-01', relationship: 'Aunt' }))).toBe('FORBIDDEN');
+    expect(await failure(call(me.addChild, tara, { orgId: org, guardianMemberId: memberId, fullName: 'Grown Up', dob: '1999-06-01', relationship: 'Son' }))).toBe('INVALID_INPUT');
+
+    // Both show up for Tara, with plans to buy; she subscribes for herself and the child.
+    const view = await call<{ memberships: { memberId: string; self: boolean; plans: { id: string }[] }[] }>(me.overview, tara, {}, null);
+    expect(view.memberships.map((m) => m.memberId).sort()).toEqual([memberId, child.memberId].sort());
+    expect(view.memberships.find((m) => m.memberId === memberId)!.plans.map((p) => p.id)).toContain(planId);
+    const own = await call<{ subscriptionId: string }>(me.subscribe, tara, { orgId: org, memberId, planId });
+    const kid = await call<{ subscriptionId: string }>(me.subscribe, tara, { orgId: org, memberId: child.memberId, planId });
+    expect((await get(`subscriptions/${own.subscriptionId}`)).status).toBe('PENDING_PAYMENT');
+    expect((await get(`subscriptions/${kid.subscriptionId}`)).memberId).toBe(child.memberId);
+  });
+});

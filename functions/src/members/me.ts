@@ -8,7 +8,8 @@ import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id } from '../core/schemas.js';
 import { cancelReservation, placeReservation } from '../circulation/reservations.js';
-import type { Member } from './model.js';
+import { ADULT_AGE, ageOn, type Member } from './model.js';
+import { createMember, profile } from './members.js';
 import { requestOnlinePayment, settleOpenRequests } from '../billing/online.js';
 import { type Plan, pricesFor } from '../billing/plans.js';
 import { cancelPendingSubscription, createSchema, startSubscription } from '../billing/subscriptions.js';
@@ -168,6 +169,89 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
   result.sort((a, b) => Number(b.self) - Number(a.self) || String((a.member as { fullName: string }).fullName).localeCompare(String((b.member as { fullName: string }).fullName)));
   return { linked, emailVerified: actor.emailVerified, email: actor.email, memberships: result };
 });
+
+/**
+ * Libraries a signed-in person can join: every active branch of every active
+ * organization (name and city), for the self sign-up form.
+ */
+export const joinOptions = query('me-joinOptions', z.strictObject({}), async () => {
+  const orgs = await db.collection('orgs').where('status', '==', 'ACTIVE').limit(50).get();
+  const result = await Promise.all(
+    orgs.docs.map(async (o) => {
+      const branches = await db.collection(`orgs/${o.id}/branches`).where('status', '==', 'ACTIVE').get();
+      return {
+        orgId: o.id,
+        orgName: (o.get('name') as string) ?? '',
+        branches: branches.docs
+          .map((b) => ({ id: b.id, name: (b.get('name') as string) ?? '', code: (b.get('code') as string) ?? '', city: (b.get('address.city') as string | undefined) ?? '' }))
+          .sort((x, y) => x.name.localeCompare(y.name)),
+      };
+    }),
+  );
+  return { organizations: result.filter((o) => o.branches.length).sort((x, y) => x.orgName.localeCompare(y.orgName)) };
+});
+
+/**
+ * Self sign-up: an adult with a verified sign-in email becomes a member of a
+ * branch, linked to their account, and can then buy a plan (me-subscribe).
+ * One own membership per organization; someone the library already
+ * registered with this email is linked instead (me-overview).
+ */
+export const join = command(
+  'me-join',
+  z.strictObject({ orgId: id, branchId: id, fullName: profile.fullName, dob: profile.dob, phone: z.string().trim().min(8).max(20), address: profile.address }),
+  async ({ actor, input, requestId }, tx) => {
+    if (!actor.email || !actor.emailVerified) throw errors.conflict('EMAIL_NOT_VERIFIED', 'Verify your email address first (check your inbox for the link), then sign up.');
+    const org = await tx.get(db.doc(`orgs/${input.orgId}`));
+    if (!org.exists || org.get('status') !== 'ACTIVE') throw errors.notFound('Library');
+    const email = actor.email.toLowerCase();
+    const [mine, byEmail] = await Promise.all([
+      tx.get(db.collection(`orgs/${input.orgId}/members`).where('accountHolderUid', '==', actor.uid).limit(5)),
+      tx.get(db.collection(`orgs/${input.orgId}/members`).where('emailLower', '==', email).limit(1)),
+    ]);
+    if (mine.docs.some((d) => d.get('status') !== 'CLOSED' && !d.get('isMinor'))) {
+      throw errors.conflict('ALREADY_MEMBER', 'You are already a member of this library. Open Membership to choose a plan.');
+    }
+    if (!byEmail.empty && byEmail.docs[0].get('status') !== 'CLOSED') {
+      throw errors.conflict('ALREADY_REGISTERED', 'The library has already registered this email. Reload the page to see your membership.');
+    }
+    if (ageOn(input.dob, new Date()) < ADULT_AGE) {
+      throw errors.invalid('Members under 18 are added by a parent or guardian: the parent signs up first, then adds the child.');
+    }
+    return createMember(
+      tx,
+      { ...input, homeBranchId: input.branchId, email: actor.email, guardianMemberId: null, guardianRelationship: '' },
+      { actorUid: actor.uid, actorEmail: actor.email, requestId, accountHolderUid: actor.uid, source: 'SELF' },
+    );
+  },
+);
+
+/** A member adds their child (under 18) as a member of the same branch, with themselves as guardian. */
+export const addChild = command(
+  'me-addChild',
+  z.strictObject({ orgId: id, guardianMemberId: id, fullName: profile.fullName, dob: profile.dob, relationship: z.string().trim().min(2).max(30) }),
+  async ({ actor, input, requestId }, tx) => {
+    const guardian = await tx.get(db.doc(`orgs/${input.orgId}/members/${input.guardianMemberId}`));
+    if (!guardian.exists || guardian.get('accountHolderUid') !== actor.uid) throw errors.forbidden('Only the member themselves can add a child.');
+    if (guardian.get('status') !== 'ACTIVE') throw errors.conflict('MEMBER_INACTIVE', 'Your membership is not active.');
+    if (ageOn(input.dob, new Date()) >= ADULT_AGE) throw errors.invalid('Adults sign up for their own membership with their own email.');
+    return createMember(
+      tx,
+      {
+        orgId: input.orgId,
+        homeBranchId: guardian.get('homeBranchId'),
+        fullName: input.fullName,
+        dob: input.dob,
+        phone: '',
+        email: '',
+        address: null,
+        guardianMemberId: guardian.id,
+        guardianRelationship: input.relationship,
+      },
+      { actorUid: actor.uid, actorEmail: actor.email, requestId, accountHolderUid: null, source: 'SELF' },
+    );
+  },
+);
 
 /** A member (or their guardian) chooses a plan: a subscription waiting for payment is created. */
 export const subscribe = command('me-subscribe', createSchema, (ctx, tx) =>

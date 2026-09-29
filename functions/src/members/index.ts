@@ -9,6 +9,9 @@ export const routes = {
   'members-indexList': members.indexList,
   // Member self-service (ownership-checked).
   'me-overview': me.overview,
+  'me-joinOptions': me.joinOptions,
+  'me-join': me.join,
+  'me-addChild': me.addChild,
   'me-subscribe': me.subscribe,
   'me-cancelPending': me.cancelPending,
   'me-pay': me.pay,

@@ -6,6 +6,7 @@ import { currentTerm, type Membership } from '../data/me';
 import { day, relativeDays } from '../shared/format';
 import { t } from '../strings';
 import { EmptyState, ErrorState, SkeletonRows } from '../shared/ui';
+import { JoinMembership } from './JoinMembership';
 import { useMemberData } from './memberData';
 
 // Building blocks shared by the member pages: the page frame, the member switcher,
@@ -32,6 +33,8 @@ export function WithMembership({ children }: { children: (m: Membership) => Reac
   if (overview.error) return <ErrorState message={overview.error} onRetry={overview.reload} />;
   if (!current) {
     const email = overview.data?.email ?? user?.email ?? '';
+    // Signed in with a verified email but not a member yet: join a branch here.
+    if (overview.data?.emailVerified) return <JoinMembership />;
     return (
       <EmptyState
         icon="card"

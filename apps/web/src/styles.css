@@ -667,3 +667,5 @@ main h1[tabindex='-1']:focus { outline: none; }
 .plan-prices strong { font: 600 17px var(--font-display); }
 .plan-prices .badge { margin-left: 6px; }
 .option-choice { display: flex; gap: 8px; flex-wrap: wrap; }
+.join-card { max-width: 720px; }
+.join-card form .btn-filled { margin-top: 8px; }
