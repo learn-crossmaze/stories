@@ -93,6 +93,10 @@ Records without a branch (head office staff) need the permission across all bran
   - Overview: job and contact details.
   - Personal: personal and statutory details, visible to HR and finance.
   - Bank: masked account, change, and an audited "Show full number".
+    IFSC lookup: once all 11 characters are typed, the browser asks Razorpay's free public IFSC directory
+    (`ifsc.razorpay.com`, no key; `apps/web/src/shared/ifsc.ts`) and shows the bank and branch under the field, filling
+    *Bank* unless someone typed their own name. An unknown code is flagged but can still be saved (new branches take
+    time to appear); if the directory can't be reached the form works as before. Reuse `IfscField` for any new IFSC input.
   - Onboarding & exit: status actions and checklists.
   - History: effective-dated changes.
   - Access: link a Stories account, see and manage roles.

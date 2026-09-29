@@ -2,8 +2,10 @@ import { useState } from 'react';
 
 import { command } from '../../data/api';
 import { type Employee, type PrivateProfile, type Transition } from '../../data/hr';
+import { cleanIfsc, IFSC_PATTERN } from '../../shared/ifsc';
 import { t } from '../../strings';
 import { Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../components/Dialog';
+import { IfscField } from '../components/IfscField';
 import { ht } from '../../strings/hr';
 
 // Dialogs on the employee profile: personal details, bank account, status changes.
@@ -88,11 +90,13 @@ export function BankDialog({
   const [accountNumber, setNumber] = useState('');
   const [ifsc, setIfsc] = useState(profile.bank?.ifsc ?? '');
   const [bankName, setBankName] = useState(profile.bank?.bankName ?? '');
+  // The bank name last filled from an IFSC lookup; replaced by the next lookup unless someone typed over it.
+  const [filledBank, setFilledBank] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const errors = {
     accountHolder: accountHolder.trim().length >= 2 ? undefined : t.required,
     accountNumber: /^\d{9,18}$/.test(accountNumber.trim()) ? undefined : 'Enter 9–18 digits.',
-    ifsc: /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.trim().toUpperCase()) ? undefined : 'Enter a valid IFSC, e.g. HDFC0001234.',
+    ifsc: IFSC_PATTERN.test(cleanIfsc(ifsc)) ? undefined : 'Enter a valid IFSC, e.g. HDFC0001234.',
     bankName: bankName.trim().length >= 2 ? undefined : t.required,
   };
   const { busy, error, submit } = useSubmit(async () => {
@@ -103,7 +107,7 @@ export function BankDialog({
       employeeId: employee.id,
       accountHolder: accountHolder.trim(),
       accountNumber: accountNumber.trim(),
-      ifsc: ifsc.trim().toUpperCase(),
+      ifsc: cleanIfsc(ifsc),
       bankName: bankName.trim(),
     });
     onSaved();
@@ -114,7 +118,20 @@ export function BankDialog({
       <form onSubmit={submit} noValidate>
         <TextField label={ht.accountHolder} value={accountHolder} onChange={setHolder} error={touched ? errors.accountHolder : undefined} />
         <TextField label={ht.accountNumber} value={accountNumber} onChange={setNumber} autoComplete="off" error={touched ? errors.accountNumber : undefined} />
-        <TextField label={ht.ifsc} value={ifsc} onChange={setIfsc} error={touched ? errors.ifsc : undefined} />
+        <IfscField
+          label={ht.ifsc}
+          value={ifsc}
+          onChange={setIfsc}
+          error={touched ? errors.ifsc : undefined}
+          onFound={(d) => {
+            const saved = profile.bank;
+            const changedFromSaved = !!saved && bankName === saved.bankName && d.ifsc !== saved.ifsc;
+            if (!bankName.trim() || bankName === filledBank || changedFromSaved) {
+              setBankName(d.bank);
+              setFilledBank(d.bank);
+            }
+          }}
+        />
         <TextField label={ht.bankName} value={bankName} onChange={setBankName} error={touched ? errors.bankName : undefined} />
         <FormError error={error} />
         <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
