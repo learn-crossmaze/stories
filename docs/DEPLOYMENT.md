@@ -27,6 +27,9 @@ npx firebase login
 npm run deploy:backend
 ```
 
+Later deploys need only `git pull` and `npm run deploy:backend`: the functions predeploy step (`firebase.json`)
+installs any new function dependencies before building.
+
 The first deploy enables the Cloud Functions, Cloud Build, Artifact Registry and Cloud Run APIs (a few minutes).
 Scheduled functions (Phase 1: subscription expiry hourly, reservation holds every 15 minutes) also enable Cloud
 Scheduler. The backend deploys as **8 services** (6 routers + 2 jobs, `maxInstances: 5` each) to stay inside the
