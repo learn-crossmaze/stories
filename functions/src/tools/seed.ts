@@ -104,6 +104,7 @@ console.log(`\nSeeded 2 organizations, 2 branches, 3 departments, ${personas.len
 await seedLibrary();
 await seedHr();
 await seedLeave();
+await seedPayroll();
 process.exit(0);
 
 // ---------------------------------------------------------------------------
@@ -425,3 +426,68 @@ async function seedLeave() {
   await db.doc('seed/leave').set({ at: FieldValue.serverTimestamp() });
   console.log('Seeded leave credits for the year, an opening balance, a leave request to decide and approved sick leave.');
 }
+
+// ---------------------------------------------------------------------------
+// Payroll demo data (docs/HRMS.md §10): salaries for the staff, TDS for the
+// branch manager, and last month's Central payroll prepared and submitted by
+// HR, waiting for Finance to approve. Finalizing the month first decides the
+// attendance correction left by the HR seed. Runs once: guarded by seed/payroll.
+
+async function seedPayroll() {
+  if ((await db.doc('seed/payroll').get()).exists) {
+    console.log('Payroll demo data already present (seed/payroll).');
+    return;
+  }
+  const { randomUUID } = await import('node:crypto');
+  const pay = await import('../hr/payroll.js');
+  const att = await import('../hr/attendance.js');
+  const rules = await import('../hr/attendanceRules.js');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Callable = { run: (req: any) => unknown };
+  /** Commands need a requestId; queries take none. */
+  const as = async <R>(email: string, fn: Callable, data: Record<string, unknown>, isCommand = true): Promise<R> => {
+    const uid = (await auth.getUserByEmail(email)).uid;
+    return (await fn.run({
+      data: isCommand ? { ...data, requestId: randomUUID() } : data,
+      auth: { uid, token: { email, email_verified: true } },
+      rawRequest: {},
+      acceptsStreaming: false,
+    })) as R;
+  };
+  const byEmail = async (email: string) => (await db.collection(`orgs/${CORP}/employees`).where('emailLower', '==', email).limit(1).get()).docs[0];
+  const pay3 = (basic: number, hra: number, special: number) => [
+    { code: 'BASIC', name: 'Basic', amount: basic },
+    { code: 'HRA', name: 'House rent allowance', amount: hra },
+    { code: 'SPECIAL', name: 'Special allowance', amount: special },
+  ];
+  const salaries: [string, number, number, number][] = [
+    ['ho@stories.test', 60000, 24000, 16000],
+    ['finance@stories.test', 45000, 18000, 12000],
+    ['hr@stories.test', 40000, 16000, 9000],
+    ['catalogue@stories.test', 30000, 12000, 8000],
+    ['manager@stories.test', 22000, 8800, 6200],
+    ['librarian@stories.test', 11000, 4400, 2600],
+    ['delivery@stories.test', 9000, 3600, 2400],
+    ['employee@stories.test', 10000, 4000, 2000],
+  ];
+  for (const [email, basic, hra, special] of salaries) {
+    const e = await byEmail(email);
+    if (e) await as('super@stories.test', pay.saveSalary, { orgId: CORP, employeeId: e.id, effectiveFrom: '2025-04', earnings: pay3(basic, hra, special), pf: true, esi: true, pt: true, reason: 'Salary on joining' });
+  }
+
+  const today = rules.businessDate(Date.now());
+  const [ty, tm] = today.slice(0, 7).split('-').map(Number);
+  const lastMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, '0')}`;
+  const manager = await byEmail('manager@stories.test');
+  if (manager) await as('hr@stories.test', pay.setInputs, { orgId: CORP, employeeId: manager.id, month: lastMonth, tds: 1200, otherEarnings: [{ name: 'Festival bonus', amount: 3000 }], otherDeductions: [] });
+
+  const waiting = await db.collection(`orgs/${CORP}/attendanceCorrections`).where('month', '==', lastMonth).where('status', '==', 'PENDING').get();
+  for (const c of waiting.docs) await as('manager@stories.test', att.decideCorrection, { orgId: CORP, correctionId: c.id, decision: 'APPROVE', note: '' });
+  await as('hr@stories.test', att.finalize, { orgId: CORP, month: lastMonth, branchId: CENTRAL }, false);
+  await as('hr@stories.test', pay.prepare, { orgId: CORP, month: lastMonth, branchId: CENTRAL }, false);
+  await as('hr@stories.test', pay.submit, { orgId: CORP, month: lastMonth, branchId: CENTRAL });
+
+  await db.doc('seed/payroll').set({ at: FieldValue.serverTimestamp() });
+  console.log(`Seeded salaries, TDS for the branch manager, and ${lastMonth} payroll for Central waiting for Finance to approve.`);
+}
+

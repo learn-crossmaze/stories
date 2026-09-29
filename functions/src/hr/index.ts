@@ -3,6 +3,7 @@ import * as attendance from './attendance.js';
 import * as documents from './documents.js';
 import * as employees from './employees.js';
 import * as leave from './leave.js';
+import * as payroll from './payroll.js';
 import * as schedule from './schedule.js';
 import * as settings from './settings.js';
 
@@ -44,6 +45,13 @@ export const routes = {
   'leave-cancel': leave.cancel,
   'leave-adjust': leave.adjust,
   'leave-accrue': leave.accrue,
+  'payrollSettings-save': payroll.saveSettings,
+  'salary-save': payroll.saveSalary,
+  'payroll-setInputs': payroll.setInputs,
+  'payroll-prepare': payroll.prepare,
+  'payroll-submit': payroll.submit,
+  'payroll-decide': payroll.decide,
+  'payslips-download': payroll.downloadPayslip,
 };
 
 export const expireDocuments = documents.expireSweep;

@@ -124,6 +124,9 @@ function AccountMenu() {
           <Link to={paths.adminMyLeave} onClick={() => setOpen(false)}>
             <Icon name="calendar" /> {ht.navMyLeave}
           </Link>
+          <Link to={paths.adminMyPayslips} onClick={() => setOpen(false)}>
+            <Icon name="payments" /> {ht.navMyPayslips}
+          </Link>
           <Link to={paths.adminAppearance} onClick={() => setOpen(false)}>
             <Icon name="palette" /> {t.navAppearance}
           </Link>

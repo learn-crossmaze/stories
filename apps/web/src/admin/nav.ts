@@ -40,6 +40,8 @@ export const NAV: NavItem[] = [
   { to: paths.adminAttendance, label: ht.navAttendance, icon: 'clock', section: ht.sectionPeople, requires: 'attendance.view' },
   // Approvers see the menu item; anyone who views attendance may open the page.
   { to: paths.adminLeave, label: ht.navLeave, icon: 'calendar', section: ht.sectionPeople, requires: ['leave.approve', 'leave.adjust'], page: 'attendance.view' },
+  // Those who prepare or approve payroll see the menu item; salary viewers may open the page.
+  { to: paths.adminPayroll, label: ht.navPayroll, icon: 'payments', section: ht.sectionPeople, requires: ['payroll.run', 'payroll.approve'], page: 'salary.view' },
   { to: paths.adminDocuments, label: ht.navDocuments, icon: 'folder', section: ht.sectionPeople, requires: 'documents.verify' },
   { to: paths.adminStaff, label: t.navStaff, icon: 'key', section: ht.sectionPeople, requires: 'staff.view' },
   { to: paths.adminHrSettings, label: ht.navHrSettings, icon: 'tune', section: ht.sectionPeople, requires: 'hr.config' },

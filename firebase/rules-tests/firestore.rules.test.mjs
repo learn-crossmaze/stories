@@ -98,6 +98,13 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/leaveBalances/e-cen_2026`, { branchId: 'cen', employeeUid: 'alice', year: '2026', types: { casual: { credited: 9 } } });
     await put(`orgs/${CORP}/leaveLedger/l1`, { branchId: 'nth', employeeUid: 'bob', year: '2026', typeId: 'casual', days: 1 });
     await put(`orgs/${CORP}/leaveTypes/casual`, { name: 'Casual leave', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/payrollSettings/2026-04`, { effectiveFrom: '2026-04' });
+    await put(`orgs/${CORP}/salaries/e-cen_2026-04`, { branchId: 'cen', employeeUid: 'alice', effectiveFrom: '2026-04', monthlyGross: 30000 });
+    await put(`orgs/${CORP}/salaries/e-nth_2026-04`, { branchId: 'nth', employeeUid: 'bob', effectiveFrom: '2026-04', monthlyGross: 40000 });
+    await put(`orgs/${CORP}/payrollInputs/e-cen_2026-09`, { branchId: 'cen', employeeUid: 'alice', month: '2026-09', tds: 100 });
+    await put(`orgs/${CORP}/payrollRuns/2026-09_cen`, { branchId: 'cen', month: '2026-09', status: 'DRAFT' });
+    await put(`orgs/${CORP}/payslips/e-cen_2026-09`, { branchId: 'cen', employeeUid: 'alice', month: '2026-09', published: true, net: 28000 });
+    await put(`orgs/${CORP}/payslips/e-cen_2026-10`, { branchId: 'cen', employeeUid: 'alice', month: '2026-10', published: false, net: 28000 });
   });
 });
 
@@ -397,6 +404,33 @@ describe('HRMS leave', () => {
     await assertFails(getDoc(doc(as('zed', claims({})), `orgs/${CORP}/leaveTypes/casual`)));
     await assertFails(setDoc(doc(alice(), `orgs/${CORP}/leaveBalances/e-cen_2026`), { employeeUid: 'alice', branchId: 'cen', types: { casual: { credited: 99 } } }));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/leaveRequests/lv3`), { employeeUid: 'hira', status: 'APPROVED' }));
+  });
+});
+
+describe('HRMS payroll', () => {
+  const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
+  const finance = () => as('fina', claims({ [CORP]: { r: ['FIN'], b: ['*'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
+
+  it('salary viewers see salaries, inputs and runs; branch managers do not', async () => {
+    await assertSucceeds(getDocs(query(collection(hrAdmin(), `orgs/${CORP}/salaries`), where('effectiveFrom', '==', '2026-04'))));
+    await assertSucceeds(getDoc(doc(finance(), `orgs/${CORP}/payrollRuns/2026-09_cen`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/salaries/e-cen_2026-04`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/payrollRuns/2026-09_cen`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/payrollInputs/e-cen_2026-09`)));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/salaries/e-cen_2026-04`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/salaries/e-nth_2026-04`)));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/payrollSettings/2026-04`)));
+  });
+
+  it('employees see their own payslips once published', async () => {
+    await assertSucceeds(getDocs(query(collection(alice(), `orgs/${CORP}/payslips`), where('employeeUid', '==', 'alice'), where('published', '==', true))));
+    await assertFails(getDocs(query(collection(alice(), `orgs/${CORP}/payslips`), where('employeeUid', '==', 'alice'))));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/payslips/e-cen_2026-10`)));
+    await assertSucceeds(getDoc(doc(finance(), `orgs/${CORP}/payslips/e-cen_2026-10`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/payslips/e-cen_2026-09`)));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/payslips/e-cen_2026-09`), { branchId: 'cen', published: true, net: 99 }));
   });
 });
 
