@@ -1,6 +1,5 @@
-import { callAction, command } from './api';
+import { call, command } from './api';
 import type { AgeGroup, Duration } from './common';
-import { services } from './services';
 
 // Member self-service (functions/src/members/me.ts). Dates arrive as ISO strings.
 
@@ -122,7 +121,7 @@ export interface Overview {
   memberships: Membership[];
 }
 
-export const loadOverview = () => callAction<Overview>(services().fns, 'me-overview', {});
+export const loadOverview = () => call<Overview>('me-overview', {});
 
 export const subscribeToPlan = (m: Membership, planId: string, duration: Duration) =>
   command<{ subscriptionId: string }>('me-subscribe', { orgId: m.orgId, memberId: m.memberId, planId, duration });
@@ -131,10 +130,10 @@ export const cancelUnpaid = (m: Membership, subscriptionId: string) => command('
 
 /** Opens (or reuses) a Razorpay payment page for an unpaid subscription. */
 export const startOnlinePayment = (m: Membership, subscriptionId: string) =>
-  callAction<{ url: string | null }>(services().fns, 'me-pay', { orgId: m.orgId, subscriptionId, requestId: crypto.randomUUID() });
+  call<{ url: string | null }>('me-pay', { orgId: m.orgId, subscriptionId, requestId: crypto.randomUUID() });
 
 export const checkOnlinePayment = (m: Membership, subscriptionId: string) =>
-  callAction<{ paid: boolean }>(services().fns, 'me-checkPayment', { orgId: m.orgId, subscriptionId });
+  call<{ paid: boolean }>('me-checkPayment', { orgId: m.orgId, subscriptionId });
 
 export const reserveBook = (m: Membership, bookId: string, branchId: string) =>
   command<{ status: 'ALLOCATED' | 'WAITING' }>('me-reserve', { orgId: m.orgId, memberId: m.memberId, bookId, branchId });
@@ -153,7 +152,7 @@ export const pendingSubscription = (m: Membership) => m.subscriptions.find((s) =
 export interface JoinOptions {
   organizations: { orgId: string; orgName: string; branches: { id: string; name: string; code: string; city: string }[] }[];
 }
-export const loadJoinOptions = () => callAction<JoinOptions>(services().fns, 'me-joinOptions', {});
+export const loadJoinOptions = () => call<JoinOptions>('me-joinOptions', {});
 
 /** Self sign-up: become a member of a branch, linked to this account. */
 export const joinLibrary = (input: { orgId: string; branchId: string; fullName: string; dob: string; phone: string }) =>

@@ -3,14 +3,16 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
-import { dayRecords, monthIST, pendingCorrections, todayIST } from '../../data/attendance';
+import { dayRecords, pendingCorrections } from '../../data/attendance';
+import { monthIST, todayIST } from '../../shared/dates';
 import { listEmployees } from '../../data/hr';
 import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
 import { approvedLeaveIn, daysLabel, pendingLeave } from '../../data/leave';
-import { approvedRuns, money, monthName, submittedRuns } from '../../data/payroll';
+import { approvedRuns, monthName, submittedRuns } from '../../data/payroll';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -54,7 +56,16 @@ export function PeopleOverviewPage() {
 
   const data = useAsync(async () => {
     if (!org) return null;
-    const optional = <T,>(ok: boolean, load: () => Promise<T>) => (ok ? load().catch(() => null) : Promise.resolve(null));
+    // A part that fails leaves the rest on screen, with a note that the page is incomplete.
+    let failed = false;
+    const optional = <T,>(ok: boolean, load: () => Promise<T>) =>
+      ok
+        ? load().catch((e: unknown) => {
+            console.error(e);
+            failed = true;
+            return null;
+          })
+        : Promise.resolve(null);
     const [people, today, leave, corrections, docs, runs, away, paid] = await Promise.all([
       listEmployees(orgId, scope),
       optional(may('attendance.view'), () => dayRecords(orgId, todayIST(), scope)),
@@ -65,10 +76,10 @@ export function PeopleOverviewPage() {
       optional(may('attendance.view'), () => approvedLeaveIn(orgId, month, scope)),
       optional(may('salary.view'), () => approvedRuns(orgId, scope)),
     ]);
-    return { people, today, leave, corrections, docs, runs, away, paid };
+    return { people, today, leave, corrections, docs, runs, away, paid, failed };
   }, [orgId, JSON.stringify(scope)]);
 
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   if (data.loading && !data.data) return <SkeletonRows rows={6} />;
   if (data.error || !data.data) return <ErrorState message={data.error ?? t.errorGeneric} onRetry={data.reload} />;
   const d = data.data;
@@ -104,6 +115,14 @@ export function PeopleOverviewPage() {
         <h1>{ht.navOverview}</h1>
         <p className="muted">{ht.overviewIntro}</p>
       </header>
+      {d.failed && (
+        <p className="notice notice-warn" role="alert">
+          {t.dashboardPartial}{' '}
+          <button type="button" className="btn btn-text" onClick={data.reload}>
+            {t.retry}
+          </button>
+        </p>
+      )}
 
       <section aria-labelledby="ov-headcount">
         <h2 id="ov-headcount">{ht.headcount}</h2>
@@ -171,15 +190,15 @@ export function PeopleOverviewPage() {
                 <dl className="run-summary">
                   <div>
                     <dt>{ht.totalsGross}</dt>
-                    <dd>{money(sum('gross'))}</dd>
+                    <dd>{rupees(sum('gross'))}</dd>
                   </div>
                   <div>
                     <dt>{ht.totalsNet}</dt>
-                    <dd>{money(sum('net'))}</dd>
+                    <dd>{rupees(sum('net'))}</dd>
                   </div>
                   <div>
                     <dt>{ht.totalsEmployerCost}</dt>
-                    <dd>{money(sum('employerCost'))}</dd>
+                    <dd>{rupees(sum('employerCost'))}</dd>
                   </div>
                 </dl>
               </>

@@ -3,7 +3,8 @@ import { useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
-import { type AttendanceRecord, employeeMonth, listShifts, monthIST } from '../../data/attendance';
+import { type AttendanceRecord, employeeMonth, listShifts } from '../../data/attendance';
+import { monthIST } from '../../shared/dates';
 import type { Employee } from '../../data/hr';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';

@@ -1,9 +1,9 @@
 // Letter templates: offer, appointment and custom letters, per branch or organization-wide (docs/HRMS.md §13).
 import { collection, getDocs } from 'firebase/firestore';
 
-import { callAction, command } from './api';
+import { call, command } from './api';
+import { openFile } from './files';
 import type { LetterKind } from './offers';
-import { showPdf } from './offers';
 import { services } from './services';
 
 export type TemplateStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
@@ -40,7 +40,7 @@ export async function listTemplates(orgId: string): Promise<LetterTemplate[]> {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LetterTemplate).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export const templateDefaults = (orgId: string) => callAction<TemplateDefaults>(services().fns, 'letterTemplates-defaults', { orgId });
+export const templateDefaults = (orgId: string) => call<TemplateDefaults>('letterTemplates-defaults', { orgId });
 
 export const saveTemplate = (orgId: string, t: TemplateText & { templateId?: string; branchId: string | null }) =>
   command<{ templateId: string }>('letterTemplates-save', { orgId, ...t });
@@ -49,7 +49,7 @@ export const archiveTemplate = (orgId: string, templateId: string, reason: strin
 
 /** Shows a template (as being edited) with sample values, marked PREVIEW. */
 export const previewTemplate = (orgId: string, t: Omit<TemplateText, 'kind'> & { branchId: string | null }) =>
-  showPdf('letterTemplates-preview', { orgId, name: t.name, subject: t.subject, body: t.body, acceptance: t.acceptance, branchId: t.branchId });
+  openFile('letterTemplates-preview', { orgId, name: t.name, subject: t.subject, body: t.body, acceptance: t.acceptance, branchId: t.branchId });
 
 const TOKEN = /\{\{\s*([A-Za-z]+)\s*\}\}/g;
 /** Placeholders a text uses. */

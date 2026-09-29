@@ -2,10 +2,10 @@
 import { useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
-import { todayIST } from '../../data/attendance';
+import { todayIST } from '../../shared/dates';
 import { myEmployee } from '../../data/hr';
 import { daysLabel, employeeRequests, leaveBalance, ledgerFor, listLeaveTypes, type LeaveRequest } from '../../data/leave';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -33,7 +33,7 @@ export function MyLeavePage() {
     ]);
     return { types, balance, requests, ledger };
   }, [org?.id, me.data?.id, year]);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   const today = todayIST();
   const cancellable = (r: LeaveRequest) => r.status === 'PENDING' || (r.status === 'APPROVED' && r.from > today);
   const working = !!me.data && WORKING.includes(me.data.status);

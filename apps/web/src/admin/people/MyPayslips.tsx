@@ -2,7 +2,7 @@
 import { useAuth } from '../../auth/AuthContext';
 import { myEmployee } from '../../data/hr';
 import { employeePayslips } from '../../data/payroll';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -17,7 +17,7 @@ export function MyPayslipsPage() {
     const me = await myEmployee(org.id, user.uid);
     return me ? { me, slips: await employeePayslips(org.id, me.id, { ownUid: user.uid }) } : { me: null, slips: [] };
   }, [org?.id, user?.uid]);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   return (
     <>
       <header className="page-header">

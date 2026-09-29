@@ -58,17 +58,22 @@ export function Icon({ name }: { name: IconName }) {
   );
 }
 
-export function EmptyState({ icon, title, message }: { icon: IconName; title: string; message: string }) {
+/** Nothing to show. `page` when it stands in for a whole page: its title becomes the page heading. */
+export function EmptyState({ icon, title, message, page = false }: { icon: IconName; title: string; message: string; page?: boolean }) {
+  const Heading = page ? 'h1' : 'h2';
   return (
     <div className="empty-state">
       <span className="empty-icon">
         <Icon name={icon} />
       </span>
-      <h2>{title}</h2>
+      <Heading>{title}</Heading>
       <p>{message}</p>
     </div>
   );
 }
+
+/** A staff page opened before an organization is chosen. */
+export const NoOrgState = () => <EmptyState page icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (

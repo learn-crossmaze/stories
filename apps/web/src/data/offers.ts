@@ -1,7 +1,8 @@
 // Letters to employees (offer, appointment, custom): list, preview, issue, withdraw, open (docs/HRMS.md §12–13).
 import { collection, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { callAction, command, toApiError } from './api';
+import { command } from './api';
+import { openFile } from './files';
 import type { EmploymentType } from './hr';
 import { services } from './services';
 
@@ -98,25 +99,8 @@ export const releaseOffer = (terms: OfferTerms) => command<{ offerId: string; do
 export const issueLetter = (terms: LetterTerms) => command<{ offerId: string; documentId: string; number: string }>('letters-issue', { ...terms });
 export const withdrawOffer = (orgId: string, offerId: string, reason: string) => command<{ offerId: string }>('offers-withdraw', { orgId, offerId, reason });
 
-/** Fetches a PDF from a query and shows it in a new tab. */
-export async function showPdf(action: string, data: Record<string, unknown>) {
-  // Open the tab first so the browser treats it as a response to the click.
-  const tab = window.open('', '_blank');
-  try {
-    const res = await callAction<{ fileName: string; contentType: string; content: string }>(services().fns, action, data);
-    const bytes = Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: res.contentType }));
-    if (tab) tab.location.href = url;
-    else window.location.assign(url);
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (e) {
-    tab?.close();
-    throw toApiError(e);
-  }
-}
-
 /** Shows the letter as it would be released (marked PREVIEW) in a new tab. */
-export const previewOffer = (terms: OfferTerms) => showPdf('offers-preview', { ...terms });
-export const previewLetter = (terms: LetterTerms) => showPdf('letters-preview', { ...terms });
+export const previewOffer = (terms: OfferTerms) => openFile('offers-preview', { ...terms });
+export const previewLetter = (terms: LetterTerms) => openFile('letters-preview', { ...terms });
 /** Shows a released letter in a new tab (the server records the opening). */
-export const openOffer = (orgId: string, offerId: string) => showPdf('offers-open', { orgId, offerId });
+export const openOffer = (orgId: string, offerId: string) => openFile('offers-open', { orgId, offerId });

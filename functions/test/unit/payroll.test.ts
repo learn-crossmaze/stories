@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { pdfText } from '../../src/core/pdfText.js';
+import { payslipPdf } from '../../src/hr/payslipPdf.js';
 import { computePay, DEFAULT_SETTINGS, inForce, inWords, NO_INPUTS, professionalTax, type SalaryStructure } from '../../src/hr/payrollRules.js';
 
 const structure = (basic: number, hra: number, special: number, extra: Partial<SalaryStructure> = {}): SalaryStructure => ({
@@ -66,5 +68,17 @@ describe('payroll rules', () => {
     expect(inWords(31500)).toBe('Thirty One Thousand Five Hundred');
     expect(inWords(125000)).toBe('One Lakh Twenty Five Thousand');
     expect(inWords(12_34_56_789)).toBe('Twelve Crore Thirty Four Lakh Fifty Six Thousand Seven Hundred Eighty Nine');
+  });
+});
+
+describe('PDF text', () => {
+  it('keeps Latin text and replaces what standard fonts cannot draw', () => {
+    expect(pdfText('Asha’s “offer” – ₹1,500')).toBe('Asha\'s "offer" - Rs.1,500');
+    expect(pdfText('राम Kumar')).toBe('??? Kumar');
+  });
+
+  it('draws a payslip for a name in another script', async () => {
+    const pdf = await payslipPdf({ employeeCode: 'CEN-E0001', month: '2026-09', employeeName: 'राम कुमार', earnings: [], deductions: [] }, { orgName: 'Stories', branchName: 'Central', draft: false });
+    expect(pdf.length).toBeGreaterThan(500);
   });
 });

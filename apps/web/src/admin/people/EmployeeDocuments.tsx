@@ -3,8 +3,8 @@ import { useRef, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import type { Employee } from '../../data/hr';
+import { daysUntil } from '../../shared/dates';
 import {
-  daysUntil,
   DOCUMENT_ACCEPT,
   type DocumentType,
   type EmployeeDocument,

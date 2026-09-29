@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ComponentType, lazy, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import type { ViewId } from '../auth/claims';
@@ -8,37 +8,48 @@ import { MOVED, movedTo, navItemFor, type Requirement } from './nav';
 import { paths, viewHome } from '../paths';
 import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
-import { AuditPage } from './organization/Audit';
-import { BookDetailPage } from './catalogue/BookDetail';
-import { BulkAddBooksPage } from './catalogue/BulkAddBooks';
-import { CataloguePage } from './catalogue/Catalogue';
-import { DepositApprovalsPage } from './members/DepositApprovals';
-import { DeskPage } from './circulation/Desk';
-import { CopyDetailPage, InventoryPage, LabelsPage } from './inventory/Inventory';
-import { MemberDetailPage } from './members/MemberDetail';
-import { MembersPage } from './members/Members';
-import { PlansPage } from './members/Plans';
-import { ReservationsPage } from './circulation/Reservations';
-import { TransfersPage } from './circulation/Transfers';
-import { BranchesPage } from './organization/Branches';
-import { DashboardPage } from './dashboard/Dashboard';
-import { DepartmentsPage } from './organization/Departments';
-import { AttendancePage } from './people/Attendance';
-import { DocumentsPage } from './people/Documents';
-import { OfferLettersPage } from './people/OfferLetters';
-import { LeavePage } from './people/Leave';
-import { MyAttendancePage } from './people/MyAttendance';
-import { MyLeavePage } from './people/MyLeave';
-import { MyPayslipsPage } from './people/MyPayslips';
-import { MyProfilePage } from './people/MyProfile';
-import { PayrollPage } from './people/Payroll';
-import { PeopleOverviewPage } from './people/PeopleOverview';
-import { EmployeeProfilePage } from './people/EmployeeProfile';
-import { JobSettingsPage } from './people/HrSettings';
-import { DocumentTypesSettingsPage, LeaveTypesSettingsPage, LetterTemplatesSettingsPage, PayrollSettingsPage, ScheduleSettingsPage } from './people/SettingsPages';
-import { PeoplePage } from './people/People';
-import { OrganizationsPage } from './organization/Organizations';
-import { StaffPage } from './organization/Staff';
+
+/** A page loaded on first visit (each page is its own chunk). */
+const lazyPage = <K extends string>(load: () => Promise<Record<K, ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+
+const AuditPage = lazyPage(() => import('./organization/Audit'), 'AuditPage');
+const BookDetailPage = lazyPage(() => import('./catalogue/BookDetail'), 'BookDetailPage');
+const BulkAddBooksPage = lazyPage(() => import('./catalogue/BulkAddBooks'), 'BulkAddBooksPage');
+const CataloguePage = lazyPage(() => import('./catalogue/Catalogue'), 'CataloguePage');
+const DepositApprovalsPage = lazyPage(() => import('./members/DepositApprovals'), 'DepositApprovalsPage');
+const DeskPage = lazyPage(() => import('./circulation/Desk'), 'DeskPage');
+const CopyDetailPage = lazyPage(() => import('./inventory/Inventory'), 'CopyDetailPage');
+const InventoryPage = lazyPage(() => import('./inventory/Inventory'), 'InventoryPage');
+const LabelsPage = lazyPage(() => import('./inventory/Inventory'), 'LabelsPage');
+const MemberDetailPage = lazyPage(() => import('./members/MemberDetail'), 'MemberDetailPage');
+const MembersPage = lazyPage(() => import('./members/Members'), 'MembersPage');
+const PlansPage = lazyPage(() => import('./members/Plans'), 'PlansPage');
+const ReservationsPage = lazyPage(() => import('./circulation/Reservations'), 'ReservationsPage');
+const TransfersPage = lazyPage(() => import('./circulation/Transfers'), 'TransfersPage');
+const BranchesPage = lazyPage(() => import('./organization/Branches'), 'BranchesPage');
+const DashboardPage = lazyPage(() => import('./dashboard/Dashboard'), 'DashboardPage');
+const DepartmentsPage = lazyPage(() => import('./organization/Departments'), 'DepartmentsPage');
+const AttendancePage = lazyPage(() => import('./people/Attendance'), 'AttendancePage');
+const DocumentsPage = lazyPage(() => import('./people/Documents'), 'DocumentsPage');
+const OfferLettersPage = lazyPage(() => import('./people/OfferLetters'), 'OfferLettersPage');
+const LeavePage = lazyPage(() => import('./people/Leave'), 'LeavePage');
+const MyAttendancePage = lazyPage(() => import('./people/MyAttendance'), 'MyAttendancePage');
+const MyLeavePage = lazyPage(() => import('./people/MyLeave'), 'MyLeavePage');
+const MyPayslipsPage = lazyPage(() => import('./people/MyPayslips'), 'MyPayslipsPage');
+const MyProfilePage = lazyPage(() => import('./people/MyProfile'), 'MyProfilePage');
+const PayrollPage = lazyPage(() => import('./people/Payroll'), 'PayrollPage');
+const PeopleOverviewPage = lazyPage(() => import('./people/PeopleOverview'), 'PeopleOverviewPage');
+const EmployeeProfilePage = lazyPage(() => import('./people/EmployeeProfile'), 'EmployeeProfilePage');
+const JobSettingsPage = lazyPage(() => import('./people/HrSettings'), 'JobSettingsPage');
+const DocumentTypesSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'DocumentTypesSettingsPage');
+const LeaveTypesSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'LeaveTypesSettingsPage');
+const LetterTemplatesSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'LetterTemplatesSettingsPage');
+const PayrollSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'PayrollSettingsPage');
+const ScheduleSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'ScheduleSettingsPage');
+const PeoplePage = lazyPage(() => import('./people/People'), 'PeoplePage');
+const OrganizationsPage = lazyPage(() => import('./organization/Organizations'), 'OrganizationsPage');
+const StaffPage = lazyPage(() => import('./organization/Staff'), 'StaffPage');
 
 /** Guards a page with the rule of the menu item it belongs to (the server checks again). */
 function guard(path: string, page: ReactNode, requires?: Requirement) {

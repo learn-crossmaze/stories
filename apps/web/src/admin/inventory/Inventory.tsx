@@ -248,7 +248,7 @@ export function CopyDetailPage() {
 
   if (copy.loading) return <SkeletonRows rows={4} />;
   if (copy.error) return <ErrorState message={copy.error} onRetry={copy.reload} />;
-  if (!c) return <EmptyState icon="shelves" title={t.notFoundTitle} message="" />;
+  if (!c) return <EmptyState page icon="shelves" title={t.notFoundTitle} message="" />;
   const refresh = () => {
     copy.reload();
     events.reload();

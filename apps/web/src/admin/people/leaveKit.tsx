@@ -3,7 +3,7 @@ import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 
 import { command } from '../../data/api';
-import { todayIST } from '../../data/attendance';
+import { todayIST } from '../../shared/dates';
 import { applyLeave, available, daysLabel, type HalfDay, type LeaveBalance, type LeaveRequest, type LeaveType, type LedgerEntry } from '../../data/leave';
 import { paths } from '../../paths';
 import { day as dayFmt } from '../../shared/format';

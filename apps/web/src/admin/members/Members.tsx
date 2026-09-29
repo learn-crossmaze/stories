@@ -1,6 +1,6 @@
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
@@ -121,6 +121,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
   );
 }
 
+const RENEWAL_FILTERS: RenewalFilter[] = ['ACTIVE', 'DUE', 'EXPIRED', 'NONE'];
 const RENEWAL_TONE: Record<Exclude<RenewalFilter, ''>, string> = { ACTIVE: 'ok', DUE: 'warn', EXPIRED: 'danger', NONE: 'muted' };
 
 /** Plan and renewal date, with how soon it is (text, never colour alone). */
@@ -143,7 +144,9 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
   const { branch } = useWorkspace();
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
-  const [filters, setFilters] = useState<MemberFilters>({ status: '', audience: '', renewal: '' });
+  // The dashboard links here with ?renewal=DUE (etc.).
+  const [params] = useSearchParams();
+  const [filters, setFilters] = useState<MemberFilters>(() => ({ status: '', audience: '', renewal: RENEWAL_FILTERS.find((r) => r === params.get('renewal')) ?? '' }));
   const [registering, setRegistering] = useState(false);
   const [rows, setRows] = useState<Member[]>([]);
   const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();

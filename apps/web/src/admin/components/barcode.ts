@@ -29,17 +29,9 @@ import {
   RGBLuminanceSource,
 } from '@zxing/library';
 
-export interface Decoded {
-  text: string;
-  format: string;
-  /** Which pass read it (diagnostics). */
-  pass: string;
-}
+import type { Decoded, Mode } from './scan';
 
-export type Mode = 'quick' | 'thorough';
-
-/** The framing guide over the preview, as fractions of the frame (keep in sync with .camera-guide). */
-export const GUIDE = { x: 0.08, y: 0.2, w: 0.84, h: 0.6 };
+export type { Decoded, Mode } from './scan';
 
 const ONE_D = [
   BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.CODABAR,

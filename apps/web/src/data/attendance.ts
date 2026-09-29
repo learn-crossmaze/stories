@@ -1,8 +1,8 @@
 // Attendance: shifts, holidays, daily records, corrections and monthly summaries (docs/HRMS.md §8).
-import { collection, doc, getDoc, getDocs, limit, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { callAction, command, toApiError } from './api';
-import { services } from './services';
+import { call, command } from './api';
+import { db, toDate } from './common';
 
 export type Weekday = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
 export const WEEKDAYS: Weekday[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -97,14 +97,9 @@ export interface MonthLock {
   finalizedAt?: Date | null;
 }
 
-const db = () => services().db;
-const ts = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
-const toRecord = (id: string, d: Record<string, unknown>) => ({ ...d, id, checkIn: ts(d.checkIn), checkOut: ts(d.checkOut) }) as AttendanceRecord;
+const toRecord = (id: string, d: Record<string, unknown>) => ({ ...d, id, checkIn: toDate(d.checkIn), checkOut: toDate(d.checkOut) }) as AttendanceRecord;
 const branchFilter = (scope: string[] | 'ALL'): QueryConstraint[] => (scope === 'ALL' ? [] : [where('branchId', 'in', scope.slice(0, 30))]);
 
-/** Today's business date in India. */
-export const todayIST = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
-export const monthIST = () => todayIST().slice(0, 7);
 export const previousMonth = (m: string) => {
   const [y, mm] = m.split('-').map(Number);
   return mm === 1 ? `${y - 1}-12` : `${y}-${String(mm - 1).padStart(2, '0')}`;
@@ -152,7 +147,7 @@ export async function monthLock(orgId: string, month: string, branchId: string |
   const snap = await getDoc(doc(db(), `orgs/${orgId}/attendanceLocks/${month}_${branchId ?? 'HO'}`));
   if (!snap.exists()) return null;
   const d = snap.data();
-  return { ...(d as MonthLock), finalizedAt: ts(d.finalizedAt) };
+  return { ...(d as MonthLock), finalizedAt: toDate(d.finalizedAt) };
 }
 
 export const punch = (orgId: string, direction: 'IN' | 'OUT', employeeId?: string) =>
@@ -160,11 +155,7 @@ export const punch = (orgId: string, direction: 'IN' | 'OUT', employeeId?: strin
 
 /** Finalizing is not a replayed command (it writes many records); call it directly. */
 export async function finalizeMonth(orgId: string, month: string, branchId: string | null) {
-  try {
-    return await callAction<{ month: string; employees: number }>(services().fns, 'attendance-finalize', { orgId, month, branchId });
-  } catch (e) {
-    throw toApiError(e);
-  }
+  return call<{ month: string; employees: number }>('attendance-finalize', { orgId, month, branchId });
 }
 
 const clock = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });

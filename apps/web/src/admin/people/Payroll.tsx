@@ -5,11 +5,13 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
-import { monthIST, monthLock, previousMonth } from '../../data/attendance';
-import { money, monthName, type Payslip, prepareRun, getRun, runPayslips, submitRun } from '../../data/payroll';
+import { monthLock, previousMonth } from '../../data/attendance';
+import { monthIST } from '../../shared/dates';
+import { monthName, type Payslip, prepareRun, getRun, runPayslips, submitRun } from '../../data/payroll';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -42,7 +44,7 @@ export function PayrollPage() {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [inputsFor, setInputsFor] = useState<Payslip | null>(null);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
 
   const run = data.data?.run ?? null;
   const status = run?.status ?? 'NONE';
@@ -138,19 +140,19 @@ export function PayrollPage() {
                 <dl className="run-summary">
                   <div>
                     <dt>{ht.totalsGross}</dt>
-                    <dd>{money(run.totals.gross)}</dd>
+                    <dd>{rupees(run.totals.gross)}</dd>
                   </div>
                   <div>
                     <dt>{ht.totalsDeductions}</dt>
-                    <dd>{money(run.totals.deductions)}</dd>
+                    <dd>{rupees(run.totals.deductions)}</dd>
                   </div>
                   <div>
                     <dt>{ht.totalsNet}</dt>
-                    <dd>{money(run.totals.net)}</dd>
+                    <dd>{rupees(run.totals.net)}</dd>
                   </div>
                   <div>
                     <dt>{ht.totalsEmployerCost}</dt>
-                    <dd>{money(run.totals.employerCost)}</dd>
+                    <dd>{rupees(run.totals.employerCost)}</dd>
                   </div>
                 </dl>
                 <p className="muted small">
@@ -204,15 +206,15 @@ export function PayrollPage() {
                       <td>
                         <Link to={paths.adminEmployee(s.employeeId)}>{s.employeeName}</Link>
                         {s.missingSalary && <span className="badge badge-danger"> {ht.noSalary}</span>}
-                        {s.tds > 0 && <div className="muted small">TDS {money(s.tds)}</div>}
+                        {s.tds > 0 && <div className="muted small">TDS {rupees(s.tds)}</div>}
                       </td>
                       <td className="num">
                         {s.days.payable}/{s.days.inMonth}
                       </td>
-                      <td className="num">{money(s.gross)}</td>
-                      <td className="num">{money(s.deductions)}</td>
+                      <td className="num">{rupees(s.gross)}</td>
+                      <td className="num">{rupees(s.deductions)}</td>
                       <td className="num">
-                        <strong>{money(s.net)}</strong>
+                        <strong>{rupees(s.net)}</strong>
                       </td>
                       <td className="cell-actions">
                         {canRun && editable && s.employeeUid !== user?.uid && (
@@ -260,7 +262,7 @@ function ApproveDialog({ orgId, month, branchId, employees, net, onClose, onDone
   return (
     <Dialog title={ht.approveRunTitle(monthName(month))} onClose={onClose} narrow>
       <form onSubmit={submit} noValidate>
-        <p>{ht.approveRunBody(employees, money(net))}</p>
+        <p>{ht.approveRunBody(employees, rupees(net))}</p>
         <FormError error={error} />
         <DialogActions busy={busy} submitLabel={ht.approveRun} onCancel={onClose} />
       </form>

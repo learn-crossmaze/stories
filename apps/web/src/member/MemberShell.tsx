@@ -1,9 +1,10 @@
+import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
 import { homeViewFor, isStaff } from '../auth/claims';
 import { paths, viewHome } from '../paths';
-import { Icon, type IconName } from '../shared/ui';
+import { Icon, type IconName, SkeletonRows } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { MemberDataProvider } from './memberData';
@@ -46,7 +47,9 @@ export function MemberShell() {
       </nav>
       <main className="shell-main" id={MAIN_ID} tabIndex={-1}>
         <MemberDataProvider>
-          <Outlet />
+          <Suspense fallback={<SkeletonRows />}>
+            <Outlet />
+          </Suspense>
         </MemberDataProvider>
       </main>
     </div>

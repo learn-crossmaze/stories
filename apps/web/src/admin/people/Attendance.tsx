@@ -5,26 +5,13 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
-import {
-  type AttendanceRecord,
-  dayRecords,
-  finalizeMonth,
-  hours,
-  listShifts,
-  monthIST,
-  monthLock,
-  monthSummaries,
-  pendingCorrections,
-  previousMonth,
-  punch,
-  timeOf,
-  todayIST,
-} from '../../data/attendance';
+import { type AttendanceRecord, dayRecords, finalizeMonth, hours, listShifts, monthLock, monthSummaries, pendingCorrections, previousMonth, punch, timeOf } from '../../data/attendance';
+import { monthIST, todayIST } from '../../shared/dates';
 import { type Employee, listEmployees } from '../../data/hr';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
 import { day as dayFmt } from '../../shared/format';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -339,7 +326,7 @@ export function AttendancePage() {
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const [tab, setTab] = useState<Tab>('day');
   const counts = useAsync(() => (org ? pendingCorrections(org.id, scope) : Promise.resolve([])), [org?.id, JSON.stringify(scope)]);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   return (
     <>
       <header className="page-header">

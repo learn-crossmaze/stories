@@ -9,7 +9,7 @@ import { day, when } from '../../shared/format';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { ht } from '../../strings/hr';
 import { Notice, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -49,10 +49,10 @@ export function EmployeeProfilePage() {
   const [dialog, setDialog] = useState<'edit' | 'personal' | Transition | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   if (employee.loading && !employee.data) return <SkeletonRows rows={5} />;
   if (employee.error) return <ErrorState message={employee.error} onRetry={employee.reload} />;
-  if (!e) return <EmptyState icon="person" title={t.notFoundTitle} message="" />;
+  if (!e) return <EmptyState page icon="person" title={t.notFoundTitle} message="" />;
 
   const canEdit = perm('employees.edit') && e.status !== 'OFFBOARDED';
   const canLifecycle = perm('employees.lifecycle');

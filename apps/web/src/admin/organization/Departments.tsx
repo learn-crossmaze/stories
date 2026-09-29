@@ -6,7 +6,7 @@ import { command } from '../../data/api';
 import { type Department, listDepartments } from '../../data/org';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, StatusBadge } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { useWorkspace } from '../Workspace';
 
@@ -54,7 +54,7 @@ export function DepartmentsPage() {
   }, [org?.id]);
   const [editing, setEditing] = useState<Department | 'new' | null>(null);
   const [archiving, setArchiving] = useState<Department | null>(null);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   const manage = (d?: Department) => can(claims, 'departments.manage', org.id, d?.branchId ?? undefined);
 
   return (

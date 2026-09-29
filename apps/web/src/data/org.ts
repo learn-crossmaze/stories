@@ -10,11 +10,11 @@ import {
   query,
   type QueryConstraint,
   startAfter,
-  Timestamp,
   where,
 } from 'firebase/firestore';
 
 import type { Role } from '../generated/rbac';
+import { toDate } from './common';
 import { services } from './services';
 
 export type OrgType = 'CORPORATE' | 'FRANCHISE';
@@ -146,7 +146,7 @@ export async function listAudit(
   const snap = await getDocs(query(collection(services().db, `orgs/${orgId}/auditLogs`), ...filters));
   const entries = snap.docs.map((d) => {
     const data = d.data();
-    return { ...data, id: d.id, at: data.at instanceof Timestamp ? data.at.toDate() : null } as AuditEntry;
+    return { ...data, id: d.id, at: toDate(data.at) } as AuditEntry;
   });
   return { entries, cursor: snap.docs.length === AUDIT_PAGE_SIZE ? snap.docs[snap.docs.length - 1] : undefined };
 }
@@ -164,7 +164,7 @@ export async function memberAudit(orgId: string, memberId: string, scope: string
   const byId = new Map<string, AuditEntry>();
   for (const d of [...tagged.docs, ...direct.docs]) {
     const data = d.data();
-    byId.set(d.id, { ...data, id: d.id, at: data.at instanceof Timestamp ? data.at.toDate() : null } as AuditEntry);
+    byId.set(d.id, { ...data, id: d.id, at: toDate(data.at) } as AuditEntry);
   }
   return [...byId.values()].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0)).slice(0, 100);
 }

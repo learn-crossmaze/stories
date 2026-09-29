@@ -687,8 +687,10 @@ describe('member self sign-up', () => {
     expect(await failure(call(me.addChild, tara, { orgId: org, guardianMemberId: memberId, fullName: 'Grown Up', dob: '1999-06-01', relationship: 'Son' }))).toBe('INVALID_INPUT');
 
     // Both show up for Tara, with plans to buy; she subscribes for herself and the child.
-    const view = await call<{ memberships: { memberId: string; self: boolean; plans: { id: string }[] }[] }>(me.overview, tara, {}, null);
+    const view = await call<{ memberships: { memberId: string; self: boolean; orgName: string; branch: { name: string }; plans: { id: string }[] }[] }>(me.overview, tara, {}, null);
     expect(view.memberships.map((m) => m.memberId).sort()).toEqual([memberId, child.memberId].sort());
+    // The family shares one read of the organization and branch; each membership still carries their names.
+    expect(view.memberships.every((m) => m.orgName && m.branch.name)).toBe(true);
     expect(view.memberships.find((m) => m.memberId === memberId)!.plans.map((p) => p.id)).toContain(planId);
     const own = await call<{ subscriptionId: string }>(me.subscribe, tara, { orgId: org, memberId, planId });
     const kid = await call<{ subscriptionId: string }>(me.subscribe, tara, { orgId: org, memberId: child.memberId, planId });

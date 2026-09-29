@@ -3,10 +3,11 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import { employeeMonth, monthIST, myCorrections, punch, timeOf, todayIST } from '../../data/attendance';
+import { employeeMonth, myCorrections, punch, timeOf } from '../../data/attendance';
+import { monthIST, todayIST } from '../../shared/dates';
 import { myEmployee } from '../../data/hr';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -89,7 +90,7 @@ export function MyAttendancePage() {
     [org?.id, me.data?.id, month],
   );
   const corrections = useAsync(() => (org && user && me.data ? myCorrections(org.id, user.uid) : Promise.resolve([])), [org?.id, me.data?.id]);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
 
   return (
     <>

@@ -2,8 +2,9 @@
 import { useId, useState } from 'react';
 
 import { command } from '../../data/api';
-import { monthIST } from '../../data/attendance';
-import { type Adjustment, type Component, downloadPayslip, getInputs, money, monthName, type Payslip, type Salary } from '../../data/payroll';
+import { monthIST } from '../../shared/dates';
+import { type Adjustment, type Component, downloadPayslip, getInputs, monthName, type Payslip, type Salary } from '../../data/payroll';
+import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -103,7 +104,7 @@ export function SalaryDialog({ orgId, employee, latest, onClose, onDone }: { org
         <LineRows legend={ht.salaryComponents} hint={ht.salaryComponentsHint} rows={rows} onChange={setRows} withCode addLabel={ht.addComponent} touched={touched} />
         {touched && errors.rows && <p className="field-error">{errors.rows}</p>}
         <p>
-          <strong>{ht.monthlyGross(money(gross))}</strong>
+          <strong>{ht.monthlyGross(rupees(gross))}</strong>
         </p>
         <fieldset className="choices">
           <legend className="sr-only">{ht.salary}</legend>
@@ -202,10 +203,10 @@ export function PayslipList({ orgId, slips }: { orgId: string; slips: Payslip[] 
       {slips.map((s) => (
         <li key={s.id}>
           <span>
-            <strong>{monthName(s.month)}</strong> · {ht.colNet} {money(s.net)}
+            <strong>{monthName(s.month)}</strong> · {ht.colNet} {rupees(s.net)}
             <span className="muted small">
               {' '}
-              · {ht.colGross} {money(s.gross)} · {ht.colPayable} {s.days.payable}/{s.days.inMonth}
+              · {ht.colGross} {rupees(s.gross)} · {ht.colPayable} {s.days.payable}/{s.days.inMonth}
             </span>
             {!s.published && <span className="badge badge-info"> {ht.draftSlip}</span>}
           </span>

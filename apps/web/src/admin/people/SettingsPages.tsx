@@ -2,9 +2,8 @@
 import type { ReactNode } from 'react';
 
 import { getChecklistTemplates } from '../../data/hr';
-import { EmptyState } from '../../shared/ui';
+import { NoOrgState } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
-import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { useWorkspace } from '../Workspace';
 import { DocumentTypesSection } from './DocumentTypesSettings';
@@ -15,7 +14,7 @@ import { HolidaysSection, ShiftsSection } from './ScheduleSettings';
 
 function SettingsPage({ title, children }: { title: string; children: (orgId: string) => ReactNode }) {
   const { org } = useWorkspace();
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   return (
     <>
       <header className="page-header">

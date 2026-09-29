@@ -34,7 +34,7 @@ describe('app flow', () => {
     expect(await screen.findByRole('heading', { name: t.greetingFallback })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: t.navProfile }));
-    expect(screen.getByText(t.profileSignedInAs('reader@example.com'))).toBeInTheDocument();
+    expect(await screen.findByText(t.profileSignedInAs('reader@example.com'))).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: t.signOut }));
     expect(await screen.findByRole('heading', { name: t.signInTitle })).toBeInTheDocument();
   });

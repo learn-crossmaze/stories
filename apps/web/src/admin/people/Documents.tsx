@@ -7,7 +7,7 @@ import { branchScope } from '../../auth/claims';
 import { documentQueue, type EmployeeDocument, listDocumentTypes, openDocument } from '../../data/hrDocuments';
 import { paths } from '../../paths';
 import { day } from '../../shared/format';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -30,7 +30,7 @@ export function DocumentsPage() {
   const [tab, setTab] = useState<Queue>('pending');
   const [openError, setOpenError] = useState<string | null>(null);
   const review = useDocumentReview(org?.id ?? '', data.reload);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
 
   const q = data.data?.queue;
   const reminder = new Map((data.data?.types ?? []).map((x) => [x.id, x.reminderDays]));

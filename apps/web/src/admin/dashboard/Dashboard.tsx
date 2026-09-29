@@ -2,12 +2,15 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
+import { catalogueCounts } from '../../data/catalogue';
 import { branchCounts } from '../../data/circulation';
-import { monthIST, monthLock, pendingCorrections, previousMonth } from '../../data/attendance';
+import { monthLock, pendingCorrections, previousMonth } from '../../data/attendance';
+import { monthIST } from '../../shared/dates';
 import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
 import { pendingLeave } from '../../data/leave';
 import { submittedRuns } from '../../data/payroll';
 import { CheckInCard } from '../people/MyAttendance';
+import { memberCounts, RENEWAL_DUE_DAYS, type RenewalFilter } from '../../data/members';
 import { listStaff } from '../../data/org';
 import { ht } from '../../strings/hr';
 import { useAsync } from '../../shared/useAsync';
@@ -19,6 +22,8 @@ import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 import { useTeamPaths } from '../view';
 
+const membersWith = (renewal: RenewalFilter) => `${paths.adminMembers}?renewal=${renewal}`;
+
 const approverOk = <T,>(ok: boolean, load: () => Promise<T>) => (ok ? load() : Promise.resolve(null));
 
 const today = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -29,8 +34,8 @@ interface Todo {
 }
 
 /**
- * Phase 0 dashboard: answers "what do I need to do now?" from real data.
- * Module dashboards (circulation, tasks, HR…) add their own items later.
+ * Answers "what do I need to do now?" from real data: the items waiting on
+ * this person, then today's numbers for their branch and its members.
  */
 export function DashboardPage() {
   const team = useTeamPaths();
@@ -45,6 +50,9 @@ export function DashboardPage() {
     () => (org && branch && desk ? branchCounts(org.id, branch.id, approver, branchScope(claims, org.id)) : Promise.resolve(null)),
     [org?.id, branch?.id, desk, approver],
   );
+  const cataloguer = !!org && can(claims, 'books.edit', org.id);
+  const catalogue = useAsync(() => (cataloguer ? catalogueCounts(monthIST()) : Promise.resolve(null)), [cataloguer]);
+  const members = useAsync(() => (org && branch && desk ? memberCounts(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, desk]);
 
   const verifier = !!org && can(claims, 'documents.verify', org.id);
   const docs = useAsync(async () => {
@@ -75,6 +83,12 @@ export function DashboardPage() {
 
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
+  // "All clear" only once everything has loaded; a part that fails says so instead of hiding its items.
+  const parts = [staff, counts, members, catalogue, docs, att];
+  const loading = parts.some((p) => p.loading);
+  const failed = parts.some((p) => p.error);
+  const retry = () => parts.filter((p) => p.error).forEach((p) => p.reload());
+
   const activeBranches = branches.filter((b) => b.status === 'ACTIVE');
   // Branch staff count only the branches they work at.
   const shownBranches = org && branchScope(claims, org.id) === 'ALL' ? activeBranches : myBranches;
@@ -100,6 +114,8 @@ export function DashboardPage() {
   if (att.data?.leave) todos.push({ label: ht.todoLeave(att.data.leave), to: team.leave });
   if (att.data?.unfinalized) todos.push({ label: ht.todoFinalize(previousMonth(monthIST())), to: team.attendance });
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
+  const mc = members.data;
+  if (mc?.DUE) todos.push({ label: t.todoRenewals(mc.DUE, RENEWAL_DUE_DAYS), to: membersWith('DUE') });
 
   const firstName = (user?.displayName ?? '').split(' ')[0];
   const hour = new Date().getHours();
@@ -120,7 +136,17 @@ export function DashboardPage() {
       <section className="section" aria-labelledby="dash-attention">
         <h2 id="dash-attention">{t.dashboardAttention}</h2>
         <div className="card">
-          {todos.length === 0 ? (
+          {failed && (
+            <p className="notice notice-warn" role="alert">
+              {t.dashboardPartial}{' '}
+              <button type="button" className="btn btn-text" onClick={retry}>
+                {t.retry}
+              </button>
+            </p>
+          )}
+          {todos.length === 0 && loading ? (
+            <SkeletonRows rows={2} />
+          ) : todos.length === 0 ? (
             <p className="all-clear">
               <Icon name="check" /> {t.dashboardAllClear}
             </p>
@@ -149,6 +175,28 @@ export function DashboardPage() {
             <Stat value={c.waiting} label={lt.waitingReservations} to={paths.adminReservations} />
             <Stat value={c.inspection} label={lt.awaitingInspection} to={paths.adminInventory} />
             <Stat value={c.incoming} label={lt.incomingTransfers} to={paths.adminTransfers} />
+          </div>
+        </section>
+      )}
+
+      {mc && branch && (
+        <section className="section" aria-labelledby="dash-members">
+          <h2 id="dash-members">{t.dashboardMembers(branch.name)}</h2>
+          <div className="stats">
+            <Stat value={mc.ACTIVE} label={lt.subActive} to={membersWith('ACTIVE')} />
+            <Stat value={mc.DUE} label={lt.subDue(RENEWAL_DUE_DAYS)} to={membersWith('DUE')} />
+            <Stat value={mc.EXPIRED} label={lt.subExpired} to={membersWith('EXPIRED')} />
+            <Stat value={mc.ALL} label={lt.allMembers} to={paths.adminMembers} />
+          </div>
+        </section>
+      )}
+
+      {catalogue.data && (
+        <section className="section" aria-labelledby="dash-catalogue">
+          <h2 id="dash-catalogue">{t.navCatalogue}</h2>
+          <div className="stats">
+            <Stat value={catalogue.data.titles} label={t.dashboardTitles} to={paths.adminBooks} />
+            <Stat value={catalogue.data.addedThisMonth} label={t.dashboardAddedThisMonth} to={paths.adminBooks} />
           </div>
         </section>
       )}

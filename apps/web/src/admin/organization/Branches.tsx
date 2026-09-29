@@ -5,7 +5,7 @@ import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import type { Branch, Weekday } from '../../data/org';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, StatusBadge } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { lt } from '../../strings/library';
 import { BranchNumberingDialog, HeadOfficeNumberingDialog } from './NumberingDialogs';
@@ -121,7 +121,7 @@ export function BranchesPage() {
   const [archiving, setArchiving] = useState<Branch | null>(null);
   const [numbering, setNumbering] = useState<Branch | null>(null);
   const [gateway, setGateway] = useState<Branch | null>(null);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   const manage = can(claims, 'branches.manage', org.id);
   // Branch staff see only the branches they work at; org-wide roles see them all.
   const scope = branchScope(claims, org.id);
