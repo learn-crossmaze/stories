@@ -36,6 +36,14 @@ staff check everything before saving. The match's cover is imported when the boo
 `imageUrl`, allowed only from Google Books / Open Library hosts). If both sources are unreachable, the form says so and
 works as before.
 
+**Add books by ISBN (bulk):** *Collection → Add by ISBN* (`/ops/books/bulk`, or the button on the catalogue) is a
+list of rows. Type, scan or paste ISBNs (pasting several fills several rows); each one is checked as soon as it is a
+valid ISBN-10/13, looked up with `books-lookup`, and the row shows the cover, title, authors and year, or says the
+ISBN is not valid, repeated, not found or already in the catalogue. Rows whose match has no author ask for one. Age
+group, reading level and a genre fallback are set once for the whole list (genre and age group can be changed per
+row). One *Add N books* sends the ready rows with `books-bulkCreate` (up to 25 per call, in one transaction each;
+ISBNs already in the catalogue are skipped, authors and publishers are reused by name), then imports their covers.
+
 **Covers:** catalogue editors (Super Admin, head office) add a photo or scan on the book page (**Add cover** /
 **Change cover** / **Remove**). The browser shrinks it to a JPEG of at most 800 px (~100 KB) and sends it to
 `books-setCover`, which checks the permission and the file type (JPEG, PNG or WebP by content, 1.5 MB at most),

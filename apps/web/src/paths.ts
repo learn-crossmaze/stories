@@ -19,6 +19,7 @@ export const paths = {
   adminAudit: '/admin/audit',
   adminDesk: '/ops/desk',
   adminBooks: '/ops/books',
+  adminBooksBulk: '/ops/books/bulk',
   adminBook: (id: string) => `/ops/books/${id}`,
   adminInventory: '/ops/inventory',
   adminCopy: (id: string) => `/ops/inventory/${id}`,

@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Link, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
 import { rolesIn, type ViewId } from '../auth/claims';
@@ -9,7 +9,7 @@ import { Icon } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
-import { availableViews, groupFor, isGroup, type NavEntry, VIEW_ICONS, visibleMenu } from './nav';
+import { availableViews, groupFor, isGroup, type NavEntry, navItemFor, VIEW_ICONS, visibleMenu } from './nav';
 import { ViewContext } from './view';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
@@ -153,6 +153,9 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState<Record<string, boolean>>(readOpen);
   const current = groupFor(entries, pathname)?.id;
+  // The most specific menu item for this page (so /ops/books/bulk marks "Add by ISBN", not also "Catalogue").
+  const activeTo = navItemFor(pathname)?.to;
+  const itemClass = (to: string, extra = '') => `admin-nav-item${extra}${to === activeTo ? ' active' : ''}`;
   // Arriving on a page opens its group.
   useEffect(() => {
     if (current) setOpen((o) => (o[current] ? o : { ...o, [current]: true }));
@@ -171,10 +174,10 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
         if (!isGroup(e)) {
           return (
             <li key={e.to}>
-              <NavLink to={e.to} end={!!e.home} className="admin-nav-item">
+              <Link to={e.to} className={itemClass(e.to)} aria-current={e.to === activeTo ? 'page' : undefined}>
                 <Icon name={e.icon} />
                 <span>{e.label}</span>
-              </NavLink>
+              </Link>
             </li>
           );
         }
@@ -198,9 +201,9 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
             <ul id={listId} className="nav-sub" hidden={!isOpen}>
               {e.items.map((i) => (
                 <li key={i.to}>
-                  <NavLink to={i.to} className="admin-nav-item nav-sub-item">
+                  <Link to={i.to} className={itemClass(i.to, ' nav-sub-item')} aria-current={i.to === activeTo ? 'page' : undefined}>
                     <span>{i.label}</span>
-                  </NavLink>
+                  </Link>
                 </li>
               ))}
             </ul>

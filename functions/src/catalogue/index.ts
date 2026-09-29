@@ -6,6 +6,7 @@ import * as lookup from './lookup.js';
 
 export const routes = {
   'books-create': books.create,
+  'books-bulkCreate': books.bulkCreate,
   'books-update': books.update,
   'books-archive': books.archive,
   'books-restore': books.restore,

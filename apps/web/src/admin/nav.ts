@@ -3,6 +3,7 @@ import type { Permission } from '../generated/rbac';
 import { paths, viewHome } from '../paths';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
+import { lt } from '../strings/library';
 import type { IconName } from '../shared/ui';
 
 /** Permission needed in the current organization (any of a list); `superAdmin` for platform pages; null for everyone. */
@@ -57,6 +58,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
       icon: 'book',
       items: [
         { to: paths.adminBooks, label: t.navCatalogue, icon: 'book', requires: 'books.view' },
+        { to: paths.adminBooksBulk, label: lt.bulkNav, icon: 'plus', requires: 'books.create' },
         { to: paths.adminInventory, label: t.navInventory, icon: 'shelves', requires: 'books.view' },
       ],
     },
