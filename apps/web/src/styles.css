@@ -603,6 +603,16 @@ main h1[tabindex='-1']:focus { outline: none; }
 .field-inline input, .field-inline select { min-height: 40px; padding: 0 10px; border-radius: var(--radius-md); border: 1px solid var(--outline); background: var(--surface-raised); color: var(--on-surface); font: inherit; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .warn-text { color: var(--danger); font-weight: 500; }
+.ok-text { color: var(--success); font-weight: 500; }
+.bulk-defaults .row { flex-wrap: wrap; gap: 12px 20px; }
+.bulk-table td { vertical-align: top; }
+.bulk-isbn { width: 100%; min-width: 150px; font-variant-numeric: tabular-nums; letter-spacing: .3px; }
+.bulk-book { display: flex; gap: 10px; align-items: flex-start; min-width: 220px; }
+.bulk-cover { flex: none; width: 32px; height: 46px; object-fit: cover; border-radius: 4px; background: var(--surface-dim); }
+.bulk-author input { display: block; margin-top: 4px; min-height: 36px; }
+.bulk-done .bulk-isbn { opacity: .7; }
+.bulk-footer { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-top: 12px; }
+.bulk-footer p { margin: 0; }
 .weekday-picks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .line-row { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; align-items: end; }
 .line-row-code { grid-template-columns: 110px 1fr 140px auto; }

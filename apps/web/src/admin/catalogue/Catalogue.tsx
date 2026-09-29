@@ -367,6 +367,9 @@ export function CataloguePage() {
                 </button>
               </>
             )}
+            <Link className="btn btn-outlined" to={paths.adminBooksBulk}>
+              {lt.bulkNav}
+            </Link>
             <button type="button" className="btn btn-filled" onClick={() => setDialog('book')}>
               <Icon name="plus" /> {lt.newBook}
             </button>

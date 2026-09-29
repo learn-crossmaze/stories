@@ -29,3 +29,16 @@ describe('AuthFailure.fromFirebaseCode', () => {
     expect(AuthFailure.fromFirebaseCode(code).code).toBe(expected);
   });
 });
+
+describe('ISBN checks in the browser', async () => {
+  const { normalizeIsbn, splitIsbns } = await import('../shared/isbn');
+  it('accepts valid ISBN-10 and ISBN-13 with hyphens, rejects typos', () => {
+    expect(normalizeIsbn('978-0-14-044913-6')).toBe('9780140449136');
+    expect(normalizeIsbn('0-14-044913-2')).toBe('9780140449136');
+    expect(normalizeIsbn('9780140449137')).toBeNull();
+    expect(normalizeIsbn('12345')).toBeNull();
+  });
+  it('splits a pasted list', () => {
+    expect(splitIsbns('9780140449136\n0-14-044913-2, 9780000000017;junk')).toEqual(['9780140449136', '0-14-044913-2', '9780000000017']);
+  });
+});

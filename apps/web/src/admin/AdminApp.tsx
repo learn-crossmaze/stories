@@ -10,6 +10,7 @@ import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
 import { AuditPage } from './organization/Audit';
 import { BookDetailPage } from './catalogue/BookDetail';
+import { BulkAddBooksPage } from './catalogue/BulkAddBooks';
 import { CataloguePage } from './catalogue/Catalogue';
 import { DepositApprovalsPage } from './members/DepositApprovals';
 import { DeskPage } from './circulation/Desk';
@@ -56,6 +57,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
       return [
         [paths.adminDesk, guard(paths.adminDesk, <DeskPage />)],
         [paths.adminBooks, guard(paths.adminBooks, <CataloguePage />)],
+        [paths.adminBooksBulk, guard(paths.adminBooksBulk, <BulkAddBooksPage />)],
         [paths.adminBook(':bookId'), guard(paths.adminBooks, <BookDetailPage />)],
         [paths.adminInventory, guard(paths.adminInventory, <InventoryPage />)],
         [paths.adminCopy(':copyId'), guard(paths.adminInventory, <CopyDetailPage />)],

@@ -114,7 +114,7 @@ async function resolveRefs(tx: Transaction, input: Pick<BookInput, 'authorIds' |
     load('publishers', input.publisherId ? [input.publisherId] : []),
     load('categories', [...new Set(input.categoryIds)]),
   ]);
-  return { authorNames, publisherName: publisherNames[0] ?? null, categoryNames };
+  return { authorNames, publisherName: (publisherNames[0] ?? null) as string | null, categoryNames };
 }
 
 function derived(input: BookInput, code: string, isbn13: string | null, names: Awaited<ReturnType<typeof resolveRefs>>) {
@@ -166,6 +166,120 @@ export const create = command('books-create', bookSchema, async ({ actor, input,
   });
   return { bookId: ref.id, code };
 });
+
+const BULK_MAX = 25;
+
+const bulkItem = z.strictObject({
+  isbn: z.string().trim().min(10).max(20),
+  title: z.string().trim().min(1).max(200),
+  subtitle: z.string().trim().max(200).default(''),
+  /** Names, reused when an author or publisher with the same name exists, otherwise added. */
+  authors: z.array(z.string().trim().min(1).max(100)).min(1, 'needs at least one author').max(5),
+  publisher: z.string().trim().max(100).nullable().default(null),
+  language: z.enum(LANGUAGES),
+  genres: z.array(z.enum(GENRES)).min(1, 'needs at least one genre').max(3),
+  ageGroup: z.enum(AGE_GROUPS),
+  readingLevel: z.enum(READING_LEVELS),
+  publicationYear: z.number().int().min(1450).max(new Date().getFullYear() + 1).nullable().default(null),
+  synopsis: z.string().trim().max(2000).default(''),
+  keywords: z.array(z.string().trim().min(1).max(40)).max(15).default([]),
+});
+
+/**
+ * Adds several titles by ISBN at once (the "Add by ISBN" page), in one
+ * transaction. Titles whose ISBN is already in the catalogue are skipped and
+ * reported; authors and publishers are matched by name or added.
+ */
+export const bulkCreate = command(
+  'books-bulkCreate',
+  z.strictObject({ items: z.array(bulkItem).min(1).max(BULK_MAX, `add at most ${BULK_MAX} books at a time`) }),
+  async ({ actor, input, requestId }, tx) => {
+    await actor.requireCatalog('books.create', tx);
+    const items = input.items.map((item) => {
+      const isbn = normalizeIsbn(item.isbn);
+      if (!isbn) throw errors.invalid(`${item.isbn} is not a valid ISBN.`);
+      return { ...item, isbn };
+    });
+    const isbns = items.map((i) => i.isbn);
+    const repeated = isbns.find((isbn, i) => isbns.indexOf(isbn) !== i);
+    if (repeated) throw errors.invalid(`ISBN ${repeated} is listed twice.`);
+
+    // Reads first: existing ISBNs, then every author and publisher name.
+    const known = await Promise.all(isbns.map((isbn) => tx.get(db.doc(`isbnIndex/${isbn}`))));
+    const fresh = items.filter((_, i) => !known[i].exists);
+    const skipped = items.filter((_, i) => known[i].exists).map((i) => ({ isbn: i.isbn, title: i.title, reason: 'Already in the catalogue.' }));
+    const wanted = (kind: 'authors' | 'publishers') => {
+      const names = new Map<string, string>();
+      for (const it of fresh) for (const n of kind === 'authors' ? it.authors : it.publisher ? [it.publisher] : []) names.set(normalizeText(n), names.get(normalizeText(n)) ?? n);
+      return names;
+    };
+    const resolve = async (kind: 'authors' | 'publishers') => {
+      const names = wanted(kind);
+      const found = await Promise.all(
+        [...names.keys()].map(async (key) => {
+          const hit = await tx.get(db.collection(kind).where('nameNormalized', '==', key).where('status', '==', 'ACTIVE').limit(1));
+          return [key, hit.empty ? null : hit.docs[0]] as const;
+        }),
+      );
+      const ids = new Map<string, { id: string; name: string; isNew: boolean }>();
+      for (const [key, doc] of found) {
+        ids.set(key, doc ? { id: doc.id, name: doc.get('name') as string, isNew: false } : { id: db.collection(kind).doc().id, name: names.get(key)!, isNew: true });
+      }
+      return ids;
+    };
+    const [authorIds, publisherIds] = await Promise.all([resolve('authors'), resolve('publishers')]);
+    const counter = fresh.length
+      ? await reserveCodes(tx, { kind: 'book', pattern: await bookPattern(tx), values: {}, base: 'counters', count: fresh.length, taken: (c) => existingCodes(tx, 'books', c) })
+      : null;
+
+    // Writes.
+    const now = FieldValue.serverTimestamp();
+    for (const [kind, ids] of [['authors', authorIds], ['publishers', publisherIds]] as const) {
+      for (const r of ids.values()) {
+        if (!r.isNew) continue;
+        tx.create(db.doc(`${kind}/${r.id}`), { name: r.name, nameNormalized: normalizeText(r.name), searchTokens: searchTokens(r.name), status: 'ACTIVE', createdAt: now, updatedAt: now });
+      }
+    }
+    counter?.commit();
+    const created = fresh.map((it, i) => {
+      const code = counter!.codes[i];
+      const authors = [...new Map(it.authors.map((n) => [authorIds.get(normalizeText(n))!.id, authorIds.get(normalizeText(n))!])).values()];
+      const publisher = it.publisher ? publisherIds.get(normalizeText(it.publisher))! : null;
+      const fields: BookInput = {
+        title: it.title,
+        subtitle: it.subtitle,
+        isbn: it.isbn,
+        authorIds: authors.map((a) => a.id),
+        publisherId: publisher?.id ?? null,
+        categoryIds: [],
+        language: it.language,
+        genres: [...new Set(it.genres)],
+        ageGroup: it.ageGroup,
+        minAge: null,
+        readingLevel: it.readingLevel,
+        contentTags: [],
+        synopsis: it.synopsis,
+        edition: '',
+        publicationYear: it.publicationYear,
+        keywords: it.keywords,
+        replacementPriceMinor: 0,
+      };
+      const names = { authorNames: authors.map((a) => a.name), publisherName: publisher?.name ?? null, categoryNames: [] };
+      const ref = db.collection('books').doc();
+      tx.create(db.doc(`isbnIndex/${it.isbn}`), { bookId: ref.id });
+      tx.create(ref, { ...derived(fields, code, it.isbn, names), code, number: counter!.number + i, status: 'ACTIVE', createdAt: now, updatedAt: now });
+      return { isbn: it.isbn, bookId: ref.id, code, title: it.title };
+    });
+    const newRefs = [...authorIds.values(), ...publisherIds.values()].filter((r) => r.isNew).map((r) => r.name);
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, null, {
+      action: 'book.bulkCreate',
+      entityType: 'book',
+      entityId: created[0]?.bookId ?? 'none',
+      after: { books: created.map((c) => `${c.code} ${c.isbn}`), skipped: skipped.map((s) => s.isbn), newAuthorsAndPublishers: newRefs },
+    });
+    return { created, skipped };
+  },
+);
 
 export const update = command(
   'books-update',
