@@ -26,6 +26,7 @@ const earnings = (basic: number, hra: number, special: number) => [
 ];
 const salary = (by: TestUser, employeeId: string, basic: number, extra: Record<string, unknown> = {}) =>
   call(payroll.saveSalary, by, { orgId: org, employeeId, effectiveFrom: '2025-04', earnings: earnings(basic, basic * 0.4, basic * 0.3), pf: true, esi: true, pt: true, reason: 'Offer letter', ...extra });
+const kinds = async (u: TestUser) => (await db.collection(`users/${u.uid}/notifications`).get()).docs.map((d) => d.get('kind') as string).sort();
 const run = (m = lastMonth) => ({ orgId: org, month: m, branchId: central });
 const runDoc = async () => (await db.doc(`orgs/${org}/payrollRuns/${lastMonth}_${central}`).get()).data()!;
 const slip = async (employeeId: string) => (await db.doc(`orgs/${org}/payslips/${employeeId}_${lastMonth}`).get()).data()!;
@@ -105,9 +106,13 @@ describe('payroll runs', () => {
     expect(await failure(call(payroll.decide, hr, { ...run(), decision: 'APPROVE' }))).toBe('FORBIDDEN');
     expect(await failure(call(payroll.decide, fin, { ...run(), decision: 'REJECT' }))).toBe('INVALID_INPUT');
     await call(payroll.decide, fin, { ...run(), decision: 'REJECT', note: 'Check the bonus' });
+    expect(await kinds(hr)).toEqual(['payroll.rejected']);
     expect(await runDoc()).toMatchObject({ status: 'DRAFT', rejectNote: 'Check the bonus' });
     await call(payroll.submit, hr, run());
     await call(payroll.decide, fin, { ...run(), decision: 'APPROVE' });
+    expect(await kinds(hr)).toEqual(['payroll.approved', 'payroll.rejected']);
+    expect((await kinds(worker)).filter((k) => !k.startsWith('attendance.'))).toEqual(['payslip.published']);
+    expect(await kinds(fin)).toEqual([]);
     expect(await runDoc()).toMatchObject({ status: 'APPROVED', approvedBy: fin.uid });
     expect((await slip(workerId)).published).toBe(true);
     expect(await failure(call(payroll.prepare, hr, run(), null))).toBe('RUN_LOCKED');

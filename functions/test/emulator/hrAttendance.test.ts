@@ -20,6 +20,7 @@ const days = datesOfMonth(lastMonth);
 const workdays = days.filter((d) => weekdayOf(d) !== 'SUN');
 const [d1, d2, d3, d4] = workdays;
 
+const kinds = async (u: TestUser) => (await db.collection(`users/${u.uid}/notifications`).get()).docs.map((d) => d.get('kind') as string).sort();
 const rec = async (employeeId: string, day: string) => (await db.doc(`orgs/${org}/attendance/${employeeId}_${day}`).get()).data()!;
 const adjust = (by: TestUser, employeeId: string, day: string, checkIn: string | null, checkOut: string | null) =>
   call<{ status: string }>(att.adjust, by, { orgId: org, employeeId, date: day, checkIn, checkOut, reason: 'Register entry' });
@@ -79,6 +80,7 @@ describe('adjustments and corrections', () => {
   it('managers adjust with a reason, never their own day; lateness follows the shift', async () => {
     expect((await adjust(bm, workerId, d1, '09:45', '18:30')).status).toBe('PRESENT');
     expect(await rec(workerId, d1)).toMatchObject({ late: true, lateMinutes: 15, workedMinutes: 495, source: 'ADJUSTED' });
+    expect(await kinds(worker)).toEqual(['attendance.adjusted']);
     const bmId = (await db.collection(`orgs/${org}/employees`).where('uid', '==', bm.uid).get()).docs[0].id;
     expect(await failure(adjust(bm, bmId, d1, '09:30', '18:00'))).toBe('FORBIDDEN');
     expect(await failure(adjust(lib, workerId, d1, '09:30', '18:00'))).toBe('FORBIDDEN');
@@ -92,6 +94,7 @@ describe('adjustments and corrections', () => {
     expect(await failure(call(att.decideCorrection, bm, { orgId: org, correctionId, decision: 'REJECT' }))).toBe('INVALID_INPUT');
     await call(att.decideCorrection, bm, { orgId: org, correctionId, decision: 'APPROVE' });
     expect(await rec(workerId, d2)).toMatchObject({ status: 'HALF_DAY', source: 'CORRECTION', correctionId });
+    expect(await kinds(worker)).toEqual(['correction.approved']);
     expect(await failure(call(att.decideCorrection, hr, { orgId: org, correctionId, decision: 'APPROVE' }))).toBe('NOT_PENDING');
   });
 });

@@ -8,11 +8,13 @@ import {
 import {
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   query,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 
@@ -99,6 +101,7 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/leaveLedger/l1`, { branchId: 'nth', employeeUid: 'bob', year: '2026', typeId: 'casual', days: 1 });
     await put(`orgs/${CORP}/leaveTypes/casual`, { name: 'Casual leave', status: 'ACTIVE' });
     await put(`orgs/${CORP}/payrollSettings/2026-04`, { effectiveFrom: '2026-04' });
+    await put('users/alice/notifications/n1', { orgId: CORP, kind: 'leave.approved', title: 'Casual leave approved', read: false });
     await put(`orgs/${CORP}/salaries/e-cen_2026-04`, { branchId: 'cen', employeeUid: 'alice', effectiveFrom: '2026-04', monthlyGross: 30000 });
     await put(`orgs/${CORP}/salaries/e-nth_2026-04`, { branchId: 'nth', employeeUid: 'bob', effectiveFrom: '2026-04', monthlyGross: 40000 });
     await put(`orgs/${CORP}/payrollInputs/e-cen_2026-09`, { branchId: 'cen', employeeUid: 'alice', month: '2026-09', tds: 100 });
@@ -431,6 +434,20 @@ describe('HRMS payroll', () => {
     await assertSucceeds(getDoc(doc(finance(), `orgs/${CORP}/payslips/e-cen_2026-10`)));
     await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/payslips/e-cen_2026-09`)));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/payslips/e-cen_2026-09`), { branchId: 'cen', published: true, net: 99 }));
+  });
+});
+
+describe('notifications', () => {
+  it('the owner reads and marks read; nothing else', async () => {
+    const alice = as('alice', claims());
+    const bob = as('bob', claims());
+    await assertSucceeds(getDocs(collection(alice, 'users/alice/notifications')));
+    await assertFails(getDocs(collection(bob, 'users/alice/notifications')));
+    await assertSucceeds(updateDoc(doc(alice, 'users/alice/notifications/n1'), { read: true }));
+    await assertFails(updateDoc(doc(alice, 'users/alice/notifications/n1'), { title: 'Something else' }));
+    await assertFails(updateDoc(doc(bob, 'users/alice/notifications/n1'), { read: true }));
+    await assertFails(setDoc(doc(alice, 'users/alice/notifications/n2'), { orgId: CORP, kind: 'x', title: 'Fake', read: false }));
+    await assertFails(deleteDoc(doc(alice, 'users/alice/notifications/n1')));
   });
 });
 

@@ -8,6 +8,7 @@ import { recordAudit, recordAuditNow } from '../core/audit.js';
 import { bucket } from '../catalogue/covers.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
+import { LINKS, notify } from '../core/notify.js';
 import { db, REGION } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, name, reason } from '../core/schemas.js';
@@ -207,6 +208,18 @@ export const review = command(
       updatedAt: FieldValue.serverTimestamp(),
     });
     effects?.();
+    notify(
+      tx,
+      employee.get('uid'),
+      {
+        orgId: input.orgId,
+        kind: status === 'VERIFIED' ? 'document.verified' : 'document.rejected',
+        title: status === 'VERIFIED' ? `${doc.get('typeName')} verified` : `${doc.get('typeName')} was not accepted`,
+        body: input.decision === 'REJECT' ? `${input.reason} Upload it again from My profile.` : undefined,
+        link: LINKS.me,
+      },
+      actor.uid,
+    );
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: input.decision === 'VERIFY' ? 'employee.document.verify' : 'employee.document.reject',
       entityType: 'employee',

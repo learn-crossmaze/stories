@@ -29,6 +29,7 @@ const futureYear = nextMonth.slice(0, 4);
 const [p1, p2] = workdays(lastMonth);
 const pastYear = lastMonth.slice(0, 4);
 
+const kinds = async (u: TestUser) => (await db.collection(`users/${u.uid}/notifications`).get()).docs.map((d) => d.get('kind') as string).sort();
 const rec = async (day: string) => (await db.doc(`orgs/${org}/attendance/${workerId}_${day}`).get()).data();
 const balance = async (y: string) => (await db.doc(`orgs/${org}/leaveBalances/${workerId}_${y}`).get()).data()!;
 const opening = (typeId: string, y: string, days: number) => call(leave.adjust, hr, { orgId: org, employeeId: workerId, typeId, year: y, days, reason: 'Opening balance' });
@@ -97,12 +98,17 @@ describe('leave requests', () => {
 
     expect(await failure(call(leave.decide, lib, { orgId: org, leaveId, decision: 'APPROVE' }))).toBe('FORBIDDEN');
     expect(await failure(call(leave.decide, bm, { orgId: org, leaveId, decision: 'REJECT' }))).toBe('INVALID_INPUT');
+    expect(await kinds(worker)).toEqual([]); // applying for yourself tells nobody
     await call(leave.decide, bm, { orgId: org, leaveId, decision: 'APPROVE' });
+    expect(await kinds(worker)).toEqual(['leave.approved']);
+    const notice = (await db.collection(`users/${worker.uid}/notifications`).get()).docs[0].data();
+    expect(notice).toMatchObject({ orgId: org, read: false, link: '/admin/my-leave', title: `Casual leave ${f1} – ${f3} approved` });
     expect((await balance(futureYear)).types.casual).toMatchObject({ pending: 0, used: 3 });
     expect(await rec(f2)).toMatchObject({ status: 'ON_LEAVE', payable: 1, leave: { typeId: 'casual', paid: true, half: false } });
     expect(await failure(call(leave.decide, hr, { orgId: org, leaveId, decision: 'APPROVE' }))).toBe('NOT_PENDING');
 
     await call(leave.cancel, worker, { orgId: org, leaveId });
+    expect(await kinds(worker)).toEqual(['leave.approved']); // cancelling your own leave tells nobody
     expect((await balance(futureYear)).types.casual).toMatchObject({ used: 0 });
     expect(await rec(f2)).toBeUndefined();
     expect((await db.doc(`orgs/${org}/leaveRequests/${leaveId}`).get()).get('status')).toBe('CANCELLED');

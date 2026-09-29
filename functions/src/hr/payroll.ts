@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { recordAudit, recordAuditNow } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
+import { LINKS, notify } from '../core/notify.js';
 import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
@@ -25,6 +26,8 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be a month (YYYY
 const rupees = z.number().int('must be whole rupees').min(0).max(10_000_000);
 const adjustment = z.strictObject({ name: z.string().trim().min(2).max(60), amount: rupees.min(1) });
 const note = z.string().trim().max(500).default('');
+/** 'September 2026'. */
+const monthLabel = (m: string) => new Date(`${m}-01T12:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 const auditCtx = (actor: Actor, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 const salaryRef = (orgId: string, employeeId: string, from: string) => db.doc(`orgs/${orgId}/salaries/${employeeId}_${from}`);
@@ -366,6 +369,15 @@ export const decide = command(
     const approve = input.decision === 'APPROVE';
     if (!approve && input.note.length < 3) throw errors.invalid('Say what needs to change.');
     const slips = approve ? await tx.get(db.collection(`orgs/${input.orgId}/payslips`).where('runId', '==', run.id)) : null;
+    const when = monthLabel(input.month);
+    for (const uid of new Set([run.get('preparedBy'), run.get('submittedBy')] as string[])) {
+      notify(
+        tx,
+        uid,
+        { orgId: input.orgId, kind: approve ? 'payroll.approved' : 'payroll.rejected', title: `Payroll for ${when} ${approve ? 'approved' : 'sent back'}`, body: input.note || undefined, link: LINKS.payroll },
+        actor.uid,
+      );
+    }
     if (approve) {
       for (const s of slips!.docs) tx.update(s.ref, { published: true, publishedAt: FieldValue.serverTimestamp() });
       tx.update(run.ref, { status: 'APPROVED', approvedBy: actor.uid, approvedByEmail: actor.email, approvedAt: FieldValue.serverTimestamp() });
@@ -381,6 +393,19 @@ export const decide = command(
       reason: input.note || null,
     });
     return { runId: run.id, status: approve ? 'APPROVED' : 'DRAFT' };
+  },
+  // Tells each employee their payslip is ready (after the commit: a run can hold more payslips than one transaction can also notify).
+  async (result, { actor, input }) => {
+    if (result.status !== 'APPROVED') return;
+    const slips = await db.collection(`orgs/${input.orgId}/payslips`).where('runId', '==', result.runId).get();
+    const when = monthLabel(input.month);
+    for (let i = 0; i < slips.docs.length; i += 400) {
+      const batch = db.batch();
+      for (const s of slips.docs.slice(i, i + 400)) {
+        notify(batch, s.get('employeeUid'), { orgId: input.orgId, kind: 'payslip.published', title: `Your payslip for ${when} is ready`, body: `Net pay Rs. ${Number(s.get('net')).toLocaleString('en-IN')}.`, link: LINKS.myPayslips }, actor.uid);
+      }
+      await batch.commit();
+    }
   },
 );
 

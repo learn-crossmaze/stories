@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { recordAudit, recordAuditNow } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
+import { LINKS, notify } from '../core/notify.js';
 import { db, REGION } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, name, reason } from '../core/schemas.js';
@@ -38,6 +39,7 @@ const requestsCol = (orgId: string) => db.collection(`orgs/${orgId}/leaveRequest
 /** Longest request, in calendar days (a request touches each of its days on approval). */
 const MAX_SPAN = 45;
 const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
+const span_ = (from: string, to: string) => (from === to ? from : `${from} – ${to}`);
 
 /** The org's leave types: defaults, overridden or added to by its own. */
 export async function leaveTypes(orgId: string, tx?: Transaction): Promise<Record<string, LeaveType>> {
@@ -337,6 +339,7 @@ export const apply = command(
       decisionNote: null,
     });
     bump(tx, input.orgId, employee, y, input.typeId, { pending: days });
+    notify(tx, employee.get('uid'), { orgId: input.orgId, kind: 'leave.recorded', title: `${type.name} recorded for you: ${span_(input.from, input.to)}`, body: 'It is waiting for approval.', link: LINKS.myLeave }, actor.uid);
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'leave.apply',
       entityType: 'employee',
@@ -407,6 +410,18 @@ export const decide = command(
       decisionNote: input.note || null,
     });
     bump(tx, input.orgId, employee, y, typeId, approve ? { pending: -days, used: days } : { pending: -days });
+    notify(
+      tx,
+      req.get('employeeUid'),
+      {
+        orgId: input.orgId,
+        kind: approve ? 'leave.approved' : 'leave.rejected',
+        title: `${req.get('typeName')} ${span_(req.get('from'), req.get('to'))} ${approve ? 'approved' : 'not approved'}`,
+        body: input.note || undefined,
+        link: LINKS.myLeave,
+      },
+      actor.uid,
+    );
     if (approve) ledger(tx, `${req.id}_taken`, input.orgId, employee, { year: y, typeId, kind: 'TAKEN', days: -days, by: actor.uid, requestId: req.id });
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: approve ? 'leave.approve' : 'leave.reject',
@@ -451,6 +466,12 @@ export const cancel = command('leave-cancel', z.strictObject({ orgId: id, leaveI
   write?.();
   tx.update(req.ref, { status: 'CANCELLED', cancelledBy: actor.uid, cancelledAt: FieldValue.serverTimestamp(), cancelNote: input.note || null });
   bump(tx, input.orgId, employee, y, typeId, status === 'APPROVED' ? { used: -days } : { pending: -days });
+  notify(
+    tx,
+    req.get('employeeUid'),
+    { orgId: input.orgId, kind: 'leave.cancelled', title: `${req.get('typeName')} ${span_(req.get('from'), req.get('to'))} was cancelled`, body: input.note || undefined, link: LINKS.myLeave },
+    actor.uid,
+  );
   if (status === 'APPROVED') ledger(tx, `${req.id}_returned`, input.orgId, employee, { year: y, typeId, kind: 'RETURNED', days, by: actor.uid, requestId: req.id, note: input.note || null });
   recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
     action: 'leave.cancel',
