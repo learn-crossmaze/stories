@@ -16,7 +16,7 @@ const dob = z
   .refine((d) => !Number.isNaN(Date.parse(d)) && Date.parse(d) < Date.now(), 'must be in the past')
   .refine((d) => ageOn(d, new Date()) < 120, 'is not realistic');
 
-const profile = {
+export const profile = {
   fullName: z.string().trim().min(2).max(80),
   dob,
   phone: z.string().trim().max(20).default(''),
@@ -75,62 +75,82 @@ async function checkPerson(
   return { age, minor, phone, phoneRef, guardian };
 }
 
-/** Registers a member at the counter (self-service sign-up arrives in Phase 2). */
+export type MemberProfile = z.infer<z.ZodObject<typeof profile>>;
+
+/**
+ * Creates a member record (reads first, then writes): checks the person
+ * (phone, guardian for minors), numbers them with the branch's member pattern
+ * and writes the record. Staff registration and self sign-up share it.
+ */
+export async function createMember(
+  tx: Transaction,
+  input: MemberProfile & { orgId: string; homeBranchId: string },
+  opts: { actorUid: string; actorEmail: string | null; requestId?: string; accountHolderUid: string | null; source: 'STAFF' | 'SELF' },
+) {
+  const branch = await tx.get(db.doc(`orgs/${input.orgId}/branches/${input.homeBranchId}`));
+  if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
+  const person = await checkPerson(tx, input.orgId, input, null);
+  const counter = await reserveCodes(tx, {
+    kind: 'member',
+    pattern: branchPatterns(branch).member,
+    values: { BRANCH: branch.get('code') },
+    base: `orgs/${input.orgId}/counters`,
+    taken: (c) => existingCodes(tx, `orgs/${input.orgId}/members`, c),
+  });
+  const [code] = counter.codes;
+  const ref = db.collection(`orgs/${input.orgId}/members`).doc();
+
+  const member: Member & Record<string, unknown> = {
+    code,
+    fullName: input.fullName,
+    dob: input.dob,
+    audience: audienceFor(person.age),
+    isMinor: person.minor,
+    phone: person.phone,
+    email: input.email || null,
+    // Lower-case copy: members sign in to the app with this email (me-overview links by it).
+    emailLower: input.email ? input.email.toLowerCase() : null,
+    address: input.address,
+    homeBranchId: input.homeBranchId,
+    branchId: input.homeBranchId,
+    status: 'ACTIVE',
+    guardian: person.guardian,
+    accountHolderUid: opts.accountHolderUid,
+    householdId: null,
+    activeSubscriptionId: null,
+    nextSubscriptionId: null,
+    subscriptionEndsAt: null,
+    planName: null,
+    renewalDueAt: null,
+    activeLoanCount: 0,
+    allocatedCount: 0,
+    waitingCount: 0,
+    lifetimeLoans: 0,
+    lifetimeExchanges: 0,
+    searchTokens: memberTokens(input.fullName, code, person.phone),
+    source: opts.source,
+  };
+  counter.commit();
+  if (person.phoneRef) tx.create(person.phoneRef, { memberId: ref.id });
+  tx.create(ref, { ...member, createdBy: opts.actorUid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+  recordAudit(tx, { actorUid: opts.actorUid, actorEmail: opts.actorEmail, requestId: opts.requestId }, input.orgId, {
+    action: opts.source === 'SELF' ? 'member.selfRegister' : 'member.register',
+    entityType: 'member',
+    entityId: ref.id,
+    branchId: input.homeBranchId,
+    memberId: ref.id,
+    after: { code, audience: member.audience, guardian: person.guardian?.memberId ?? null, accountHolderUid: opts.accountHolderUid },
+  });
+  return { memberId: ref.id, code };
+}
+
+/** Registers a member at the counter. Members can also sign themselves up (me-join). */
 export const register = command(
   'members-register',
   z.strictObject({ orgId: id, homeBranchId: id, ...profile }),
   async ({ actor, input, requestId }, tx) => {
     await actor.require('members.manage', input.orgId, input.homeBranchId, tx);
-    const branch = await tx.get(db.doc(`orgs/${input.orgId}/branches/${input.homeBranchId}`));
-    if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
-    const person = await checkPerson(tx, input.orgId, input, null);
-    const counter = await reserveCodes(tx, {
-      kind: 'member',
-      pattern: branchPatterns(branch).member,
-      values: { BRANCH: branch.get('code') },
-      base: `orgs/${input.orgId}/counters`,
-      taken: (c) => existingCodes(tx, `orgs/${input.orgId}/members`, c),
-    });
-    const [code] = counter.codes;
-    const ref = db.collection(`orgs/${input.orgId}/members`).doc();
-
-    const member: Member & Record<string, unknown> = {
-      code,
-      fullName: input.fullName,
-      dob: input.dob,
-      audience: audienceFor(person.age),
-      isMinor: person.minor,
-      phone: person.phone,
-      email: input.email || null,
-      // Lower-case copy: members sign in to the app with this email (me-overview links by it).
-      emailLower: input.email ? input.email.toLowerCase() : null,
-      address: input.address,
-      homeBranchId: input.homeBranchId,
-      branchId: input.homeBranchId,
-      status: 'ACTIVE',
-      guardian: person.guardian,
-      accountHolderUid: null,
-      householdId: null,
-      activeSubscriptionId: null,
-      nextSubscriptionId: null,
-      subscriptionEndsAt: null,
-      planName: null,
-      renewalDueAt: null,
-      activeLoanCount: 0,
-      allocatedCount: 0,
-      waitingCount: 0,
-      lifetimeLoans: 0,
-      lifetimeExchanges: 0,
-      searchTokens: memberTokens(input.fullName, code, person.phone),
-    };
-    counter.commit();
-    if (person.phoneRef) tx.create(person.phoneRef, { memberId: ref.id });
-    tx.create(ref, { ...member, createdBy: actor.uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'member.register', entityType: 'member', entityId: ref.id, branchId: input.homeBranchId, memberId: ref.id,
-      after: { code, audience: member.audience, guardian: person.guardian?.memberId ?? null },
-    });
-    return { memberId: ref.id, code };
+    return createMember(tx, input, { actorUid: actor.uid, actorEmail: actor.email, requestId, accountHolderUid: null, source: 'STAFF' });
   },
 );
 

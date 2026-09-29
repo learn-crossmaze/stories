@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, type ReactNode, useContext, useState } from 'react';
 
 import { type Membership, loadOverview, type Overview } from '../data/me';
 import { type AsyncState, useAsync } from '../shared/useAsync';
@@ -24,10 +24,8 @@ export function MemberDataProvider({ children }: { children: ReactNode }) {
     }
   });
   const list = overview.data?.memberships ?? [];
+  // The selection is kept even while it isn't in the list yet (a child just added appears after the reload).
   const current = list.find((m) => m.memberId === selected) ?? list[0] ?? null;
-  useEffect(() => {
-    if (current && current.memberId !== selected) setSelected(current.memberId);
-  }, [current, selected]);
   const select = (memberId: string) => {
     setSelected(memberId);
     try {
