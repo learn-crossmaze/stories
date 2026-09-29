@@ -1,7 +1,8 @@
 import type { DocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 
 import { errors } from '../core/errors.js';
-import { branchPatterns, HEAD_OFFICE_CODE, reserveCodes } from '../core/numbering.js';
+import { db } from '../core/firebase.js';
+import { employeeNumbering, reserveCodes } from '../core/numbering.js';
 import { employeeCodeRef } from './model.js';
 
 /**
@@ -11,7 +12,8 @@ import { employeeCodeRef } from './model.js';
  *
  * Resolves the code to use (reads only; call `commit()` to write):
  * `requested` if given (it must be free or already this person's), else
- * `current`, else the next code from the branch's employee pattern.
+ * `current`, else the next code from the branch's employee pattern (the
+ * organization's head-office pattern for staff without a branch).
  */
 export async function assignEmployeeCode(
   tx: Transaction,
@@ -45,10 +47,12 @@ export async function assignEmployeeCode(
       },
     };
   }
+  const org = branch?.exists ? null : await tx.get(db.doc(`orgs/${orgId}`));
+  const { pattern, values } = employeeNumbering(branch, org);
   const next = await reserveCodes(tx, {
     kind: 'employee',
-    pattern: branchPatterns(branch).employee,
-    values: { BRANCH: (branch?.get('code') as string | undefined) ?? HEAD_OFFICE_CODE },
+    pattern,
+    values,
     base: `orgs/${orgId}/counters`,
     taken: async (codes) => (await Promise.all(codes.map((c) => tx.get(employeeCodeRef(orgId, c))))).filter((d) => d.exists).map((d) => d.id),
   });

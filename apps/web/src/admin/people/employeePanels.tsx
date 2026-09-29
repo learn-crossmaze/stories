@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import { can } from '../../auth/claims';
+import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { type ChecklistItem, type Employee, type PrivateProfile } from '../../data/hr';
 import { listStaff, type Org } from '../../data/org';
@@ -155,7 +155,8 @@ export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: 
   const canStaff = can(claims, 'staff.view', org.id);
   const membership = useAsync(async () => {
     if (!employee.uid || !canStaff) return null;
-    return (await listStaff(org.id, 'ALL').catch(() => [])).find((m) => m.uid === employee.uid) ?? null;
+    // Branch-scoped staff may only list memberships at their branches (the rules allow that query shape).
+    return (await listStaff(org.id, branchScope(claims, org.id)).catch(() => [])).find((m) => m.uid === employee.uid) ?? null;
   }, [org.id, employee.uid]);
   const [linking, setLinking] = useState(false);
   const [roles, setRoles] = useState(false);

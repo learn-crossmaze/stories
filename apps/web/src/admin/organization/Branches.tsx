@@ -8,7 +8,7 @@ import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { lt } from '../../strings/library';
-import { BranchNumberingDialog } from './NumberingDialogs';
+import { BranchNumberingDialog, HeadOfficeNumberingDialog } from './NumberingDialogs';
 import { PaymentGatewayDialog } from '../members/OnlinePayments';
 import { useWorkspace } from '../Workspace';
 
@@ -115,7 +115,8 @@ function BranchDialog({ orgId, branch, onClose, onSaved }: { orgId: string; bran
 
 export function BranchesPage() {
   const { claims } = useAuth();
-  const { org, branches, branchesLoading, branchesError, reloadBranches } = useWorkspace();
+  const { org, branches, branchesLoading, branchesError, reloadBranches, reloadOrgs } = useWorkspace();
+  const [hoNumbering, setHoNumbering] = useState(false);
   const [editing, setEditing] = useState<Branch | 'new' | null>(null);
   const [archiving, setArchiving] = useState<Branch | null>(null);
   const [numbering, setNumbering] = useState<Branch | null>(null);
@@ -134,9 +135,16 @@ export function BranchesPage() {
           {scope !== 'ALL' && <p className="muted">{t.branchesMine}</p>}
         </div>
         {manage && (
-          <button type="button" className="btn btn-filled" onClick={() => setEditing('new')}>
-            <Icon name="plus" /> {t.branchNew}
-          </button>
+          <div className="row">
+            {scope === 'ALL' && (
+              <button type="button" className="btn btn-outlined" onClick={() => setHoNumbering(true)}>
+                {lt.hoNumberingButton}
+              </button>
+            )}
+            <button type="button" className="btn btn-filled" onClick={() => setEditing('new')}>
+              <Icon name="plus" /> {t.branchNew}
+            </button>
+          </div>
         )}
       </header>
       {branchesLoading ? (
@@ -203,6 +211,7 @@ export function BranchesPage() {
       )}
       {editing && <BranchDialog orgId={org.id} branch={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={reloadBranches} />}
       {gateway && <PaymentGatewayDialog orgId={org.id} branch={gateway} onClose={() => setGateway(null)} onSaved={reloadBranches} />}
+      {hoNumbering && <HeadOfficeNumberingDialog org={org} onClose={() => setHoNumbering(false)} onSaved={reloadOrgs} />}
       {numbering && <BranchNumberingDialog orgId={org.id} branch={numbering} onClose={() => setNumbering(null)} onSaved={reloadBranches} />}
       {archiving && (
         <ConfirmWithReason

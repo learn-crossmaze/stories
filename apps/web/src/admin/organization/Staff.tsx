@@ -1,19 +1,47 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
+import { listEmployees } from '../../data/hr';
 import { listStaff, type Org, type StaffMembership } from '../../data/org';
+import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { ROLES, type Role } from '../../generated/rbac';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, SkeletonRows, StatusBadge } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { canManageMember, grantableRoles, isOrgWide } from '../grants';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 
-export function RolesDialog({ org, member, email: presetEmail, onClose, onSaved }: { org: Org; member?: StaffMembership; email?: string; onClose: () => void; onSaved: () => void }) {
+/**
+ * Roles and branches for one person. Employee IDs belong to the employee
+ * record (People), so they are not edited here.
+ */
+export function RolesDialog({
+  org,
+  member,
+  email: presetEmail,
+  branchIds: presetBranches,
+  title,
+  intro,
+  cancelLabel,
+  onClose,
+  onSaved,
+}: {
+  org: Org;
+  member?: StaffMembership;
+  email?: string;
+  /** Branches to start with (a new employee's branch; [] = all branches for head office). */
+  branchIds?: string[];
+  title?: string;
+  intro?: string;
+  cancelLabel?: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const { claims } = useAuth();
   const { branches } = useWorkspace();
   const scope = branchScope(claims, org.id);
@@ -22,9 +50,8 @@ export function RolesDialog({ org, member, email: presetEmail, onClose, onSaved 
 
   const [email, setEmail] = useState(member?.email ?? presetEmail ?? '');
   const [roles, setRoles] = useState<Role[]>(member?.status === 'ACTIVE' ? member.roles : []);
-  const [allBranches, setAllBranches] = useState(member ? member.branchIds.includes('*') : false);
-  const [picked, setPicked] = useState<string[]>(member?.branchIds.filter((b) => b !== '*') ?? []);
-  const [employeeId, setEmployeeId] = useState(member?.employeeId ?? '');
+  const [allBranches, setAllBranches] = useState(member ? member.branchIds.includes('*') : presetBranches?.length === 0 && scope === 'ALL');
+  const [picked, setPicked] = useState<string[]>(member?.branchIds.filter((b) => b !== '*') ?? presetBranches ?? []);
   const [touched, setTouched] = useState(false);
 
   const orgWide = roles.some(isOrgWide);
@@ -33,23 +60,22 @@ export function RolesDialog({ org, member, email: presetEmail, onClose, onSaved 
     email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) ? undefined : 'Enter a valid email address.',
     roles: roles.length ? undefined : 'Choose at least one role.',
     branches: all || picked.length ? undefined : 'Choose at least one branch.',
-    employeeId: !employeeId.trim() || /^[A-Za-z0-9-]{2,24}$/.test(employeeId.trim()) ? undefined : 'Use 2–24 letters, digits or dashes.',
   };
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
-    if (errors.email || errors.roles || errors.branches || errors.employeeId) return;
-    await command('staff-setRoles', { orgId: org.id, email: email.trim(), roles, branchIds: all ? ['*'] : picked, employeeId: employeeId.trim().toUpperCase() });
+    if (errors.email || errors.roles || errors.branches) return;
+    await command('staff-setRoles', { orgId: org.id, email: email.trim(), roles, branchIds: all ? ['*'] : picked });
     onSaved();
     onClose();
   });
 
   return (
-    <Dialog title={member ? t.staffEditRoles : t.staffAdd} onClose={onClose}>
+    <Dialog title={title ?? (member ? t.staffEditRoles : t.staffAdd)} onClose={onClose}>
       <form onSubmit={submit} noValidate>
+        {intro && <p className="muted">{intro}</p>}
         <TextField label={t.staffEmail} type="email" value={email} onChange={setEmail} hint={member ? undefined : t.staffEmailHint} error={touched ? errors.email : undefined} disabled={!!member || !!presetEmail} />
-        <TextField label={lt.employeeId} value={employeeId} onChange={setEmployeeId} hint={lt.employeeIdHint} error={touched ? errors.employeeId : undefined} />
         <fieldset className="choices">
           <legend>{t.staffRoles}</legend>
           {offered.map((r) => (
@@ -79,7 +105,18 @@ export function RolesDialog({ org, member, email: presetEmail, onClose, onSaved 
           {touched && errors.branches && <span className="field-error">{errors.branches}</span>}
         </fieldset>
         <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+        {cancelLabel ? (
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-text" onClick={onClose} disabled={busy}>
+              {cancelLabel}
+            </button>
+            <button type="submit" className="btn btn-filled" disabled={busy}>
+              {busy ? t.saving : t.staffGiveAccess}
+            </button>
+          </div>
+        ) : (
+          <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+        )}
       </form>
     </Dialog>
   );
@@ -90,20 +127,26 @@ export function StaffPage() {
   const { org, branchName } = useWorkspace();
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const staff = useAsync(() => (org ? listStaff(org.id, scope) : Promise.resolve([])), [org?.id, JSON.stringify(scope)]);
-  const [editing, setEditing] = useState<StaffMembership | 'new' | null>(null);
+  // People are added and managed from their employee record; this page reviews who can sign in.
+  const records = useAsync(
+    async () => (org && can(claims, 'employees.view', org.id) ? new Map((await listEmployees(org.id, scope).catch(() => [])).filter((e) => e.uid).map((e) => [e.uid!, e.id])) : new Map<string, string>()),
+    [org?.id, JSON.stringify(scope)],
+  );
+  const [editing, setEditing] = useState<StaffMembership | null>(null);
   const [revoking, setRevoking] = useState<StaffMembership | null>(null);
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
   const manage = can(claims, 'staff.manageRoles', org.id) && grantableRoles(claims, org.id, org.type).length > 0;
 
   return (
     <>
-      <header className="page-header page-header-row">
+      <header className="page-header">
         <h1>{t.staffTitle}</h1>
-        {manage && (
-          <button type="button" className="btn btn-filled" onClick={() => setEditing('new')}>
-            <Icon name="plus" /> {t.staffAdd}
-          </button>
-        )}
+        <p className="muted">
+          {t.staffIntro}{' '}
+          {can(claims, 'employees.add', org.id) && (
+            <Link to={paths.adminPeople}>{t.staffAddVia}</Link>
+          )}
+        </p>
       </header>
       {staff.loading ? (
         <SkeletonRows />
@@ -145,11 +188,19 @@ export function StaffPage() {
                       <StatusBadge status={m.status} />
                     </td>
                     <td className="cell-actions">
-                      {editable && (
-                        <>
+                      {records.data?.get(m.uid) ? (
+                        <Link className="btn btn-text" to={`${paths.adminEmployee(records.data.get(m.uid)!)}?tab=access`} aria-label={`${t.staffManage} ${m.displayName ?? m.email ?? ''}`}>
+                          {t.staffManage}
+                        </Link>
+                      ) : (
+                        editable && (
                           <button type="button" className="btn btn-text" onClick={() => setEditing(m)}>
                             {t.edit}
                           </button>
+                        )
+                      )}
+                      {editable && (
+                        <>
                           {m.status === 'ACTIVE' && (
                             <button type="button" className="btn btn-text" onClick={() => setRevoking(m)}>
                               {t.staffRevoke}
@@ -165,7 +216,7 @@ export function StaffPage() {
           </table>
         </div>
       )}
-      {editing && <RolesDialog org={org} member={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={staff.reload} />}
+      {editing && <RolesDialog org={org} member={editing} onClose={() => setEditing(null)} onSaved={staff.reload} />}
       {revoking && (
         <ConfirmWithReason
           title={t.staffRevokeTitle(revoking.displayName ?? revoking.email ?? '')}

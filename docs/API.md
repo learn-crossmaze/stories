@@ -40,8 +40,9 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | `branches-create` | `branches.manage` | `orgId, code, name, address, contact, operatingHours, weeklyOffs` |
 | `branches-update` / `branches-archive` | `branches.manage` (at branch) | `orgId, branchId, …` / `orgId, branchId, reason` |
 | `departments-create` / `-rename` / `-archive` | `departments.manage` | `orgId, name, branchId?` / `…departmentId, name` / `…departmentId, reason` |
+| `orgs-setNumbering` | `branches.manage` across all branches | `orgId, employee, headOfficeCode` (head-office employee ID pattern and the code `{BRANCH}` stands for; `''` = default / HO) |
 | `branches-setNumbering` | `branches.manage` (at branch) | `orgId, branchId, copy, member, location, employee` (patterns, `''` = default; see NUMBERING.md) |
-| `staff-setRoles` | `staff.manageRoles` + grant rules (RBAC.md §4.1) | `orgId, email, roles[], branchIds[], employeeId?` (blank = keep or auto-number) |
+| `staff-setRoles` | `staff.manageRoles` + grant rules (RBAC.md §4.1) | `orgId, email, roles[], branchIds[], employeeId?` (blank = keep or auto-number; the web no longer sends it: IDs are set on the employee record) |
 | `staff-revoke` | same | `orgId, uid, reason` |
 
 ## Phase 1 callables
@@ -72,7 +73,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 
 | Group | Callables | Permission |
 |---|---|---|
-| Employees | `employees-create` (DRAFT record; links a Stories account with the same email), `employees-update` (job changes recorded with `effectiveDate`), `employees-linkAccount`, `employees-backfill` (records for staff who only had roles; safe to repeat) | `employees.edit` at the employee's branch (org-wide for head-office records and backfill) |
+| Employees | `employees-create` (DRAFT record; links a Stories account with the same email), `employees-update` (job changes recorded with `effectiveDate`), `employees-linkAccount`, `employees-backfill` (records for staff who only had roles; safe to repeat) | `employees-create`: `employees.add` (HO, HR, FO, and BM at their own branches); the rest `employees.edit` at the employee's branch (org-wide for head-office records and backfill) |
 | | `employees-transition` (`START_ONBOARDING, ACTIVATE, RESIGN, WITHDRAW_RESIGNATION, START_OFFBOARDING, COMPLETE_OFFBOARDING, REHIRE`), `employees-checkItem` | `employees.lifecycle` (never on yourself) |
 | | `employees-setPrivate` | `employees.privateData` |
 | | `employees-setBank`, `employees-revealBank` (audited) | `employees.bank` |

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
@@ -43,7 +43,9 @@ export function EmployeeProfilePage() {
     [orgId, e?.id, canPrivate, canBank],
   );
   const history = useAsync(() => (e ? listHistory(orgId, e.id) : Promise.resolve([])), [orgId, e?.id, employee.data]);
-  const [tab, setTab] = useState<Tab>('overview');
+  // ?tab=access (from Roles & access) opens a tab directly.
+  const [search] = useSearchParams();
+  const [tab, setTab] = useState<Tab>((search.get('tab') as Tab | null) ?? 'overview');
   const [dialog, setDialog] = useState<'edit' | 'personal' | Transition | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 

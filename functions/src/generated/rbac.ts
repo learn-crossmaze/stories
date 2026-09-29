@@ -250,6 +250,12 @@ export const PERMISSIONS = {
     "HR",
     "FO"
   ],
+  "employees.add": [
+    "HO",
+    "HR",
+    "FO",
+    "BM"
+  ],
   "employees.privateData": [
     "FIN",
     "HR"
