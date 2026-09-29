@@ -6,7 +6,7 @@ import { services } from './services';
 
 export type Weekday = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
 export const WEEKDAYS: Weekday[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-export type DayStatus = 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'WEEKLY_OFF' | 'HOLIDAY' | 'IN_PROGRESS';
+export type DayStatus = 'PRESENT' | 'HALF_DAY' | 'ABSENT' | 'WEEKLY_OFF' | 'HOLIDAY' | 'ON_LEAVE' | 'IN_PROGRESS';
 
 export interface Shift {
   id: string;
@@ -45,7 +45,11 @@ export interface AttendanceRecord {
   late: boolean;
   earlyExit: boolean;
   missedCheckout: boolean;
-  source: 'SELF' | 'DESK' | 'ADJUSTED' | 'CORRECTION' | 'FINALIZE';
+  /** Approved leave on the day (set by leave decisions). */
+  leave?: { typeId: string; paid: boolean; half: boolean } | null;
+  leaveDays?: number;
+  payable?: number;
+  source: 'SELF' | 'DESK' | 'ADJUSTED' | 'CORRECTION' | 'FINALIZE' | 'LEAVE';
   adjustReason?: string;
   finalized?: boolean;
 }
@@ -77,6 +81,8 @@ export interface MonthSummary {
   absent: number;
   weeklyOffs: number;
   holidays: number;
+  leaveDays: number;
+  paidLeaveDays: number;
   lateDays: number;
   missedCheckouts: number;
   workedMinutes: number;

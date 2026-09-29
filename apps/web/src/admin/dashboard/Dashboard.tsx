@@ -5,6 +5,7 @@ import { branchScope, can } from '../../auth/claims';
 import { branchCounts } from '../../data/circulation';
 import { monthIST, monthLock, pendingCorrections, previousMonth } from '../../data/attendance';
 import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
+import { pendingLeave } from '../../data/leave';
 import { CheckInCard } from '../people/MyAttendance';
 import { listStaff } from '../../data/org';
 import { ht } from '../../strings/hr';
@@ -50,15 +51,21 @@ export function DashboardPage() {
 
   const correctionsApprover = !!org && can(claims, 'corrections.approve', org.id);
   const finalizer = !!org && !!branch && can(claims, 'attendance.finalize', org.id, branch.id);
+  const leaveApprover = !!org && can(claims, 'leave.approve', org.id);
   const att = useAsync(async () => {
     if (!org) return null;
     const scope = branchScope(claims, org.id);
-    const [corrections, lock] = await Promise.all([
+    const [corrections, lock, leave] = await Promise.all([
       approverOk(correctionsApprover, () => pendingCorrections(org.id, scope)),
       finalizer && branch ? monthLock(org.id, previousMonth(monthIST()), branch.id) : Promise.resolve(undefined),
+      approverOk(leaveApprover, () => pendingLeave(org.id, scope)),
     ]);
-    return { corrections: corrections?.filter((c) => c.employeeUid !== user?.uid).length ?? 0, unfinalized: lock !== undefined && lock?.status !== 'FINALIZED' };
-  }, [org?.id, branch?.id, correctionsApprover, finalizer]);
+    return {
+      corrections: corrections?.filter((c) => c.employeeUid !== user?.uid).length ?? 0,
+      unfinalized: lock !== undefined && lock?.status !== 'FINALIZED',
+      leave: leave?.filter((r) => r.employeeUid !== user?.uid).length ?? 0,
+    };
+  }, [org?.id, branch?.id, correctionsApprover, finalizer, leaveApprover]);
 
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
@@ -83,6 +90,7 @@ export function DashboardPage() {
   if (d?.expired.length) todos.push({ label: ht.todoDocsExpired(d.expired.length), to: paths.adminDocuments });
   if (d?.expiring.length) todos.push({ label: ht.todoDocsExpiring(d.expiring.length), to: paths.adminDocuments });
   if (att.data?.corrections) todos.push({ label: ht.todoCorrections(att.data.corrections), to: paths.adminAttendance });
+  if (att.data?.leave) todos.push({ label: ht.todoLeave(att.data.leave), to: paths.adminLeave });
   if (att.data?.unfinalized) todos.push({ label: ht.todoFinalize(previousMonth(monthIST())), to: paths.adminAttendance });
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
 

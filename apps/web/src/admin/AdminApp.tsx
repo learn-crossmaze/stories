@@ -23,7 +23,9 @@ import { DashboardPage } from './dashboard/Dashboard';
 import { DepartmentsPage } from './organization/Departments';
 import { AttendancePage } from './people/Attendance';
 import { DocumentsPage } from './people/Documents';
+import { LeavePage } from './people/Leave';
 import { MyAttendancePage } from './people/MyAttendance';
+import { MyLeavePage } from './people/MyLeave';
 import { EmployeeProfilePage } from './people/EmployeeProfile';
 import { HrSettingsPage } from './people/HrSettings';
 import { PeoplePage } from './people/People';
@@ -55,6 +57,8 @@ export default function AdminApp() {
         <Route path={sub(paths.adminEmployee(':employeeId'))} element={guard(paths.adminPeople, <EmployeeProfilePage />)} />
         <Route path={sub(paths.adminAttendance)} element={guard(paths.adminAttendance, <AttendancePage />)} />
         <Route path={sub(paths.adminMyAttendance)} element={<MyAttendancePage />} />
+        <Route path={sub(paths.adminLeave)} element={guard(paths.adminLeave, <LeavePage />)} />
+        <Route path={sub(paths.adminMyLeave)} element={<MyLeavePage />} />
         <Route path={sub(paths.adminDocuments)} element={guard(paths.adminDocuments, <DocumentsPage />)} />
         <Route path={sub(paths.adminHrSettings)} element={guard(paths.adminHrSettings, <HrSettingsPage />)} />
         <Route path={sub(paths.adminAudit)} element={guard(paths.adminAudit, <AuditPage />)} />

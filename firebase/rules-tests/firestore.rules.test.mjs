@@ -93,6 +93,11 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/attendanceSummaries/e-cen_2026-09`, { branchId: 'cen', employeeUid: 'alice', month: '2026-09', payableDays: 30 });
     await put(`orgs/${CORP}/shifts/morning`, { name: 'Morning', status: 'ACTIVE' });
     await put(`orgs/${CORP}/holidays/2026-10-02`, { name: 'Gandhi Jayanti', branchIds: [] });
+    await put(`orgs/${CORP}/leaveRequests/lv1`, { branchId: 'cen', employeeUid: 'alice', status: 'PENDING', year: '2026', dates: ['2026-10-05'] });
+    await put(`orgs/${CORP}/leaveRequests/lv2`, { branchId: 'nth', employeeUid: 'bob', status: 'APPROVED', year: '2026', dates: ['2026-10-06'] });
+    await put(`orgs/${CORP}/leaveBalances/e-cen_2026`, { branchId: 'cen', employeeUid: 'alice', year: '2026', types: { casual: { credited: 9 } } });
+    await put(`orgs/${CORP}/leaveLedger/l1`, { branchId: 'nth', employeeUid: 'bob', year: '2026', typeId: 'casual', days: 1 });
+    await put(`orgs/${CORP}/leaveTypes/casual`, { name: 'Casual leave', status: 'ACTIVE' });
   });
 });
 
@@ -367,6 +372,31 @@ describe('HRMS attendance', () => {
     await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/holidays/2026-10-02`)));
     await assertFails(setDoc(doc(alice(), `orgs/${CORP}/attendance/e-cen_2026-09-02`), { employeeUid: 'alice', status: 'PRESENT', branchId: 'cen' }));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/attendanceSummaries/e-cen_2026-09`), { payableDays: 31 }));
+  });
+});
+
+describe('HRMS leave', () => {
+  const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
+
+  it('approvers see their branches; employees see their own requests and balances', async () => {
+    await assertSucceeds(getDocs(query(collection(hrAdmin(), `orgs/${CORP}/leaveRequests`), where('status', '==', 'PENDING'))));
+    await assertSucceeds(getDocs(query(collection(bmCen(), `orgs/${CORP}/leaveRequests`), where('status', '==', 'PENDING'), where('branchId', 'in', ['cen']))));
+    await assertFails(getDocs(query(collection(bmCen(), `orgs/${CORP}/leaveRequests`), where('status', '==', 'PENDING'))));
+    await assertSucceeds(getDocs(query(collection(alice(), `orgs/${CORP}/leaveRequests`), where('employeeUid', '==', 'alice'))));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/leaveRequests/lv2`)));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/leaveBalances/e-cen_2026`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/leaveLedger/l1`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/leaveLedger/l1`)));
+    await assertSucceeds(getDoc(doc(hrAdmin(), `orgs/${CORP}/leaveLedger/l1`)));
+  });
+
+  it('leave types are readable in the org; nobody writes leave from a client', async () => {
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/leaveTypes/casual`)));
+    await assertFails(getDoc(doc(as('zed', claims({})), `orgs/${CORP}/leaveTypes/casual`)));
+    await assertFails(setDoc(doc(alice(), `orgs/${CORP}/leaveBalances/e-cen_2026`), { employeeUid: 'alice', branchId: 'cen', types: { casual: { credited: 99 } } }));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/leaveRequests/lv3`), { employeeUid: 'hira', status: 'APPROVED' }));
   });
 });
 

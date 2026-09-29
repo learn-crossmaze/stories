@@ -284,7 +284,8 @@ export const PERMISSIONS = {
     "FO"
   ],
   "leave.adjust": [
-    "HR"
+    "HR",
+    "FO"
   ],
   "salary.view": [
     "HR",

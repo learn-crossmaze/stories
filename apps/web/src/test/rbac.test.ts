@@ -38,8 +38,8 @@ describe('navigation', () => {
   const labels = (c: StoriesClaims) => visibleNav(c, 'corp').map((i) => i.label);
 
   it('shows each role only what it may use', () => {
-    expect(labels(claims({}, true))).toHaveLength(18);
-    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Employees', 'Attendance', 'Documents', 'Roles & access', 'HR settings', 'Branches', 'Departments', 'Audit log']);
+    expect(labels(claims({}, true))).toHaveLength(19);
+    expect(labels(claims({ corp: { r: ['HR'], b: ['*'] } }))).toEqual(['Dashboard', 'Employees', 'Attendance', 'Leave', 'Documents', 'Roles & access', 'HR settings', 'Branches', 'Departments', 'Audit log']);
     expect(labels(claims({ corp: { r: ['LIB'], b: ['cen'] } }))).toEqual([
       'Dashboard', 'Circulation desk', 'Catalogue', 'Inventory', 'Reservations', 'Transfers', 'Members',
     ]);

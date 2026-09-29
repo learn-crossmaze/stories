@@ -8,7 +8,7 @@ import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 
-const TONE: Record<string, string> = { PRESENT: 'ok', HALF_DAY: 'warn', ABSENT: 'danger', WEEKLY_OFF: 'muted', HOLIDAY: 'info', IN_PROGRESS: 'info', NOT_IN: 'muted' };
+const TONE: Record<string, string> = { PRESENT: 'ok', HALF_DAY: 'warn', ABSENT: 'danger', WEEKLY_OFF: 'muted', HOLIDAY: 'info', ON_LEAVE: 'info', IN_PROGRESS: 'info', NOT_IN: 'muted' };
 
 export function DayBadge({ status }: { status: string }) {
   return <span className={`badge badge-${TONE[status] ?? 'muted'}`}>{ht.dayStatus[status] ?? status}</span>;

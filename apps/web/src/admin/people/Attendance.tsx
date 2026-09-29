@@ -233,7 +233,7 @@ function MonthView({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' })
                       </td>
                       {(Object.keys(ht.summaryCols) as (keyof typeof s)[]).map((k) => (
                         <td key={String(k)} className="num">
-                          {String(s[k])}
+                          {String(s[k] ?? 0)}
                         </td>
                       ))}
                     </tr>

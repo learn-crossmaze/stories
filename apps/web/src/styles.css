@@ -589,6 +589,9 @@ main h1[tabindex='-1']:focus { outline: none; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .warn-text { color: var(--danger); font-weight: 500; }
 .weekday-picks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.balance-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.balance-card { display: flex; flex-direction: column; gap: 4px; }
+.balance-value { font-size: 20px; }
 .checkin-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
 .checkin-card h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 18px; }
 .checkin-card p { margin: 2px 0; }

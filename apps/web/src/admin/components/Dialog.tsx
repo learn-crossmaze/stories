@@ -170,18 +170,38 @@ export function SelectField<T extends string>(props: {
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
   disabled?: boolean;
+  hint?: string;
+  error?: string;
 }) {
   const id = useId();
+  const described = [props.hint && `${id}-hint`, props.error && `${id}-error`].filter(Boolean).join(' ') || undefined;
   return (
     <div className="field">
       <label htmlFor={id}>{props.label}</label>
-      <select id={id} value={props.value} disabled={props.disabled} onChange={(e) => props.onChange(e.target.value as T)}>
+      <select
+        id={id}
+        value={props.value}
+        disabled={props.disabled}
+        onChange={(e) => props.onChange(e.target.value as T)}
+        aria-invalid={!!props.error}
+        aria-describedby={described}
+      >
         {props.options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
+      {props.hint && (
+        <span id={`${id}-hint`} className="field-hint">
+          {props.hint}
+        </span>
+      )}
+      {props.error && (
+        <span id={`${id}-error`} className="field-error">
+          {props.error}
+        </span>
+      )}
     </div>
   );
 }

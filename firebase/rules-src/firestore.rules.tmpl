@@ -308,6 +308,24 @@ service cloud.firestore {
         allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
         allow write: if false;
       }
+      // Leave (docs/HRMS.md §9): requests, balances and the ledger follow the
+      // attendance rule; leave types are org settings.
+      match /leaveRequests/{r} {
+        allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /leaveBalances/{bal} {
+        allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /leaveLedger/{en} {
+        allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /leaveTypes/{t} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
       match /attendanceLocks/{l} {
         allow read: if inOrg(o);
         allow write: if false;
