@@ -9,10 +9,10 @@ export const BRANCH_KINDS: BranchKind[] = ['copy', 'member', 'location', 'employ
 
 export const DEFAULT_PATTERNS: Record<CodeKind, string> = {
   book: 'BOOK-{SEQ:6}',
-  copy: 'COPY-{BOOK}-{SEQ:2}',
-  member: 'MEM-{SEQ:6}',
-  location: '{KIND}-{SEQ:3}',
-  employee: 'EMP-{SEQ:4}',
+  copy: 'BK{BOOK}-CP{SEQ:2}',
+  member: '{BRANCH}-M{SEQ:6}',
+  location: '{BRANCH}-{KIND}-{SEQ:3}',
+  employee: '{BRANCH}-E{SEQ:4}',
 };
 
 const DATE_TOKENS = ['YYYY', 'YY', 'MM'];

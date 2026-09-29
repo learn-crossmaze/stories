@@ -20,7 +20,7 @@
    query fails instead of leaking. Every document *also* stores `orgId` (and `branchId` where branch-scoped) so
    collection-group queries and exports stay filterable.
 2. **Global only what is genuinely shared:** user identities, the Stories book catalogue, platform config.
-3. **Immutable IDs.** Firestore auto-IDs as document IDs. Human-readable codes (`BOOK-000123`, `COPY-000123-01`,
+3. **Immutable IDs.** Firestore auto-IDs as document IDs. Human-readable codes (`BOOK-000123`, `BK000123-CP01`,
    `EMP-C-00042`, `MEM-CEN-000981`) are separate, unique, indexed fields allocated from per-scope counters inside the
    creating transaction. Display names are never keys.
 4. **Deterministic IDs where duplicates must be impossible:** attendance `{employeeId}_{yyyyMMdd}`, task instance

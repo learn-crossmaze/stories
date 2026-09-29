@@ -1,7 +1,7 @@
 import type { DocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 
 import { errors } from '../core/errors.js';
-import { branchPatterns, reserveCodes } from '../core/numbering.js';
+import { branchPatterns, HEAD_OFFICE_CODE, reserveCodes } from '../core/numbering.js';
 import { employeeCodeRef } from './model.js';
 
 /**
@@ -48,7 +48,7 @@ export async function assignEmployeeCode(
   const next = await reserveCodes(tx, {
     kind: 'employee',
     pattern: branchPatterns(branch).employee,
-    values: { BRANCH: branch?.get('code') },
+    values: { BRANCH: (branch?.get('code') as string | undefined) ?? HEAD_OFFICE_CODE },
     base: `orgs/${orgId}/counters`,
     taken: async (codes) => (await Promise.all(codes.map((c) => tx.get(employeeCodeRef(orgId, c))))).filter((d) => d.exists).map((d) => d.id),
   });

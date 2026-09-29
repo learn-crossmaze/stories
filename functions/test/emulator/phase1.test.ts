@@ -244,8 +244,8 @@ describe('book details lookup', () => {
 describe('M1.2 inventory', () => {
   it('creates coded copies with unique barcodes and counts availability', async () => {
     const codes = await acquire(bookId, 3);
-    expect(codes).toEqual(['COPY-000001-01', 'COPY-000001-02', 'COPY-000001-03']);
-    expect(await failure(call(copies.acquire, lib, { orgId: org, branchId: central, bookId, quantity: 1, acquisitionCostMinor: 0, barcodes: ['COPY-000001-02'] }))).toBe('DUPLICATE_BARCODE');
+    expect(codes).toEqual(['BK000001-CP01', 'BK000001-CP02', 'BK000001-CP03']);
+    expect(await failure(call(copies.acquire, lib, { orgId: org, branchId: central, bookId, quantity: 1, acquisitionCostMinor: 0, barcodes: ['BK000001-CP02'] }))).toBe('DUPLICATE_BARCODE');
     const a = await call<{ branches: { branchId: string; available: number; total: number }[] }>(copies.availability, lib, { orgId: org, bookId }, null);
     expect(a.branches).toEqual([{ branchId: central, branchName: 'Central', available: 3, total: 3 }]);
   });
@@ -572,11 +572,14 @@ describe('numbering settings', () => {
   it("numbers copies and members with the branch's own patterns; other branches keep the defaults", async () => {
     await setNumbering(north, { copy: '{BRANCH}-{BOOK}-{SEQ:3}', member: '{BRANCH}{YY}-{SEQ:4}' });
     expect(await acquire(bookId, 2, north)).toEqual(['NTH-000001-001', 'NTH-000001-002']);
-    expect(await acquire(bookId, 1)).toEqual(['COPY-000001-01']);
+    expect(await acquire(bookId, 1)).toEqual(['BK000001-CP01']);
+    // A branch that keeps the earlier default carries on from the title's copy count.
+    await setNumbering(central, { copy: 'COPY-{BOOK}-{SEQ:2}' });
+    expect(await acquire(bookId, 1)).toEqual(['COPY-000001-02']);
     const m = (await call<{ code: string }>(members.register, lib, { orgId: org, homeBranchId: north, fullName: 'Ravi', dob: '1990-05-01', phone: '9811111111' })).code;
     expect(m).toMatch(/^NTH\d{2}-0001$/);
     const c = await call<{ code: string }>(members.register, lib, { orgId: org, homeBranchId: central, fullName: 'Asha', dob: '1990-05-01', phone: '9822222222' });
-    expect(c.code).toBe('MEM-000001');
+    expect(c.code).toBe('CEN-M000001');
   });
 
   it('only branch managers of the org may change numbering, and bad patterns are refused', async () => {
@@ -586,24 +589,24 @@ describe('numbering settings', () => {
   });
 
   it('refuses a pattern that would repeat an existing code', async () => {
-    await register('Asha'); // MEM-000001
-    await setNumbering(central, { member: 'MEM-00000{SEQ}' });
+    await register('Asha'); // CEN-M000001
+    await setNumbering(central, { member: 'CEN-M00000{SEQ}' });
     expect(await failure(register('Ravi'))).toBe('CODE_TAKEN');
   });
 
   it('numbers shelves per branch when the code is left blank', async () => {
-    expect(await shelf(central)).toBe('SH-001');
-    expect(await shelf(central)).toBe('SH-002');
-    expect(await shelf(north)).toBe('SH-001');
+    expect(await shelf(central)).toBe('CEN-SH-001');
+    expect(await shelf(central)).toBe('CEN-SH-002');
+    expect(await shelf(north)).toBe('NTH-SH-001');
     await setNumbering(north, { location: '{BRANCH}-{KIND}{SEQ:2}' });
     expect(await shelf(north)).toBe('NTH-SH01');
-    expect(await failure(shelf(central, 'SH-001'))).toBe('DUPLICATE_LOCATION');
+    expect(await failure(shelf(central, 'CEN-SH-001'))).toBe('DUPLICATE_LOCATION');
   });
 
   it('gives staff a unique employee ID that survives role changes', async () => {
-    expect((await membership(lib)).employeeId).toBe('EMP-0001'); // granted first in setup
+    expect((await membership(lib)).employeeId).toBe('CEN-E0001'); // granted first in setup
     await grant(lib, ['LIBRARIAN', 'DELIVERY_PERSON'], [central]);
-    expect((await membership(lib)).employeeId).toBe('EMP-0001');
+    expect((await membership(lib)).employeeId).toBe('CEN-E0001');
     await setNumbering(north, { employee: '{BRANCH}-E{SEQ:3}' });
     const del = await createUser('del@stories.test');
     await grant(del, ['DELIVERY_PERSON'], [north]);
@@ -621,7 +624,7 @@ describe('numbering settings', () => {
     const next = await newBook('Kidnapped');
     const book = (await db.doc(`books/${next}`).get()).data()!;
     expect(book.code).toMatch(/^B\d{2}-00002$/);
-    expect(await acquire(next, 1)).toEqual(['COPY-000002-01']);
+    expect(await acquire(next, 1)).toEqual(['BK000002-CP01']);
     await call(numbering.setBookNumbering, sa, { book: '' });
     expect((await db.doc(`books/${await newBook('Catriona')}`).get()).get('code')).toBe('BOOK-000003');
   });

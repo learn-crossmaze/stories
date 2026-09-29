@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_PATTERNS, patternProblem, renderCode } from '../../src/core/numbering.js';
+import { DEFAULT_PATTERNS, LEGACY_PATTERNS, patternProblem, renderCode } from '../../src/core/numbering.js';
 
 describe('numbering patterns', () => {
   it('accepts every default pattern', () => {
@@ -9,10 +9,18 @@ describe('numbering patterns', () => {
     }
   });
 
-  it('renders the defaults exactly as codes were numbered before', () => {
+  it('renders the defaults', () => {
     expect(renderCode(DEFAULT_PATTERNS.book, {}, 12)).toBe('BOOK-000012');
-    expect(renderCode(DEFAULT_PATTERNS.copy, { BOOK: '000012' }, 3)).toBe('COPY-000012-03');
-    expect(renderCode(DEFAULT_PATTERNS.member, {}, 7)).toBe('MEM-000007');
+    expect(renderCode(DEFAULT_PATTERNS.copy, { BOOK: '000012' }, 3)).toBe('BK000012-CP03');
+    expect(renderCode(DEFAULT_PATTERNS.member, { BRANCH: 'CEN' }, 7)).toBe('CEN-M000007');
+    expect(renderCode(DEFAULT_PATTERNS.location, { BRANCH: 'CEN', KIND: 'SH' }, 4)).toBe('CEN-SH-004');
+    expect(renderCode(DEFAULT_PATTERNS.employee, { BRANCH: 'HO' }, 12)).toBe('HO-E0012');
+  });
+
+  it('still renders the earlier defaults exactly as codes were numbered before', () => {
+    for (const [kind, pattern] of Object.entries(LEGACY_PATTERNS)) expect(patternProblem(kind as keyof typeof LEGACY_PATTERNS, pattern)).toBeNull();
+    expect(renderCode(LEGACY_PATTERNS.copy, { BOOK: '000012' }, 3)).toBe('COPY-000012-03');
+    expect(renderCode(LEGACY_PATTERNS.member, {}, 7)).toBe('MEM-000007');
   });
 
   it('fills branch, shelf type and date tokens (India date)', () => {

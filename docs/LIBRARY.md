@@ -90,7 +90,7 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 
 ## Members (M1.3)
 
-`orgs/{o}/members/{memberId}` — code `MEM-000001` (branch-configurable), name, date of birth, audience (derived from age: under 13
+`orgs/{o}/members/{memberId}` — code `CEN-M000001` (branch-configurable), name, date of birth, audience (derived from age: under 13
 CHILDREN, 13–17 TEENS, 18+ ADULTS), mobile (E.164), home branch, status (ACTIVE / SUSPENDED / CLOSED) and the
 circulation counters (`activeLoanCount`, `allocatedCount`, `waitingCount`, lifetime loans/exchanges).
 
