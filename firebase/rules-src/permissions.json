@@ -63,6 +63,7 @@
     "employees.bank": ["FIN", "HR"],
     "hr.config": ["HO", "HR", "FO"],
     "documents.verify": ["HR", "FO"],
+    "offers.release": ["HR", "FO", "BM"],
     "attendance.view": ["HO", "HR", "FO", "BM", "FIN"],
     "attendance.finalize": ["HR", "FO"],
     "leave.adjust": ["HR", "FO"],

@@ -25,6 +25,7 @@ import { DashboardPage } from './dashboard/Dashboard';
 import { DepartmentsPage } from './organization/Departments';
 import { AttendancePage } from './people/Attendance';
 import { DocumentsPage } from './people/Documents';
+import { OfferLettersPage } from './people/OfferLetters';
 import { LeavePage } from './people/Leave';
 import { MyAttendancePage } from './people/MyAttendance';
 import { MyLeavePage } from './people/MyLeave';
@@ -70,6 +71,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminDeposits, guard(paths.adminDeposits, <DepositApprovalsPage />)],
         [paths.opsAttendance, guard(paths.opsAttendance, <AttendancePage />)],
         [paths.opsLeave, guard(paths.opsLeave, <LeavePage />)],
+        [paths.opsOffers, guard(paths.opsOffers, <OfferLettersPage />)],
       ];
     case 'staff':
       return [
@@ -97,6 +99,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminPeople, guard(paths.adminPeople, <PeoplePage />)],
         [paths.adminEmployee(':employeeId'), guard(paths.adminPeople, <EmployeeProfilePage />)],
         [paths.adminDocuments, guard(paths.adminDocuments, <DocumentsPage />)],
+        [paths.adminOffers, guard(paths.adminOffers, <OfferLettersPage />)],
         [paths.adminAttendance, guard(paths.adminAttendance, <AttendancePage />)],
         [paths.adminLeave, guard(paths.adminLeave, <LeavePage />)],
         [paths.adminPayroll, guard(paths.adminPayroll, <PayrollPage />)],

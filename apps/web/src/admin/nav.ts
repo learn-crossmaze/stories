@@ -79,6 +79,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
       items: [
         { to: paths.opsAttendance, label: ht.navAttendanceShort, icon: 'clock', requires: 'attendance.manage', page: 'attendance.view' },
         { to: paths.opsLeave, label: ht.navLeaveRequests, icon: 'calendar', requires: 'leave.approve', page: 'attendance.view' },
+        { to: paths.opsOffers, label: ht.navOffers, icon: 'folder', requires: 'offers.release' },
       ],
     },
   ],
@@ -104,6 +105,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminPeopleOverview, label: ht.navOverview, icon: 'insights', requires: 'employees.view' },
         { to: paths.adminPeople, label: ht.navEmployees, icon: 'badge', requires: 'employees.view' },
         { to: paths.adminDocuments, label: ht.navDocuments, icon: 'folder', requires: 'documents.verify' },
+        { to: paths.adminOffers, label: ht.navOffers, icon: 'folder', requires: 'offers.release' },
       ],
     },
     {

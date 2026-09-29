@@ -3,6 +3,7 @@ import * as attendance from './attendance.js';
 import * as documents from './documents.js';
 import * as employees from './employees.js';
 import * as leave from './leave.js';
+import * as offers from './offers.js';
 import * as payroll from './payroll.js';
 import * as schedule from './schedule.js';
 import * as settings from './settings.js';
@@ -27,6 +28,10 @@ export const routes = {
   'documents-open': documents.open,
   'documentTypes-save': documents.saveType,
   'documentTypes-archive': documents.archiveType,
+  'offers-preview': offers.preview,
+  'offers-release': offers.release,
+  'offers-withdraw': offers.withdraw,
+  'offers-open': offers.open,
   'shifts-save': schedule.saveShift,
   'shifts-archive': schedule.archiveShift,
   'holidays-save': schedule.saveHoliday,
