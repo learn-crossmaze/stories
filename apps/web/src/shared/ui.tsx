@@ -103,7 +103,7 @@ export function TableWrap({ label, children }: { label?: string; children: React
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
-    const check = () => setScrolls(el.scrollWidth > el.clientWidth + 1);
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth);
     const observer = new ResizeObserver(check);
     observer.observe(el);
     if (el.firstElementChild) observer.observe(el.firstElementChild);
