@@ -1,8 +1,8 @@
 import { NavLink, Outlet } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
-import { isStaff } from '../auth/claims';
-import { paths } from '../paths';
+import { homeViewFor, isStaff } from '../auth/claims';
+import { paths, viewHome } from '../paths';
 import { Icon, type IconName } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
@@ -38,7 +38,7 @@ export function MemberShell() {
           </NavLink>
         ))}
         {isStaff(claims) && (
-          <NavLink to={paths.admin} className="nav-item nav-item-staff">
+          <NavLink to={viewHome[homeViewFor(claims)]} className="nav-item nav-item-staff">
             <Icon name="console" />
             <span>{t.staffConsole}</span>
           </NavLink>

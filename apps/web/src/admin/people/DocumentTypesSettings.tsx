@@ -95,7 +95,7 @@ export function DocumentTypesSection({ orgId, checklist }: { orgId: string; chec
   return (
     <section className="section" aria-labelledby="doc-types">
       <div className="page-header-row">
-        <h2 id="doc-types">{ht.documentTypes}</h2>
+        <h2 className="sr-only" id="doc-types">{ht.documentTypes}</h2>
         <button type="button" className="btn btn-outlined" onClick={() => setEditing('new')}>
           <Icon name="plus" /> {ht.documentTypeNew}
         </button>

@@ -38,9 +38,9 @@ export function notify(writer: Transaction | WriteBatch, uid: string | null | un
 
 /** Web paths notifications point to. */
 export const LINKS = {
-  me: '/admin/me',
-  myLeave: '/admin/my-leave',
-  myAttendance: '/admin/my-attendance',
-  myPayslips: '/admin/my-payslips',
+  me: '/me',
+  myLeave: '/me/leave',
+  myAttendance: '/me/attendance',
+  myPayslips: '/me/payslips',
   payroll: '/admin/payroll',
 };

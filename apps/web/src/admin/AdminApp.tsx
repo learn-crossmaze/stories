@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
-import { Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useLocation } from 'react-router';
 
+import type { ViewId } from '../auth/claims';
 import { AdminShell } from './AdminShell';
 import { NoAccess, Require } from './guards';
-import { navItemFor, type Requirement } from './nav';
-import { paths } from '../paths';
+import { MOVED, movedTo, navItemFor, type Requirement } from './nav';
+import { paths, viewHome } from '../paths';
 import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
 import { AuditPage } from './organization/Audit';
@@ -28,10 +29,11 @@ import { MyAttendancePage } from './people/MyAttendance';
 import { MyLeavePage } from './people/MyLeave';
 import { MyPayslipsPage } from './people/MyPayslips';
 import { MyProfilePage } from './people/MyProfile';
-import { PeopleOverviewPage } from './people/PeopleOverview';
 import { PayrollPage } from './people/Payroll';
+import { PeopleOverviewPage } from './people/PeopleOverview';
 import { EmployeeProfilePage } from './people/EmployeeProfile';
-import { HrSettingsPage } from './people/HrSettings';
+import { JobSettingsPage } from './people/HrSettings';
+import { DocumentTypesSettingsPage, LeaveTypesSettingsPage, PayrollSettingsPage, ScheduleSettingsPage } from './people/SettingsPages';
 import { PeoplePage } from './people/People';
 import { OrganizationsPage } from './organization/Organizations';
 import { StaffPage } from './organization/Staff';
@@ -42,58 +44,88 @@ function guard(path: string, page: ReactNode, requires?: Requirement) {
   return <Require requires={requires ?? item?.page ?? item?.requires ?? null}>{page}</Require>;
 }
 
-const sub = (path: string) => path.slice(paths.admin.length + 1);
+function Moved() {
+  const { pathname, search } = useLocation();
+  return <Navigate to={movedTo(pathname, search) ?? paths.admin} replace />;
+}
+
+/** Routes of one view, relative to its base (e.g. '/ops/desk' → 'desk'). */
+function viewRoutes(view: ViewId): [string, ReactNode][] {
+  switch (view) {
+    case 'ops':
+      return [
+        [paths.adminDesk, guard(paths.adminDesk, <DeskPage />)],
+        [paths.adminBooks, guard(paths.adminBooks, <CataloguePage />)],
+        [paths.adminBook(':bookId'), guard(paths.adminBooks, <BookDetailPage />)],
+        [paths.adminInventory, guard(paths.adminInventory, <InventoryPage />)],
+        [paths.adminCopy(':copyId'), guard(paths.adminInventory, <CopyDetailPage />)],
+        [paths.adminLabels, guard(paths.adminInventory, <LabelsPage />)],
+        [paths.adminReservations, guard(paths.adminReservations, <ReservationsPage />)],
+        [paths.adminTransfers, guard(paths.adminTransfers, <TransfersPage />)],
+        [paths.adminMembers, guard(paths.adminMembers, <MembersPage />)],
+        [paths.adminMember(':memberId'), guard(paths.adminMembers, <MemberDetailPage />)],
+        [paths.adminPlans, guard(paths.adminPlans, <PlansPage />)],
+        [paths.adminDeposits, guard(paths.adminDeposits, <DepositApprovalsPage />)],
+        [paths.opsAttendance, guard(paths.opsAttendance, <AttendancePage />)],
+        [paths.opsLeave, guard(paths.opsLeave, <LeavePage />)],
+      ];
+    case 'staff':
+      return [
+        [paths.adminMyAttendance, <MyAttendancePage />],
+        [paths.adminMyLeave, <MyLeavePage />],
+        [paths.adminMyPayslips, <MyPayslipsPage />],
+        [
+          paths.adminAppearance,
+          <>
+            <header className="page-header">
+              <h1>{t.navAppearance}</h1>
+              <p className="muted">{t.apIntro}</p>
+            </header>
+            <AppearanceSettings />
+          </>,
+        ],
+      ];
+    case 'admin':
+      return [
+        [paths.adminOrgs, guard(paths.adminOrgs, <OrganizationsPage />)],
+        [paths.adminBranches, guard(paths.adminBranches, <BranchesPage />)],
+        [paths.adminDepartments, guard(paths.adminDepartments, <DepartmentsPage />)],
+        [paths.adminStaff, guard(paths.adminStaff, <StaffPage />)],
+        [paths.adminPeopleOverview, guard(paths.adminPeopleOverview, <PeopleOverviewPage />)],
+        [paths.adminPeople, guard(paths.adminPeople, <PeoplePage />)],
+        [paths.adminEmployee(':employeeId'), guard(paths.adminPeople, <EmployeeProfilePage />)],
+        [paths.adminDocuments, guard(paths.adminDocuments, <DocumentsPage />)],
+        [paths.adminAttendance, guard(paths.adminAttendance, <AttendancePage />)],
+        [paths.adminLeave, guard(paths.adminLeave, <LeavePage />)],
+        [paths.adminPayroll, guard(paths.adminPayroll, <PayrollPage />)],
+        [paths.adminHrSettings, guard(paths.adminHrSettings, <JobSettingsPage />)],
+        [paths.adminSettingsSchedule, guard(paths.adminSettingsSchedule, <ScheduleSettingsPage />)],
+        [paths.adminSettingsLeave, guard(paths.adminSettingsLeave, <LeaveTypesSettingsPage />)],
+        [paths.adminSettingsDocuments, guard(paths.adminSettingsDocuments, <DocumentTypesSettingsPage />)],
+        [paths.adminSettingsPayroll, guard(paths.adminSettingsPayroll, <PayrollSettingsPage />)],
+        [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
+      ];
+  }
+}
+
+const HOME: Record<ViewId, ReactNode> = { admin: <DashboardPage />, ops: <DashboardPage />, staff: <MyProfilePage /> };
 
 /**
- * Staff console (lazy-loaded chunk). Each page is guarded by the rule of its
- * menu item (nav.ts); the server enforces the real permission regardless.
+ * Staff console (lazy-loaded chunk), mounted once per view at its base
+ * (/admin, /ops, /me). Each page is guarded by the rule of its menu item
+ * (nav.ts); the server enforces the real permission regardless.
  */
-export default function AdminApp() {
+export default function AdminApp({ view }: { view: ViewId }) {
+  const base = viewHome[view];
+  const rel = (path: string) => path.slice(base.length + 1);
   return (
     <Routes>
-      <Route element={<AdminShell />}>
-        <Route index element={<DashboardPage />} />
-        <Route path={sub(paths.adminOrgs)} element={guard(paths.adminOrgs, <OrganizationsPage />)} />
-        <Route path={sub(paths.adminBranches)} element={guard(paths.adminBranches, <BranchesPage />)} />
-        <Route path={sub(paths.adminDepartments)} element={guard(paths.adminDepartments, <DepartmentsPage />)} />
-        <Route path={sub(paths.adminStaff)} element={guard(paths.adminStaff, <StaffPage />)} />
-        <Route path={sub(paths.adminPeopleOverview)} element={guard(paths.adminPeopleOverview, <PeopleOverviewPage />)} />
-        <Route path={sub(paths.adminPeople)} element={guard(paths.adminPeople, <PeoplePage />)} />
-        <Route path={sub(paths.adminMe)} element={<MyProfilePage />} />
-        <Route path={sub(paths.adminEmployee(':employeeId'))} element={guard(paths.adminPeople, <EmployeeProfilePage />)} />
-        <Route path={sub(paths.adminAttendance)} element={guard(paths.adminAttendance, <AttendancePage />)} />
-        <Route path={sub(paths.adminMyAttendance)} element={<MyAttendancePage />} />
-        <Route path={sub(paths.adminLeave)} element={guard(paths.adminLeave, <LeavePage />)} />
-        <Route path={sub(paths.adminMyLeave)} element={<MyLeavePage />} />
-        <Route path={sub(paths.adminPayroll)} element={guard(paths.adminPayroll, <PayrollPage />)} />
-        <Route path={sub(paths.adminMyPayslips)} element={<MyPayslipsPage />} />
-        <Route path={sub(paths.adminDocuments)} element={guard(paths.adminDocuments, <DocumentsPage />)} />
-        <Route path={sub(paths.adminHrSettings)} element={guard(paths.adminHrSettings, <HrSettingsPage />)} />
-        <Route path={sub(paths.adminAudit)} element={guard(paths.adminAudit, <AuditPage />)} />
-        <Route path={sub(paths.adminDesk)} element={guard(paths.adminDesk, <DeskPage />)} />
-        <Route path={sub(paths.adminBooks)} element={guard(paths.adminBooks, <CataloguePage />)} />
-        <Route path={sub(paths.adminBook(':bookId'))} element={guard(paths.adminBooks, <BookDetailPage />)} />
-        <Route path={sub(paths.adminInventory)} element={guard(paths.adminInventory, <InventoryPage />)} />
-        <Route path={sub(paths.adminCopy(':copyId'))} element={guard(paths.adminInventory, <CopyDetailPage />)} />
-        <Route path={sub(paths.adminLabels)} element={guard(paths.adminInventory, <LabelsPage />)} />
-        <Route path={sub(paths.adminReservations)} element={guard(paths.adminReservations, <ReservationsPage />)} />
-        <Route path={sub(paths.adminTransfers)} element={guard(paths.adminTransfers, <TransfersPage />)} />
-        <Route path={sub(paths.adminMembers)} element={guard(paths.adminMembers, <MembersPage />)} />
-        <Route path={sub(paths.adminMember(':memberId'))} element={guard(paths.adminMembers, <MemberDetailPage />)} />
-        <Route path={sub(paths.adminPlans)} element={guard(paths.adminPlans, <PlansPage />)} />
-        <Route path={sub(paths.adminDeposits)} element={guard(paths.adminDeposits, <DepositApprovalsPage />)} />
-        <Route
-          path={sub(paths.adminAppearance)}
-          element={
-            <>
-              <header className="page-header">
-                <h1>{t.navAppearance}</h1>
-                <p className="muted">{t.apIntro}</p>
-              </header>
-              <AppearanceSettings />
-            </>
-          }
-        />
+      <Route element={<AdminShell view={view} />}>
+        <Route index element={HOME[view]} />
+        {viewRoutes(view).map(([path, element]) => (
+          <Route key={path} path={rel(path)} element={element} />
+        ))}
+        {view === 'admin' && MOVED.map(([from]) => <Route key={from} path={`${rel(from)}/*`} element={<Moved />} />)}
         <Route path="*" element={<NoAccess />} />
       </Route>
     </Routes>

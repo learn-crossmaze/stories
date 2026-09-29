@@ -2,14 +2,15 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
-import { rolesIn } from '../auth/claims';
+import { rolesIn, type ViewId } from '../auth/claims';
 import { ROLES } from '../generated/rbac';
-import { paths } from '../paths';
+import { paths, viewHome } from '../paths';
 import { Icon } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
-import { navSections, visibleNav } from './nav';
+import { availableViews, groupFor, isGroup, type NavEntry, VIEW_ICONS, visibleMenu } from './nav';
+import { ViewContext } from './view';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 
@@ -137,7 +138,101 @@ function AccountMenu() {
   );
 }
 
-function Shell() {
+const OPEN_KEY = 'stories.menu.open';
+
+function readOpen(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(OPEN_KEY) ?? '{}') as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+/** A view's menu: single pages, and groups that open and close (remembered on this device). */
+function SideMenu({ entries }: { entries: NavEntry[] }) {
+  const { pathname } = useLocation();
+  const [open, setOpen] = useState<Record<string, boolean>>(readOpen);
+  const current = groupFor(entries, pathname)?.id;
+  // Arriving on a page opens its group.
+  useEffect(() => {
+    if (current) setOpen((o) => (o[current] ? o : { ...o, [current]: true }));
+  }, [current]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify(open));
+    } catch {
+      // Private mode: the menu just doesn't remember.
+    }
+  }, [open]);
+
+  return (
+    <ul className="admin-nav-list">
+      {entries.map((e) => {
+        if (!isGroup(e)) {
+          return (
+            <li key={e.to}>
+              <NavLink to={e.to} end={!!e.home} className="admin-nav-item">
+                <Icon name={e.icon} />
+                <span>{e.label}</span>
+              </NavLink>
+            </li>
+          );
+        }
+        const isOpen = !!open[e.id];
+        const listId = `menu-${e.id}`;
+        return (
+          <li key={e.id}>
+            <button
+              type="button"
+              className={`admin-nav-item nav-group-toggle${e.id === current ? ' has-active' : ''}`}
+              aria-expanded={isOpen}
+              aria-controls={listId}
+              onClick={() => setOpen((o) => ({ ...o, [e.id]: !isOpen }))}
+            >
+              <Icon name={e.icon} />
+              <span>{e.label}</span>
+              <span className="nav-caret" aria-hidden="true">
+                <Icon name="expand" />
+              </span>
+            </button>
+            <ul id={listId} className="nav-sub" hidden={!isOpen}>
+              {e.items.map((i) => (
+                <li key={i.to}>
+                  <NavLink to={i.to} className="admin-nav-item nav-sub-item">
+                    <span>{i.label}</span>
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Switches between the views this person can use, and the member app. */
+function ViewSwitcher({ view }: { view: ViewId }) {
+  const { claims } = useAuth();
+  const { org } = useWorkspace();
+  const views = availableViews(claims, org?.id ?? null);
+  return (
+    <nav className="view-switch" aria-label={t.views}>
+      {views.map((v) => (
+        <Link key={v} to={viewHome[v]} className={v === view ? 'view-pill active' : 'view-pill'} aria-current={v === view ? 'true' : undefined}>
+          <Icon name={VIEW_ICONS[v]} />
+          <span>{t.viewNames[v]}</span>
+        </Link>
+      ))}
+      <Link to={paths.home} className="view-pill">
+        <Icon name={VIEW_ICONS.member} />
+        <span>{t.viewNames.member}</span>
+      </Link>
+    </nav>
+  );
+}
+
+function Shell({ view }: { view: ViewId }) {
   const { claims } = useAuth();
   const { org } = useWorkspace();
   const { pathname } = useLocation();
@@ -150,7 +245,7 @@ function Shell() {
   useEffect(() => setMenuOpen(false), [pathname]);
   useEffect(() => {
     if (!menuOpen) return;
-    drawer.current?.querySelector<HTMLElement>('a')?.focus();
+    drawer.current?.querySelector<HTMLElement>('a, button')?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setMenuOpen(false);
@@ -161,74 +256,64 @@ function Shell() {
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
-  const sections = navSections(visibleNav(claims, org?.id ?? null));
+  const entries = visibleMenu(claims, org?.id ?? null, view);
+  const home = viewHome[view];
   return (
-    <div className={`admin${menuOpen ? ' admin-menu-open' : ''}`}>
-      <a className="skip-link" href={`#${MAIN_ID}`}>
-        {t.skipToContent}
-      </a>
-      <aside className="admin-nav" id="admin-menu" ref={drawer} aria-label={t.staffConsole}>
-        <div className="admin-nav-top">
-          <Link to={paths.admin} className="admin-brand">
-            <Icon name="book" />
-            <span>{t.appTitle}</span>
-          </Link>
-          <button type="button" className="btn btn-text btn-icon admin-menu-close" onClick={() => setMenuOpen(false)} aria-label={t.closeMenu}>
-            <Icon name="close" />
-          </button>
+    <ViewContext.Provider value={view}>
+      <div className={`admin${menuOpen ? ' admin-menu-open' : ''}`}>
+        <a className="skip-link" href={`#${MAIN_ID}`}>
+          {t.skipToContent}
+        </a>
+        <aside className="admin-nav" id="admin-menu" ref={drawer} aria-label={t.staffConsole}>
+          <div className="admin-nav-top">
+            <Link to={home} className="admin-brand">
+              <Icon name="book" />
+              <span>{t.appTitle}</span>
+            </Link>
+            <button type="button" className="btn btn-text btn-icon admin-menu-close" onClick={() => setMenuOpen(false)} aria-label={t.closeMenu}>
+              <Icon name="close" />
+            </button>
+          </div>
+          <ViewSwitcher view={view} />
+          <nav aria-label={`${t.mainMenu}: ${t.viewNames[view]}`}>
+            <SideMenu entries={entries} />
+          </nav>
+        </aside>
+        <div className="admin-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+        <div className="admin-body">
+          <header className="admin-header">
+            <button
+              ref={menuButton}
+              type="button"
+              className="btn btn-text btn-icon admin-menu-button"
+              aria-expanded={menuOpen}
+              aria-controls="admin-menu"
+              aria-label={t.openMenu}
+              onClick={() => setMenuOpen(true)}
+            >
+              <Icon name="menu" />
+            </button>
+            <Link to={home} className="admin-brand admin-brand-compact">
+              <Icon name="book" />
+              <span>{t.appTitle}</span>
+            </Link>
+            <WorkspaceBar />
+            <NotificationBell />
+            <AccountMenu />
+          </header>
+          <main className="admin-main" id={MAIN_ID} tabIndex={-1}>
+            <Outlet />
+          </main>
         </div>
-        <nav aria-label={t.mainMenu}>
-          {sections.map(({ section, items }) => (
-            <div key={section ?? 'top'} className="admin-nav-group" role={section ? 'group' : undefined} aria-label={section ?? undefined}>
-              {section && (
-                <span className="admin-nav-section" aria-hidden="true">
-                  {section}
-                </span>
-              )}
-              {items.map((item) => (
-                <NavLink key={item.to} to={item.to} end={item.to === paths.admin} className="admin-nav-item">
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-      </aside>
-      <div className="admin-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
-      <div className="admin-body">
-        <header className="admin-header">
-          <button
-            ref={menuButton}
-            type="button"
-            className="btn btn-text btn-icon admin-menu-button"
-            aria-expanded={menuOpen}
-            aria-controls="admin-menu"
-            aria-label={t.openMenu}
-            onClick={() => setMenuOpen(true)}
-          >
-            <Icon name="menu" />
-          </button>
-          <Link to={paths.admin} className="admin-brand admin-brand-compact">
-            <Icon name="book" />
-            <span>{t.appTitle}</span>
-          </Link>
-          <WorkspaceBar />
-          <NotificationBell />
-          <AccountMenu />
-        </header>
-        <main className="admin-main" id={MAIN_ID} tabIndex={-1}>
-          <Outlet />
-        </main>
       </div>
-    </div>
+    </ViewContext.Provider>
   );
 }
 
-export function AdminShell() {
+export function AdminShell({ view }: { view: ViewId }) {
   return (
     <WorkspaceProvider>
-      <Shell />
+      <Shell view={view} />
     </WorkspaceProvider>
   );
 }

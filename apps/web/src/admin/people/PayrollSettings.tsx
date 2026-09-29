@@ -104,7 +104,7 @@ export function PayrollSettingsSection({ orgId }: { orgId: string }) {
   return (
     <section className="section" aria-labelledby="payroll-settings">
       <div className="page-header-row">
-        <h2 id="payroll-settings">{ht.payrollSettings}</h2>
+        <h2 className="sr-only" id="payroll-settings">{ht.payrollSettings}</h2>
         <button type="button" className="btn btn-outlined" onClick={() => setEditing(true)}>
           <Icon name="plus" /> {ht.settingsNew}
         </button>

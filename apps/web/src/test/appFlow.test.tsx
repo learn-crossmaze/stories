@@ -82,9 +82,9 @@ describe('app flow', () => {
     expect(router.state.location.pathname).toBe('/');
   });
 
-  it('shows staff the console link in the member menu', async () => {
+  it('links staff from the member menu to the view they work in', async () => {
     const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
     renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/profile');
-    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', '/admin');
+    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', '/ops');
   });
 });

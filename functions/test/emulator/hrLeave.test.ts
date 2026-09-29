@@ -102,7 +102,7 @@ describe('leave requests', () => {
     await call(leave.decide, bm, { orgId: org, leaveId, decision: 'APPROVE' });
     expect(await kinds(worker)).toEqual(['leave.approved']);
     const notice = (await db.collection(`users/${worker.uid}/notifications`).get()).docs[0].data();
-    expect(notice).toMatchObject({ orgId: org, read: false, link: '/admin/my-leave', title: `Casual leave ${f1} – ${f3} approved` });
+    expect(notice).toMatchObject({ orgId: org, read: false, link: '/me/leave', title: `Casual leave ${f1} – ${f3} approved` });
     expect((await balance(futureYear)).types.casual).toMatchObject({ pending: 0, used: 3 });
     expect(await rec(f2)).toMatchObject({ status: 'ON_LEAVE', payable: 1, leave: { typeId: 'casual', paid: true, half: false } });
     expect(await failure(call(leave.decide, hr, { orgId: org, leaveId, decision: 'APPROVE' }))).toBe('NOT_PENDING');
