@@ -35,7 +35,7 @@ import { PayrollPage } from './people/Payroll';
 import { PeopleOverviewPage } from './people/PeopleOverview';
 import { EmployeeProfilePage } from './people/EmployeeProfile';
 import { JobSettingsPage } from './people/HrSettings';
-import { DocumentTypesSettingsPage, LeaveTypesSettingsPage, PayrollSettingsPage, ScheduleSettingsPage } from './people/SettingsPages';
+import { DocumentTypesSettingsPage, LeaveTypesSettingsPage, LetterTemplatesSettingsPage, PayrollSettingsPage, ScheduleSettingsPage } from './people/SettingsPages';
 import { PeoplePage } from './people/People';
 import { OrganizationsPage } from './organization/Organizations';
 import { StaffPage } from './organization/Staff';
@@ -107,6 +107,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminSettingsSchedule, guard(paths.adminSettingsSchedule, <ScheduleSettingsPage />)],
         [paths.adminSettingsLeave, guard(paths.adminSettingsLeave, <LeaveTypesSettingsPage />)],
         [paths.adminSettingsDocuments, guard(paths.adminSettingsDocuments, <DocumentTypesSettingsPage />)],
+        [paths.adminSettingsLetters, guard(paths.adminSettingsLetters, <LetterTemplatesSettingsPage />)],
         [paths.adminSettingsPayroll, guard(paths.adminSettingsPayroll, <PayrollSettingsPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
       ];

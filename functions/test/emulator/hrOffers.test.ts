@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { bucket } from '../../src/catalogue/covers.js';
 import { db } from '../../src/core/firebase.js';
 import * as docs from '../../src/hr/documents.js';
+import * as emp from '../../src/hr/employees.js';
+import * as templates from '../../src/hr/letterTemplates.js';
 import * as offers from '../../src/hr/offers.js';
 import * as branches from '../../src/organization/branches.js';
 import * as orgs from '../../src/organization/orgs.js';
@@ -119,5 +121,71 @@ describe('offer letters', () => {
     expect(await failure(release(hr, workerId, { annualCtc: 0 }))).toBe('INVALID_INPUT');
     await db.doc(`orgs/${org}/employees/${workerId}`).update({ status: 'OFFBOARDED' });
     expect(await failure(release(hr, workerId))).toBe('NOT_OFFERABLE');
+  });
+});
+
+describe('letter templates', () => {
+  const save = (by: TestUser, fields: Record<string, unknown>) =>
+    call<{ templateId: string }>(templates.save, by, { orgId: org, kind: 'OFFER', branchId: null, name: 'Offer letter', subject: 'Offer of employment', body: 'Dear {{firstName}}, welcome to {{org}} as {{designation}}.', acceptance: true, ...fields });
+  const publish = (templateId: string) => call(templates.publish, hr, { orgId: org, templateId });
+  const offerSubject = async (offerId: string) => (await db.doc(`orgs/${org}/offerLetters/${offerId}`).get()).get('subject');
+
+  it('drafts do nothing until published; a branch template beats the organization one, which beats the built-in', async () => {
+    const workerId = await recordOf(worker);
+    const northie = (await call<{ employeeId: string }>(emp.create, hr, { orgId: org, fullName: 'Nita North', branchId: north })).employeeId;
+    expect(await failure(save(bm, {}))).toBe('FORBIDDEN');
+    expect(await failure(save(hr, { body: 'Dear {{nme}}, welcome to the team today.' }))).toBe('INVALID_INPUT');
+
+    const branchDraft = await save(hr, { branchId: central, name: 'Central offer', subject: 'Welcome to Central, {{firstName}}' });
+    expect(await offerSubject((await release(hr, workerId)).offerId)).toBe('Offer of employment'); // still built-in
+    await publish(branchDraft.templateId);
+    expect(await offerSubject((await release(hr, workerId)).offerId)).toMatch(/^Welcome to Central, /);
+    expect(await offerSubject((await release(hr, northie)).offerId)).toBe('Offer of employment');
+    const orgWide = await save(hr, { subject: 'Joining {{org}}' });
+    await publish(orgWide.templateId);
+    expect(await offerSubject((await release(hr, northie)).offerId)).toBe('Joining Stories Corporate');
+    expect(await offerSubject((await release(hr, workerId)).offerId)).toMatch(/^Welcome to Central, /);
+
+    // A newer branch template replaces the old one.
+    const newer = await save(hr, { branchId: central, subject: 'Central, take two' });
+    await publish(newer.templateId);
+    expect((await db.doc(`orgs/${org}/letterTemplates/${branchDraft.templateId}`).get()).get('status')).toBe('ARCHIVED');
+    expect(await offerSubject((await release(hr, workerId)).offerId)).toBe('Central, take two');
+  });
+
+  it('issues appointment and custom letters into the employee documents', async () => {
+    const workerId = await recordOf(worker);
+    await db.doc(`orgs/${org}/employees/${workerId}`).update({ joiningDate: inDays(-30), designationName: 'Library Assistant' });
+    // Built-in appointment letter; salary is optional there.
+    const appt = await call<{ offerId: string; documentId: string; number: string }>(offers.issueLetter, bm, { orgId: org, employeeId: workerId, kind: 'APPOINTMENT' });
+    expect(appt.number).toMatch(/^AL\//);
+    const apptDoc = (await db.doc(`orgs/${org}/employees/${workerId}/documents/${appt.documentId}`).get()).data()!;
+    expect(apptDoc).toMatchObject({ typeId: 'appointment-letter', typeName: 'Appointment letter', status: 'VERIFIED' });
+
+    // A custom experience letter needs the last working day.
+    const exp = await save(hr, { kind: 'CUSTOM', name: 'Experience letter', subject: 'Experience certificate', body: 'This is to certify that {{name}} worked with us as {{designation}} from {{joiningDate}} to {{exitDate}}.', acceptance: false });
+    expect(await failure(call(offers.issueLetter, hr, { orgId: org, employeeId: workerId, kind: 'CUSTOM', templateId: exp.templateId }))).toBe('NOT_FOUND'); // still a draft
+    await publish(exp.templateId);
+    expect(await failure(call(offers.issueLetter, hr, { orgId: org, employeeId: workerId, kind: 'CUSTOM', templateId: exp.templateId }))).toBe('INVALID_INPUT');
+    await db.doc(`orgs/${org}/employees/${workerId}`).update({ exitDate: inDays(10) });
+    const letter = await call<{ offerId: string; documentId: string }>(offers.issueLetter, hr, { orgId: org, employeeId: workerId, kind: 'CUSTOM', templateId: exp.templateId });
+    const doc = (await db.doc(`orgs/${org}/employees/${workerId}/documents/${letter.documentId}`).get()).data()!;
+    expect(doc).toMatchObject({ typeId: `letter-${exp.templateId}`, typeName: 'Experience letter', status: 'VERIFIED', employeeUid: worker.uid });
+    expect((await db.doc(`orgs/${org}/offerLetters/${letter.offerId}`).get()).data()).toMatchObject({ kind: 'CUSTOM', templateName: 'Experience letter', status: 'RELEASED' });
+    await call(offers.open, worker, { orgId: org, offerId: letter.offerId }, null);
+    await call(offers.withdraw, hr, { orgId: org, offerId: letter.offerId, reason: 'Issued too early' });
+
+    // Branch-only custom templates stay at their branch; nobody issues letters to themselves.
+    const northOnly = await save(hr, { kind: 'CUSTOM', branchId: north, name: 'North notice', subject: 'Notice', body: 'Dear {{firstName}}, a note from the North branch.' });
+    await publish(northOnly.templateId);
+    expect(await failure(call(offers.issueLetter, hr, { orgId: org, employeeId: workerId, kind: 'CUSTOM', templateId: northOnly.templateId }))).toBe('INVALID_INPUT');
+    expect(await failure(call(offers.issueLetter, bm, { orgId: org, employeeId: await recordOf(bm), kind: 'APPOINTMENT' }))).toBe('FORBIDDEN');
+    expect(await failure(call(offers.issueLetter, lib, { orgId: org, employeeId: workerId, kind: 'APPOINTMENT' }))).toBe('FORBIDDEN');
+  });
+
+  it('previews a template being edited with sample values', async () => {
+    const res = await call<{ content: string }>(templates.preview, hr, { orgId: org, branchId: central, name: 'Draft', subject: 'Hello {{firstName}}', body: 'Dear {{name}}, you join on {{joiningDate}}.\n* Salary: {{ctc}}', acceptance: true }, null);
+    expect(Buffer.from(res.content, 'base64').subarray(0, 5).toString()).toBe('%PDF-');
+    expect(await failure(call(templates.preview, bm, { orgId: org, name: 'Draft', subject: 'Hello', body: 'Dear {{name}}, hello there.' }, null))).toBe('FORBIDDEN');
   });
 });

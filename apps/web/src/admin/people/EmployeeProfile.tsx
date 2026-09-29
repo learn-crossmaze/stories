@@ -100,7 +100,7 @@ export function EmployeeProfilePage() {
           { value: 'overview' as const, label: ht.tabOverview },
           ...(canPrivate || e.uid === user?.uid ? [{ value: 'personal' as const, label: ht.tabPersonal }] : []),
           ...(canManageDocs || self ? [{ value: 'documents' as const, label: ht.tabDocuments }] : []),
-          ...(perm('offers.release') ? [{ value: 'offers' as const, label: ht.tabOffers }] : []),
+          ...(perm('offers.release') || perm('letters.issue') ? [{ value: 'offers' as const, label: ht.tabOffers }] : []),
           ...(canViewAttendance || self ? [{ value: 'attendance' as const, label: ht.tabAttendance }] : []),
           ...(canViewAttendance || self ? [{ value: 'leave' as const, label: ht.tabLeave }] : []),
           ...(perm('salary.view') || self ? [{ value: 'salary' as const, label: ht.tabSalary }] : []),

@@ -54,18 +54,18 @@ describe('navigation', () => {
   });
 
   it('shows each role only what it may use, view by view', () => {
-    expect(labels(claims({}, true), 'admin')).toHaveLength(18);
+    expect(labels(claims({}, true), 'admin')).toHaveLength(19);
     expect(labels(hr, 'admin')).toEqual([
-      'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Offer letters', 'Attendance', 'Leave', 'Payroll',
-      'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Payroll settings', 'Audit log',
+      'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Letters', 'Attendance', 'Leave', 'Payroll',
+      'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Letter templates', 'Payroll settings', 'Audit log',
     ]);
     expect(labels(lib, 'ops')).toEqual(['Today', 'Circulation desk', 'Reservations', 'Transfers', 'Catalogue', 'Inventory', 'Members']);
     expect(labels(fin, 'ops')).toEqual(['Today', 'Catalogue', 'Inventory', 'Members', 'Deposit approvals']);
     expect(labels(fin, 'admin')).toEqual(['Dashboard', 'Payroll', 'Audit log']);
     expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }), 'ops')).toEqual(['Today', 'Catalogue', 'Inventory']);
     expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }), 'admin')).toEqual(['Dashboard']);
-    expect(labels(bm, 'ops')).toEqual(expect.arrayContaining(['Attendance', 'Leave requests', 'Offer letters']));
-    expect(labels(lib, 'admin')).not.toContain('Offer letters');
+    expect(labels(bm, 'ops')).toEqual(expect.arrayContaining(['Attendance', 'Leave requests', 'Letters']));
+    expect(labels(lib, 'admin')).not.toContain('Letters');
     // Branch managers run their branch: its staff and branch lists, but not HR settings.
     expect(labels(bm, 'admin')).toEqual(expect.arrayContaining(['Branches', 'Departments', 'Employees']));
     expect(labels(bm, 'admin')).not.toContain('Job titles & checklists');

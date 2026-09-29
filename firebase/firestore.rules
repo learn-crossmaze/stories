@@ -56,6 +56,7 @@ service cloud.firestore {
         'hr.config': ['HO', 'HR', 'FO'],
         'documents.verify': ['HR', 'FO'],
         'offers.release': ['HR', 'FO', 'BM'],
+        'letters.issue': ['HR', 'FO', 'BM'],
         'attendance.view': ['HO', 'HR', 'FO', 'BM', 'FIN'],
         'attendance.finalize': ['HR', 'FO'],
         'leave.adjust': ['HR', 'FO'],
@@ -438,11 +439,17 @@ service cloud.firestore {
       }
 
       // Document types (defaults live in code; these override or add to them).
-      // Offer letters: those who release offers at the employee's branch
+      // Letters (offer, appointment, custom): those who issue them at the employee's branch
       // (head-office staff: all branches) and the employee. The PDF itself is
       // in the employee's private documents. Functions write them.
       match /offerLetters/{l} {
-        allow read: if canAt(o, resource.data.branchId, 'offers.release') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow read: if canAt(o, resource.data.branchId, 'offers.release') || canAt(o, resource.data.branchId, 'letters.issue') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+
+      // Letter templates (docs/HRMS.md §13): wording only, readable in the org; functions write them.
+      match /letterTemplates/{t} {
+        allow read: if inOrg(o);
         allow write: if false;
       }
 

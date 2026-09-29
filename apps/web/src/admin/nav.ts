@@ -79,7 +79,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
       items: [
         { to: paths.opsAttendance, label: ht.navAttendanceShort, icon: 'clock', requires: 'attendance.manage', page: 'attendance.view' },
         { to: paths.opsLeave, label: ht.navLeaveRequests, icon: 'calendar', requires: 'leave.approve', page: 'attendance.view' },
-        { to: paths.opsOffers, label: ht.navOffers, icon: 'folder', requires: 'offers.release' },
+        { to: paths.opsOffers, label: ht.navOffers, icon: 'folder', requires: ['offers.release', 'letters.issue'] },
       ],
     },
   ],
@@ -105,7 +105,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminPeopleOverview, label: ht.navOverview, icon: 'insights', requires: 'employees.view' },
         { to: paths.adminPeople, label: ht.navEmployees, icon: 'badge', requires: 'employees.view' },
         { to: paths.adminDocuments, label: ht.navDocuments, icon: 'folder', requires: 'documents.verify' },
-        { to: paths.adminOffers, label: ht.navOffers, icon: 'folder', requires: 'offers.release' },
+        { to: paths.adminOffers, label: ht.navOffers, icon: 'folder', requires: ['offers.release', 'letters.issue'] },
       ],
     },
     {
@@ -129,6 +129,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminSettingsSchedule, label: ht.navScheduleSettings, icon: 'clock', requires: 'hr.config' },
         { to: paths.adminSettingsLeave, label: ht.navLeaveTypes, icon: 'calendar', requires: 'hr.config' },
         { to: paths.adminSettingsDocuments, label: ht.navDocumentTypes, icon: 'folder', requires: 'hr.config' },
+        { to: paths.adminSettingsLetters, label: ht.navLetterTemplates, icon: 'folder', requires: 'hr.config' },
         { to: paths.adminSettingsPayroll, label: ht.navPayrollSettings, icon: 'payments', requires: 'salary.edit' },
       ],
     },

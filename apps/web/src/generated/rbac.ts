@@ -283,6 +283,11 @@ export const PERMISSIONS = {
     "FO",
     "BM"
   ],
+  "letters.issue": [
+    "HR",
+    "FO",
+    "BM"
+  ],
   "attendance.view": [
     "HO",
     "HR",

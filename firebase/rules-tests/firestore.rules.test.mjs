@@ -108,6 +108,7 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/payrollRuns/2026-09_cen`, { branchId: 'cen', month: '2026-09', status: 'DRAFT' });
     await put(`orgs/${CORP}/payslips/e-cen_2026-09`, { branchId: 'cen', employeeUid: 'alice', month: '2026-09', published: true, net: 28000 });
     await put(`orgs/${CORP}/payslips/e-cen_2026-10`, { branchId: 'cen', employeeUid: 'alice', month: '2026-10', published: false, net: 28000 });
+    await put(`orgs/${CORP}/letterTemplates/t1`, { kind: 'OFFER', branchId: null, status: 'PUBLISHED', name: 'Offer', subject: 's', body: 'b' });
     await put(`orgs/${CORP}/offerLetters/o-cen`, { branchId: 'cen', employeeId: 'e-cen', employeeUid: 'alice', status: 'RELEASED', annualCtc: 264000 });
     await put(`orgs/${CORP}/offerLetters/o-nth`, { branchId: 'nth', employeeId: 'e-nth', employeeUid: 'bob', status: 'RELEASED', annualCtc: 264000 });
     await put(`orgs/${CORP}/offerLetters/o-ho`, { branchId: null, employeeId: 'e-ho', employeeUid: 'hana', status: 'RELEASED', annualCtc: 900000 });
@@ -457,6 +458,13 @@ describe('HRMS offer letters', () => {
     await assertSucceeds(getDocs(query(collection(alice(), `orgs/${CORP}/offerLetters`), where('employeeUid', '==', 'alice'))));
     await assertFails(getDoc(doc(alice(), `orgs/${CORP}/offerLetters/o-nth`)));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/offerLetters/o-cen`), { branchId: 'cen', status: 'WITHDRAWN' }));
+  });
+
+  it('anyone in the organization reads letter templates; nobody writes them', async () => {
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/letterTemplates/t1`)));
+    await assertSucceeds(getDocs(collection(bmCen(), `orgs/${CORP}/letterTemplates`)));
+    await assertFails(getDoc(doc(as('zed', claims({ [FRAN]: { r: ['HR'], b: ['*'] } })), `orgs/${CORP}/letterTemplates/t1`)));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/letterTemplates/t2`), { kind: 'CUSTOM', status: 'DRAFT' }));
   });
 });
 
