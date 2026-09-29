@@ -140,6 +140,15 @@ service cloud.firestore {
         allow read: if isSelf(uid);
         allow write: if false;
       }
+
+      // In-app notifications (functions write them); the owner may only mark one read.
+      match /notifications/{n} {
+        allow read: if isSelf(uid);
+        allow update: if isSelf(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && request.resource.data.read == true;
+        allow create, delete: if false;
+      }
     }
 
     // Staff lists query memberships across users (collection group). Org-wide

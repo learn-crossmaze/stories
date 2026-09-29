@@ -179,3 +179,9 @@ const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR',
 export const money = (n: number) => inr.format(n);
 /** 'September 2026'. */
 export const monthName = (m: string) => new Date(`${m}-01T12:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** Approved runs in the viewer's branches (newest months first). */
+export async function approvedRuns(orgId: string, scope: string[] | 'ALL'): Promise<PayrollRun[]> {
+  const snap = await getDocs(query(collection(db(), `orgs/${orgId}/payrollRuns`), where('status', '==', 'APPROVED'), ...branchFilter(scope), limit(200)));
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<PayrollRun, 'id'>), id: d.id, preparedAt: ts(d.get('preparedAt')) })).sort((a, b) => b.month.localeCompare(a.month));
+}

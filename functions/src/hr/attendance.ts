@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { recordAudit, recordAuditNow } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
+import { LINKS, notify } from '../core/notify.js';
 import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
@@ -203,6 +204,7 @@ export const adjust = command(
     if (input.date > businessDate(Date.now())) throw errors.invalid('That day has not happened yet.');
     const { record, before, write } = await correctDay(tx, input.orgId, employee, input.date, input.checkIn, input.checkOut, 'ADJUSTED');
     write({ adjustedBy: actor.uid, adjustReason: input.reason });
+    notify(tx, employee.get('uid'), { orgId: input.orgId, kind: 'attendance.adjusted', title: `Your attendance for ${input.date} was changed`, body: input.reason, link: LINKS.myAttendance }, actor.uid);
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'attendance.adjust',
       entityType: 'employee',
@@ -275,6 +277,18 @@ export const decideCorrection = command(
     if (input.decision === 'REJECT' && input.note.length < 3) throw errors.invalid('Say why the correction is rejected.');
     const applied = input.decision === 'APPROVE' ? await correctDay(tx, input.orgId, employee, corr.get('date'), corr.get('checkIn'), corr.get('checkOut'), 'CORRECTION') : null;
     applied?.write({ correctionId: ref.id });
+    notify(
+      tx,
+      corr.get('employeeUid'),
+      {
+        orgId: input.orgId,
+        kind: input.decision === 'APPROVE' ? 'correction.approved' : 'correction.rejected',
+        title: `Correction for ${corr.get('date')} ${input.decision === 'APPROVE' ? 'approved' : 'not approved'}`,
+        body: input.note || undefined,
+        link: LINKS.myAttendance,
+      },
+      actor.uid,
+    );
     tx.update(ref, {
       status: input.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED',
       decidedBy: actor.uid,

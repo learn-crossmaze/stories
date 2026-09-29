@@ -10,6 +10,7 @@ import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
 import { navSections, visibleNav } from './nav';
+import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 
 const MAIN_ID = 'main';
@@ -61,7 +62,7 @@ function WorkspaceBar() {
   );
 }
 
-/** Name, roles and personal actions (appearance, member view, sign out) behind one button. */
+/** Name, roles and personal actions (my profile, appearance, member view, sign out) behind one button. */
 function AccountMenu() {
   const { user, claims, repo } = useAuth();
   const { org } = useWorkspace();
@@ -118,14 +119,8 @@ function AccountMenu() {
       </button>
       {open && (
         <div className="account-menu" id={menuId}>
-          <Link to={paths.adminMyAttendance} onClick={() => setOpen(false)}>
-            <Icon name="clock" /> {ht.navMyAttendance}
-          </Link>
-          <Link to={paths.adminMyLeave} onClick={() => setOpen(false)}>
-            <Icon name="calendar" /> {ht.navMyLeave}
-          </Link>
-          <Link to={paths.adminMyPayslips} onClick={() => setOpen(false)}>
-            <Icon name="payments" /> {ht.navMyPayslips}
+          <Link to={paths.adminMe} onClick={() => setOpen(false)}>
+            <Icon name="person" /> {ht.navMyProfile}
           </Link>
           <Link to={paths.adminAppearance} onClick={() => setOpen(false)}>
             <Icon name="palette" /> {t.navAppearance}
@@ -219,6 +214,7 @@ function Shell() {
             <span>{t.appTitle}</span>
           </Link>
           <WorkspaceBar />
+          <NotificationBell />
           <AccountMenu />
         </header>
         <main className="admin-main" id={MAIN_ID} tabIndex={-1}>

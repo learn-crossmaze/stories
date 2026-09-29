@@ -150,7 +150,7 @@ Global catalogue: Book ─N:M─ Author, Book ─N:1─ Publisher, Book ─N:M�
 | `taskInstances/{scheduleId_occurrenceKey}` | templateSnapshot, sopVersionId, branchId, dateKey, dueAt, status, assigneeEmployeeIds[], nextReminderAt, escalationLevel, completedAt | |
 | `taskInstances/{id}/responses/{employeeId}` | checklist answers, evidencePaths[], submittedAt | |
 | `taskInstances/{id}/log/{id}` | reminders, escalations, reassignments, approvals | |
-| `notifications/{id}` | recipientUid, type, title, body, deepLink, readAt, channels{push: status}, createdAt | client may only set `readAt` |
+| `notifications/{id}` | built as `users/{uid}/notifications/{id}` (docs/HRMS.md §11): orgId, kind, title, body, link, read, at, TTL `expireAt` (+90 days) | owner may only set `read` to true; push/email channels not built |
 | `auditLogs/{id}` | actorUid, actorRoles, action, entityType, entityId, branchId, memberId (member-related entries), before, after, reason, requestId, ip/device (where relevant), at | function-only write; no client update/delete |
 | `idempotency/{fn:requestId}` | result, createdAt, TTL `expireAt` (+30 days) | Firestore TTL policy |
 | `config/{key}` | versioned business settings | audited |

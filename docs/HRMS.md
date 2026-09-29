@@ -11,7 +11,7 @@ it is tested and documented.
 | 3. Attendance & shifts | Shifts, weekly offs, holidays, check-in and check-out, corrections, month finalization with payable days | **Done** |
 | 4. Leave | Leave types and policies, a balance ledger with accrual, applications and approvals, leave on attendance | **Done** |
 | 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | **Done** |
-| 6. Self-service & dashboards | My profile, attendance, leave and payslips; HR dashboards; in-app notifications | Planned |
+| 6. Self-service & dashboards | My profile, attendance, leave and payslips; HR dashboards; in-app notifications | **Done** |
 
 Decisions for later phases (approved): the Tasks module is deferred, so "My tasks" is a placeholder. Notifications
 are in-app first. TDS is entered manually per employee per month. PF, ESI and PT are configurable with effective
@@ -340,4 +340,45 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - Salary components are fixed monthly amounts. There are no formulas (such as HRA as 40% of basic), no overtime,
   and no loans.
 - PT slabs are one set per organization, not per state.
+
+## 11. Self-service, dashboards and notifications (Phase 6)
+
+**In-app notifications** (`users/{uid}/notifications/{id}`: `orgId`, `kind`, `title`, `body`, `link`, `read`,
+`at`, `expireAt`):
+
+- Functions write a notification (`functions/src/core/notify.ts`) when someone else acts on something of yours:
+  - **Leave:** approved, rejected, cancelled, or recorded for you.
+  - **Attendance:** a correction decided, or a day adjusted.
+  - **Documents:** verified, or rejected with the reason.
+  - **Payroll:** a run you prepared or submitted is approved or sent back. Each employee is also told their payslip
+    is ready when a run is approved (sent after the approval commits).
+- Nothing is sent for your own actions, or to employees without an account.
+- **Rules:** the owner reads their notifications and may only change `read` to true. Functions write them.
+- **Retention:** `expireAt` is 90 days out. Turn on a Firestore TTL policy on `notifications.expireAt` in the
+  console to delete old ones.
+- **Screen:** the header **bell** shows the unread count and the latest 30 notifications. Opening one marks it
+  read; **Mark all read** clears the count.
+
+**My profile** (account menu, `/admin/me`), for any staff member with an employee record:
+
+- Their job details and today's check-in.
+- This month's attendance, leave left this year, and the latest payslip (with its PDF), each linking to its page.
+- **My documents**: status of the required documents, and uploads for self-upload types.
+- **My tasks**: a placeholder until the Tasks module is built.
+- My attendance, My leave and My payslips stay as pages, reached from here.
+
+**People → Overview** (`employees.view`; everything is limited to the viewer's branches):
+
+- **Headcount:** active, joining, leaving, joined this month, left this month.
+- **Today:** checked in, on leave, not in yet.
+- **Waiting on you:** leave, corrections, documents and payroll runs you can decide, never your own.
+- **Breakdowns:** active staff by branch and by department, and approved leave days this month by type.
+- **Payroll:** the last approved month's gross, net and cost to company. Only salary viewers see this.
+
+**Known limits:**
+
+- Approvers are not notified of new requests; the dashboard and Overview list what is waiting.
+- Notifications are in-app only: no email, SMS or push yet.
+- The Overview reads employee and attendance lists in the browser, which suits organizations of up to a few
+  thousand staff.
 

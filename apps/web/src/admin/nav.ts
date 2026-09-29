@@ -36,6 +36,7 @@ export const NAV: NavItem[] = [
   { to: paths.adminPlans, label: t.navPlans, icon: 'card', section: t.sectionMembers, requires: 'plans.manage' },
   { to: paths.adminDeposits, label: t.navDepositApprovals, icon: 'wallet', section: t.sectionMembers, requires: 'deposits.approve' },
 
+  { to: paths.adminPeopleOverview, label: ht.navOverview, icon: 'insights', section: ht.sectionPeople, requires: 'employees.view' },
   { to: paths.adminPeople, label: ht.navEmployees, icon: 'badge', section: ht.sectionPeople, requires: 'employees.view' },
   { to: paths.adminAttendance, label: ht.navAttendance, icon: 'clock', section: ht.sectionPeople, requires: 'attendance.view' },
   // Approvers see the menu item; anyone who views attendance may open the page.
