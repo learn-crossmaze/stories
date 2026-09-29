@@ -10,6 +10,7 @@ import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 import { DocumentTypesSection } from './DocumentTypesSettings';
+import { HolidaysSection, ShiftsSection } from './ScheduleSettings';
 
 function DesignationDialog({ orgId, designation, onClose, onSaved }: { orgId: string; designation?: Designation; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(designation?.name ?? '');
@@ -166,6 +167,10 @@ export function HrSettingsPage() {
           </div>
         )}
       </section>
+
+      <ShiftsSection orgId={org.id} />
+
+      <HolidaysSection orgId={org.id} />
 
       <DocumentTypesSection orgId={org.id} checklist={onboarding} />
 

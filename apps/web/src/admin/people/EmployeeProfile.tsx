@@ -14,12 +14,13 @@ import { ht } from '../../strings/hr';
 import { Notice, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+import { EmployeeAttendancePanel } from './EmployeeAttendance';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { EmployeeDialog, EmployeeStatusBadge } from './People';
 import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
 
-type Tab = 'overview' | 'personal' | 'documents' | 'bank' | 'lifecycle' | 'history' | 'access';
+type Tab = 'overview' | 'personal' | 'documents' | 'attendance' | 'bank' | 'lifecycle' | 'history' | 'access';
 
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : (ht.status[String(v)] ?? ht.employmentType[String(v)] ?? String(v)));
 
@@ -53,6 +54,8 @@ export function EmployeeProfilePage() {
   const canVerifyDocs = perm('documents.verify');
   const canManageDocs = canVerifyDocs || perm('employees.edit');
   const self = !!e.uid && e.uid === user?.uid;
+  const canViewAttendance = perm('attendance.view');
+  const canManageAttendance = perm('attendance.manage');
   const refresh = () => {
     employee.reload();
     profile.reload();
@@ -92,6 +95,7 @@ export function EmployeeProfilePage() {
           { value: 'overview' as const, label: ht.tabOverview },
           ...(canPrivate || e.uid === user?.uid ? [{ value: 'personal' as const, label: ht.tabPersonal }] : []),
           ...(canManageDocs || self ? [{ value: 'documents' as const, label: ht.tabDocuments }] : []),
+          ...(canViewAttendance || self ? [{ value: 'attendance' as const, label: ht.tabAttendance }] : []),
           ...(canBank ? [{ value: 'bank' as const, label: ht.tabBank }] : []),
           { value: 'lifecycle' as const, label: ht.tabLifecycle },
           { value: 'history' as const, label: ht.tabHistory, count: history.data?.length },
@@ -159,6 +163,8 @@ export function EmployeeProfilePage() {
       )}
 
       {tab === 'documents' && <EmployeeDocumentsPanel orgId={orgId} employee={e} canManage={canManageDocs} canVerify={canVerifyDocs} onChanged={employee.reload} />}
+
+      {tab === 'attendance' && <EmployeeAttendancePanel orgId={orgId} employee={e} canManage={canManageAttendance} onChanged={employee.reload} />}
 
       {tab === 'bank' && canBank && <BankPanel orgId={orgId} employee={e} profile={p} canEdit={e.status !== 'OFFBOARDED'} onSaved={refresh} />}
 

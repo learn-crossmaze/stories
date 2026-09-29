@@ -21,7 +21,9 @@ import { TransfersPage } from './circulation/Transfers';
 import { BranchesPage } from './organization/Branches';
 import { DashboardPage } from './dashboard/Dashboard';
 import { DepartmentsPage } from './organization/Departments';
+import { AttendancePage } from './people/Attendance';
 import { DocumentsPage } from './people/Documents';
+import { MyAttendancePage } from './people/MyAttendance';
 import { EmployeeProfilePage } from './people/EmployeeProfile';
 import { HrSettingsPage } from './people/HrSettings';
 import { PeoplePage } from './people/People';
@@ -51,6 +53,8 @@ export default function AdminApp() {
         <Route path={sub(paths.adminStaff)} element={guard(paths.adminStaff, <StaffPage />)} />
         <Route path={sub(paths.adminPeople)} element={guard(paths.adminPeople, <PeoplePage />)} />
         <Route path={sub(paths.adminEmployee(':employeeId'))} element={guard(paths.adminPeople, <EmployeeProfilePage />)} />
+        <Route path={sub(paths.adminAttendance)} element={guard(paths.adminAttendance, <AttendancePage />)} />
+        <Route path={sub(paths.adminMyAttendance)} element={<MyAttendancePage />} />
         <Route path={sub(paths.adminDocuments)} element={guard(paths.adminDocuments, <DocumentsPage />)} />
         <Route path={sub(paths.adminHrSettings)} element={guard(paths.adminHrSettings, <HrSettingsPage />)} />
         <Route path={sub(paths.adminAudit)} element={guard(paths.adminAudit, <AuditPage />)} />

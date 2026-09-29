@@ -582,3 +582,15 @@ main h1[tabindex='-1']:focus { outline: none; }
 .doc-required li > span:first-child { flex: 1; min-width: 160px; }
 .expiry-warn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--danger); }
 .expiry-warn .icon { width: 16px; height: 16px; }
+
+/* Attendance */
+.field-inline { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+.field-inline input, .field-inline select { min-height: 40px; padding: 0 10px; border-radius: var(--radius-md); border: 1px solid var(--outline); background: var(--surface-raised); color: var(--on-surface); font: inherit; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.warn-text { color: var(--danger); font-weight: 500; }
+.weekday-picks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.checkin-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.checkin-card h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 18px; }
+.checkin-card p { margin: 2px 0; }
+.holiday-list li { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--outline); }
+.holiday-list li > span:nth-child(2) { flex: 1; min-width: 180px; }

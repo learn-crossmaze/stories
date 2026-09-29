@@ -29,6 +29,8 @@ export const paths = {
   adminEmployee: (id: string) => `/admin/people/${id}`,
   adminHrSettings: '/admin/hr-settings',
   adminDocuments: '/admin/documents',
+  adminAttendance: '/admin/attendance',
+  adminMyAttendance: '/admin/my-attendance',
 } as const;
 
 /** Pure redirect rule, kept separate so it can be unit tested. */
