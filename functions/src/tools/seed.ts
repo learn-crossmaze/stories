@@ -103,6 +103,7 @@ console.log(`\nSeeded 2 organizations, 2 branches, 3 departments, ${personas.len
 
 await seedLibrary();
 await seedHr();
+await seedLeave();
 process.exit(0);
 
 // ---------------------------------------------------------------------------
@@ -370,4 +371,57 @@ async function seedHr() {
 
   await db.doc('seed/hr').set({ at: FieldValue.serverTimestamp() });
   console.log(`Seeded ${created} employee records, ${Object.keys(titles).length} designations, one hire in onboarding, employee documents, shifts, holidays and last month's attendance.`);
+}
+
+// ---------------------------------------------------------------------------
+// Leave demo data (docs/HRMS.md §9): this year's credits so far, an opening
+// earned-leave balance, a request waiting for the branch manager and someone
+// on approved leave. Runs once: guarded by seed/leave.
+
+async function seedLeave() {
+  if ((await db.doc('seed/leave').get()).exists) {
+    console.log('Leave demo data already present (seed/leave).');
+    return;
+  }
+  const { randomUUID } = await import('node:crypto');
+  const leave = await import('../hr/leave.js');
+  const rules = await import('../hr/attendanceRules.js');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Callable = { run: (req: any) => unknown };
+  const as = async <R>(email: string, fn: Callable, data: Record<string, unknown>): Promise<R> => {
+    const uid = (await auth.getUserByEmail(email)).uid;
+    return (await fn.run({
+      data: { ...data, requestId: randomUUID() },
+      auth: { uid, token: { email, email_verified: true } },
+      rawRequest: {},
+      acceptsStreaming: false,
+    })) as R;
+  };
+  const byEmail = async (email: string) => (await db.collection(`orgs/${CORP}/employees`).where('emailLower', '==', email).limit(1).get()).docs[0];
+
+  const today = rules.businessDate(Date.now());
+  const year = today.slice(0, 4);
+  for (let m = 1; m <= Number(today.slice(5, 7)); m++) await leave.accrueMonth(CORP, `${year}-${String(m).padStart(2, '0')}`);
+  const assistant = await byEmail('employee@stories.test');
+  if (assistant) await as('super@stories.test', leave.adjust, { orgId: CORP, employeeId: assistant.id, typeId: 'earned', year, days: 6, reason: 'Opening balance carried from the old register' });
+
+  // The first working days from `start` (skipping Central's weekly off and holidays): tries a few starts.
+  const tryApply = async (email: string, data: Record<string, unknown>, from: number, span: number) => {
+    for (let k = from; k < from + 7; k++) {
+      const d = (n: number) => rules.businessDate(Date.now() + n * 86_400_000);
+      if (d(k).slice(0, 4) !== year || d(k + span - 1).slice(0, 4) !== year) continue;
+      try {
+        return await as<{ leaveId: string }>(email, leave.apply, { ...data, from: d(k), to: d(k + span - 1) });
+      } catch {
+        // A weekly off or holiday: try the next day.
+      }
+    }
+    return null;
+  };
+  await tryApply('employee@stories.test', { orgId: CORP, typeId: 'casual', reason: 'Sister’s wedding' }, 7, 2);
+  const away = await tryApply('delivery@stories.test', { orgId: CORP, typeId: 'sick', reason: 'Fever' }, 0, 1);
+  if (away) await as('manager@stories.test', leave.decide, { orgId: CORP, leaveId: away.leaveId, decision: 'APPROVE' });
+
+  await db.doc('seed/leave').set({ at: FieldValue.serverTimestamp() });
+  console.log('Seeded leave credits for the year, an opening balance, a leave request to decide and approved sick leave.');
 }

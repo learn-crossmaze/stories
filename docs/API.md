@@ -1,9 +1,9 @@
 # Stories — Cloud Functions API conventions
 
 All app operations are **actions** named `<group>-<name>` (e.g. `branches-create`), implemented in
-`functions/src/core/callable.ts`. They are deployed through **six router functions** in `asia-south1` —
-`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation` (`functions/src/index.ts`) — plus two scheduled
-jobs. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
+`functions/src/core/callable.ts`. They are deployed through **seven router functions** in `asia-south1` —
+`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr` (`functions/src/index.ts`) — plus the
+scheduled jobs listed at the end. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
 action prefix). Each Cloud Function is its own Cloud Run service reserving CPU; ~60 separate functions exceeded the
 project's regional CPU quota, eight services stay well inside it. Routing doesn't change behaviour: the router
 passes the request to the action's own handler, so every check below applies unchanged; unknown actions are rejected.
@@ -84,10 +84,16 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `attendance-assignShift`, `attendance-adjust` (reason; never your own day) | `attendance.manage` at the employee's branch |
 | | `attendance-punch` (`punch: IN\|OUT`; own, or for someone else at the desk) | the employee; `attendance.manage` for others |
 | | `attendance-requestCorrection` / `attendance-decideCorrection` | the employee / `corrections.approve` (never your own) |
-| | `attendance-finalize` (query; writes the month), `attendance-reopen` | `attendance.finalize` for the branch (org-wide for head office) |
+| | `attendance-finalize` (query; writes the month; refused while corrections or leave wait), `attendance-reopen` | `attendance.finalize` for the branch (org-wide for head office) |
+| Leave | `leaveTypes-save/archive` | `hr.config` |
+| | `leave-apply` (`typeId`, `from`, `to`, `halfDay: NONE\|FIRST\|SECOND`, reason; own, or `employeeId` for someone else) | the employee; `leave.approve` at the branch for others |
+| | `leave-decide` (`APPROVE` / `REJECT` with note; never your own) | `leave.approve` at the employee's branch |
+| | `leave-cancel` (note required for someone else's) | the employee (waiting, or approved and not started); `leave.adjust` for any |
+| | `leave-adjust` (`typeId`, `year`, `days` ±, reason; never your own) | `leave.adjust` at the employee's branch |
+| | `leave-accrue` (query; credits a month, safe to repeat) | `leave.adjust` org-wide |
 
 No action may take an input named `action`: the router uses that field for the action name (`test/unit/routers.test.ts` checks it).
 
 `staff-setRoles` (admin router) links or creates the person's employee record, so nobody has two.
 
-Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), `scheduled-expireDocuments` (daily 00:30 IST), all idempotent.
+Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), `scheduled-expireDocuments` (daily 00:30 IST), `scheduled-accrueLeave` (daily 00:45 IST), all idempotent.

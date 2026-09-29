@@ -2,6 +2,7 @@
 import * as attendance from './attendance.js';
 import * as documents from './documents.js';
 import * as employees from './employees.js';
+import * as leave from './leave.js';
 import * as schedule from './schedule.js';
 import * as settings from './settings.js';
 
@@ -36,6 +37,14 @@ export const routes = {
   'attendance-decideCorrection': attendance.decideCorrection,
   'attendance-finalize': attendance.finalize,
   'attendance-reopen': attendance.reopen,
+  'leaveTypes-save': leave.saveType,
+  'leaveTypes-archive': leave.archiveType,
+  'leave-apply': leave.apply,
+  'leave-decide': leave.decide,
+  'leave-cancel': leave.cancel,
+  'leave-adjust': leave.adjust,
+  'leave-accrue': leave.accrue,
 };
 
 export const expireDocuments = documents.expireSweep;
+export const accrueLeave = leave.accrueSweep;

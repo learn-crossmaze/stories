@@ -121,6 +121,9 @@ function AccountMenu() {
           <Link to={paths.adminMyAttendance} onClick={() => setOpen(false)}>
             <Icon name="clock" /> {ht.navMyAttendance}
           </Link>
+          <Link to={paths.adminMyLeave} onClick={() => setOpen(false)}>
+            <Icon name="calendar" /> {ht.navMyLeave}
+          </Link>
           <Link to={paths.adminAppearance} onClick={() => setOpen(false)}>
             <Icon name="palette" /> {t.navAppearance}
           </Link>

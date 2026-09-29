@@ -74,7 +74,8 @@ nothing else.
 | documents.verify (verify employee documents; see docs/HRMS.md §7) | ✓ | | | ✓ | | | | ✓ | | |
 | attendance.view (day board, months, corrections) | ✓ | ✓ | ✓ | ✓ | branch | | | ✓ | self | |
 | attendance.finalize (lock a month, reopen) | ✓ | | | ✓ | | | | ✓ | | |
-| leave.adjust · salary.view/edit · payslips.viewAll | reserved for HRMS phases 4–5, see docs/HRMS.md §4 |||||||||||
+| leave.adjust (opening balances, corrections, credit leave, cancel others' leave) | ✓ | | | ✓ | | | | ✓ | | |
+| salary.view/edit · payslips.viewAll | reserved for HRMS phase 5, see docs/HRMS.md §4 |||||||||||
 | attendance.manage / corrections.approve | ✓ | | | ✓ | ✓ | | | ✓ | self (request) | |
 | leave.approve | ✓ | | | ✓ | ✓ | | | ✓ | self (apply) | |
 | payroll.run | ✓ | | | ✓ | | | | ✓ (own org) | | |

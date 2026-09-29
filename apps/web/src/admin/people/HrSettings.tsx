@@ -10,6 +10,7 @@ import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 import { DocumentTypesSection } from './DocumentTypesSettings';
+import { LeaveTypesSection } from './LeaveTypesSettings';
 import { HolidaysSection, ShiftsSection } from './ScheduleSettings';
 
 function DesignationDialog({ orgId, designation, onClose, onSaved }: { orgId: string; designation?: Designation; onClose: () => void; onSaved: () => void }) {
@@ -171,6 +172,8 @@ export function HrSettingsPage() {
       <ShiftsSection orgId={org.id} />
 
       <HolidaysSection orgId={org.id} />
+
+      <LeaveTypesSection orgId={org.id} />
 
       <DocumentTypesSection orgId={org.id} checklist={onboarding} />
 

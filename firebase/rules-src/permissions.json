@@ -65,7 +65,7 @@
     "documents.verify": ["HR", "FO"],
     "attendance.view": ["HO", "HR", "FO", "BM", "FIN"],
     "attendance.finalize": ["HR", "FO"],
-    "leave.adjust": ["HR"],
+    "leave.adjust": ["HR", "FO"],
     "salary.view": ["HR", "FIN", "FO"],
     "salary.edit": ["HR", "FO"],
     "payslips.viewAll": ["HR", "FIN", "FO"],

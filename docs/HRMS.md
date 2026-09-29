@@ -9,7 +9,7 @@ it is tested and documented.
 | 1. Foundation | Employee records, private and bank details, designations, directory, profile tabs, effective-dated history, lifecycle, account linking, backfill of existing staff, onboarding and offboarding checklists, new permissions, `hr` router | **Done** |
 | 2. Documents | Document types, private uploads, verification, expiry reminders, required-document tracking | **Done** |
 | 3. Attendance & shifts | Shifts, weekly offs, holidays, check-in and check-out, corrections, month finalization with payable days | **Done** |
-| 4. Leave | Leave types and policies, a balance ledger, applications and approvals, holidays | Planned |
+| 4. Leave | Leave types and policies, a balance ledger with accrual, applications and approvals, leave on attendance | **Done** |
 | 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | Planned |
 | 6. Self-service & dashboards | My profile, attendance, leave and payslips; HR dashboards; in-app notifications | Planned |
 
@@ -79,7 +79,7 @@ DRAFT ──start onboarding──▶ ONBOARDING ──mark as joined──▶ A
 | hr.config | HO, HR, FO |
 | documents.verify | HR, FO (Phase 2) |
 | attendance.view / attendance.finalize | HO, HR, FO, BM, FIN / HR, FO (Phase 3) |
-| leave.adjust | HR (Phase 4) |
+| leave.adjust / leave.approve | HR, FO / HR, FO, BM (Phase 4) |
 | salary.view / salary.edit / payslips.viewAll | HR, FIN, FO / HR, FO / HR, FIN, FO (Phase 5) |
 
 Records without a branch (head office staff) need the permission across all branches.
@@ -155,9 +155,9 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 | `orgs/{o}/shifts/{id}` | `name`, `start`, `end` (HH:MM, India time; an end earlier than the start is overnight), `breakMinutes`, `graceMinutes`, `halfDayMinutes`, `fullDayMinutes`, `status` | anyone in the org |
 | `orgs/{o}/holidays/{date}` | `name`, `branchIds` (empty = every branch), `year` | anyone in the org |
 | employee record | `shiftId`, `shiftName`, `weeklyOffs` (null = the branch's days off) | as the record |
-| `orgs/{o}/attendance/{employeeId}_{date}` | `checkIn`, `checkOut` (server times), `status` (PRESENT, HALF_DAY, ABSENT, WEEKLY_OFF, HOLIDAY; IN_PROGRESS until check-out), `workedMinutes`, `lateMinutes`, `late`, `earlyExit`, `missedCheckout`, `source` (SELF, DESK, ADJUSTED, CORRECTION, FINALIZE), `finalized`, plus copies of the employee's name, code, uid and branch | attendance viewers at the branch; the employee |
+| `orgs/{o}/attendance/{employeeId}_{date}` | `checkIn`, `checkOut` (server times), `status` (PRESENT, HALF_DAY, ABSENT, WEEKLY_OFF, HOLIDAY, ON_LEAVE; IN_PROGRESS until check-out), `workedMinutes`, `lateMinutes`, `late`, `earlyExit`, `missedCheckout`, `source` (SELF, DESK, ADJUSTED, CORRECTION, FINALIZE, LEAVE), `leave` (approved leave on the day, §9), `payable`, `finalized`, plus copies of the employee's name, code, uid and branch | attendance viewers at the branch; the employee |
 | `orgs/{o}/attendanceCorrections/{employeeId}_{date}` | requested times, reason, `status` (PENDING, APPROVED, REJECTED), decision | as above |
-| `orgs/{o}/attendanceSummaries/{employeeId}_{month}` | present, half days, absent, weekly offs, holidays, late days, missed check-outs, worked minutes, **payableDays**, `stale` | as above |
+| `orgs/{o}/attendanceSummaries/{employeeId}_{month}` | present, half days, absent, weekly offs, holidays, leave days and paid leave days, late days, missed check-outs, worked minutes, **payableDays**, `stale` | as above |
 | `orgs/{o}/attendanceLocks/{month}_{branchId or HO}` | `status` (FINALIZED, REOPENED), who and when | anyone in the org |
 
 **Rules** (`functions/src/hr/attendanceRules.ts`, unit tested):
@@ -169,8 +169,8 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - **Day status:**
   - Full-day minutes or more count as present; half-day minutes or more count as a half day; less counts as absent.
   - Without punches, a day is a holiday, a weekly off, or absent. Working on a day off counts as present.
-- **Payable days** are present days, plus half days divided by two, plus weekly offs, plus holidays. Paid leave is
-  added in Phase 4.
+- **Payable days** are present days, plus half days divided by two, plus weekly offs, plus holidays, plus paid leave
+  (§9).
 - **Default rules:** without a shift, an employee is never late, and 8 hours counts as a full day (4 hours for a
   half day).
 
@@ -213,3 +213,67 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - Each employee has one shift; day-by-day rosters and shift swaps are not built yet.
 - Finalizing writes one record per employee per day and suits branches of up to a few hundred staff.
 - All times are India time (IST).
+
+## 9. Leave (Phase 4)
+
+| Path | Contents | Who reads it |
+|---|---|---|
+| `orgs/{o}/leaveTypes/{id}` | `name`, `code`, `paid`, `annualQuota`, `accrual` (MONTHLY, YEARLY, MANUAL), `carryForwardMax`, `allowHalfDay`, `unlimited`, `status`. Four defaults live in code (casual 12 a year monthly, sick 12 yearly, earned 15 monthly carrying up to 30, loss of pay unlimited); an org document with the same id overrides one | anyone in the org |
+| `orgs/{o}/leaveBalances/{employeeId}_{year}` | per type: `credited`, `adjusted`, `used`, `pending`. Available = credited + adjusted − used − pending | attendance viewers at the branch; the employee |
+| `orgs/{o}/leaveLedger/{id}` | append-only: `kind` (ACCRUAL, CARRY, ADJUST, TAKEN, RETURNED), `typeId`, `year`, `days` (+/−), `period`, `note`, `requestId`, who and when | as above |
+| `orgs/{o}/leaveRequests/{id}` | employee copies, type (name, code, paid), `from`, `to`, `halfDay` (NONE, FIRST, SECOND), `dates` (the working days it covers), `months`, `days`, `year`, `reason`, `status` (PENDING, APPROVED, REJECTED, CANCELLED), decision | as above |
+
+**Rules** (`functions/src/hr/leaveRules.ts`, unit tested):
+
+- The leave year is the calendar year. A request stays within one year and spans at most 45 calendar days.
+- Leave days skip the employee's weekly offs and holidays at their branch. A half day is a single date counting 0.5.
+- **Accrual:**
+  - MONTHLY types credit a twelfth of the quota each month (1.25 days for 15 a year).
+  - YEARLY types credit the quota once a year. Someone who joins that year gets a share for the months left,
+    counting the joining month, rounded down to the half day.
+  - MANUAL types (maternity, bereavement) are never credited automatically; HR grants days with an adjustment.
+  - Types with `carryForwardMax` carry unused days from last year's balance, up to that many, when the year's first
+    accrual runs. Later changes to last year do not change the carried amount.
+  - Every credit has a fixed ledger id (employee, type and month or year), so accrual can run any number of times.
+    The daily job `scheduled-accrueLeave` (00:45 IST) credits the current month for every organization; HR can
+    run a past month with **Credit leave**.
+- **On attendance** (`attendanceRules.evaluateDay`): a full day of leave is ON_LEAVE and payable if the leave is
+  paid. A half day of leave is paid for half a day, and the other half counts if at least a half day was worked.
+  Payable days in the month summary include paid leave; leave days and paid leave days are listed too.
+
+**Flow**
+
+- **Apply** (`leave-apply`): the employee applies for their own leave. A leave approver can also record leave for
+  someone at their branch.
+  - Refused when the dates overlap a waiting or approved request, fall in a finalized month, or come before
+    the joining date.
+  - Refused when the balance does not cover the days, unless the type is unlimited.
+  - The days are held as `pending` until a decision.
+- **Decide** (`leave-decide`, `leave.approve` at the employee's branch, never your own):
+  - Approving moves the days from pending to used, writes a TAKEN ledger entry, and marks each day on attendance.
+  - Rejecting needs a reason and releases the days.
+- **Cancel** (`leave-cancel`): the employee can cancel waiting leave, or approved leave that has not started. HR
+  (`leave.adjust`) can cancel anyone else's leave outside a finalized month, with a note. Approved days return with
+  a RETURNED entry, and attendance for those days is worked out again (future days without punches are removed).
+- **Adjust** (`leave-adjust`, `leave.adjust`, reason required, never your own): adds or removes days, for opening
+  balances and corrections. It cannot take a balance below zero.
+- **Finalize** (§8) is refused while leave touching the month is waiting for a decision.
+
+**Screens**
+
+- People → **Leave**:
+  - **Requests**: approve or reject.
+  - **Away**: approved leave in a month, and who is on leave today.
+  - **Balances**: everyone's days left for a year, record leave, adjust, and **Credit leave**.
+- **My leave** (account menu): balances, apply, cancel, and the ledger history.
+- The employee profile's **Leave** tab: balances, requests with decisions, the ledger, record and adjust.
+- **HR settings → Leave types**.
+- The attendance board shows **On leave**. The dashboard reminds approvers of leave to decide.
+
+**Known limits:**
+
+- There are no sandwich rules: weekly offs and holidays inside a leave are never counted.
+- There is no encashment, compensatory off or negative balance; loss of pay is its own unlimited type.
+- One approval step. Leave does not go to a reporting manager first.
+- Changing a type applies to future credits and requests only; balances already credited stay.
+

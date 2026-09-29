@@ -40,9 +40,25 @@ describe('attendance rules', () => {
     expect(evaluateDay({ date: day, rules: DEFAULT_RULES, checkIn: at('09:00'), checkOut: at('17:00'), weeklyOff: true, holiday: false }).status).toBe('PRESENT');
   });
 
+  it('leave: full days count as paid or unpaid; a half day of leave pairs with half a day of work', () => {
+    const base = { date: day, rules: shift, weeklyOff: false, holiday: false };
+    expect(evaluateDay({ ...base, checkIn: null, checkOut: null, leave: { paid: true, half: false, typeId: 'casual' } })).toMatchObject({ status: 'ON_LEAVE', payable: 1, leaveDays: 1, paidLeave: true });
+    expect(evaluateDay({ ...base, checkIn: null, checkOut: null, leave: { paid: false, half: false, typeId: 'lop' } })).toMatchObject({ status: 'ON_LEAVE', payable: 0, leaveDays: 1 });
+    expect(evaluateDay({ ...base, checkIn: at('13:30'), checkOut: at('18:00'), leave: { paid: true, half: true, typeId: 'casual' } })).toMatchObject({ status: 'HALF_DAY', payable: 1, leaveDays: 0.5 });
+    expect(evaluateDay({ ...base, checkIn: null, checkOut: null, leave: { paid: true, half: true, typeId: 'casual' } })).toMatchObject({ status: 'ON_LEAVE', payable: 0.5 });
+  });
+
   it('summarizes a month into payable days', () => {
     const d = (status: string, extra = {}) => ({ status, workedMinutes: 0, lateMinutes: 0, late: false, earlyExit: false, missedCheckout: false, ...extra }) as never;
-    const s = summarize([d('PRESENT', { late: true, workedMinutes: 480 }), d('HALF_DAY', { missedCheckout: true }), d('ABSENT'), d('WEEKLY_OFF'), d('HOLIDAY')]);
-    expect(s).toMatchObject({ present: 1, halfDays: 1, absent: 1, weeklyOffs: 1, holidays: 1, lateDays: 1, missedCheckouts: 1, workedMinutes: 480, payableDays: 3.5, days: 5 });
+    const s = summarize([
+      d('PRESENT', { late: true, workedMinutes: 480 }),
+      d('HALF_DAY', { missedCheckout: true }),
+      d('ABSENT'),
+      d('WEEKLY_OFF'),
+      d('HOLIDAY'),
+      d('ON_LEAVE', { payable: 1, leaveDays: 1, paidLeave: true }),
+      d('ON_LEAVE', { payable: 0, leaveDays: 1, paidLeave: false }),
+    ]);
+    expect(s).toMatchObject({ present: 1, halfDays: 1, absent: 1, weeklyOffs: 1, holidays: 1, leaveDays: 2, paidLeaveDays: 1, lateDays: 1, missedCheckouts: 1, workedMinutes: 480, payableDays: 4.5, days: 7 });
   });
 });

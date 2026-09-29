@@ -11,6 +11,7 @@ import {
   atIST,
   businessDate,
   datesOfMonth,
+  type DayLeave,
   DEFAULT_RULES,
   evaluateDay,
   monthOf,
@@ -33,14 +34,14 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM');
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be a month (YYYY-MM)');
 
-const recordRef = (orgId: string, employeeId: string, day: string) => db.doc(`orgs/${orgId}/attendance/${employeeId}_${day}`);
+export const recordRef = (orgId: string, employeeId: string, day: string) => db.doc(`orgs/${orgId}/attendance/${employeeId}_${day}`);
 export const lockId = (m: string, branchId: string | null) => `${m}_${branchId ?? 'HO'}`;
-const lockRef = (orgId: string, m: string, branchId: string | null) => db.doc(`orgs/${orgId}/attendanceLocks/${lockId(m, branchId)}`);
+export const lockRef = (orgId: string, m: string, branchId: string | null) => db.doc(`orgs/${orgId}/attendanceLocks/${lockId(m, branchId)}`);
 const auditCtx = (actor: Actor, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 
 const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
 
-interface DayContext {
+export interface DayContext {
   rules: ShiftRules;
   shiftId: string | null;
   shiftName: string | null;
@@ -50,7 +51,7 @@ interface DayContext {
 }
 
 /** Everything needed to evaluate a day (reads only). */
-async function dayContext(tx: Transaction, orgId: string, employee: DocumentSnapshot, day: string): Promise<DayContext> {
+export async function dayContext(tx: Transaction, orgId: string, employee: DocumentSnapshot, day: string): Promise<DayContext> {
   const branchId = (employee.get('branchId') as string | null) ?? null;
   const shiftId = (employee.get('shiftId') as string | null | undefined) ?? null;
   const [shift, branch, holiday, lock] = await Promise.all([
@@ -71,11 +72,24 @@ async function dayContext(tx: Transaction, orgId: string, employee: DocumentSnap
   };
 }
 
-const ms = (t: unknown) => (t instanceof Timestamp ? t.toMillis() : null);
+export const ms = (t: unknown) => (t instanceof Timestamp ? t.toMillis() : null);
 
-/** The full record for a day from its punches. */
-function recordFor(orgId: string, employee: DocumentSnapshot, day: string, ctx: DayContext, checkIn: number | null, checkOut: number | null, source: string, closing = false) {
-  const result = evaluateDay({ date: day, rules: ctx.rules, checkIn, checkOut, weeklyOff: ctx.weeklyOff, holiday: ctx.holiday, closing });
+/** Approved leave kept on a day's record (set and cleared by leave decisions, docs/HRMS.md §9). */
+export const leaveOf = (record: DocumentSnapshot | undefined) => (record?.get('leave') as DayLeave | null | undefined) ?? null;
+
+/** The full record for a day from its punches and any approved leave. */
+export function recordFor(
+  orgId: string,
+  employee: DocumentSnapshot,
+  day: string,
+  ctx: DayContext,
+  checkIn: number | null,
+  checkOut: number | null,
+  source: string,
+  leave: DayLeave | null,
+  closing = false,
+) {
+  const result = evaluateDay({ date: day, rules: ctx.rules, checkIn, checkOut, weeklyOff: ctx.weeklyOff, holiday: ctx.holiday, closing, leave });
   return {
     orgId,
     employeeId: employee.id,
@@ -91,6 +105,7 @@ function recordFor(orgId: string, employee: DocumentSnapshot, day: string, ctx: 
     shiftEnd: ctx.rules.end,
     checkIn: checkIn === null ? null : Timestamp.fromMillis(checkIn),
     checkOut: checkOut === null ? null : Timestamp.fromMillis(checkOut),
+    leave,
     ...result,
     source,
     updatedAt: FieldValue.serverTimestamp(),
@@ -98,13 +113,13 @@ function recordFor(orgId: string, employee: DocumentSnapshot, day: string, ctx: 
 }
 
 /** The employee record linked to the caller (for their own punches and requests). */
-async function ownEmployee(tx: Transaction, orgId: string, actor: Actor) {
+export async function ownEmployee(tx: Transaction, orgId: string, actor: Actor) {
   const snap = await tx.get(employeesCol(orgId).where('uid', '==', actor.uid).limit(1));
   if (snap.empty) throw errors.conflict('NO_EMPLOYEE_RECORD', "You don't have an employee record in this organization. Ask HR to add you.");
   return snap.docs[0];
 }
 
-function ensureWorking(employee: DocumentSnapshot) {
+export function ensureWorking(employee: DocumentSnapshot) {
   if (!WORKING.includes(employee.get('status'))) throw errors.conflict('NOT_WORKING', `${employee.get('fullName')} is not currently employed here.`);
 }
 
@@ -143,7 +158,7 @@ export const punch = command(
     if (input.punch === 'OUT' && !checkIn) throw errors.conflict('NOT_IN', 'Check in first.');
     if (input.punch === 'OUT' && checkOut) throw errors.conflict('ALREADY_OUT', 'Already checked out today.');
 
-    const record = recordFor(input.orgId, employee, day, ctx, input.punch === 'IN' ? now : checkIn, input.punch === 'OUT' ? now : null, self ? 'SELF' : 'DESK');
+    const record = recordFor(input.orgId, employee, day, ctx, input.punch === 'IN' ? now : checkIn, input.punch === 'OUT' ? now : null, self ? 'SELF' : 'DESK', leaveOf(current));
     tx.set(current.ref, { ...record, ...(self ? {} : { recordedBy: actor.uid }) }, { merge: true });
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: input.punch === 'IN' ? 'attendance.checkIn' : 'attendance.checkOut',
@@ -172,7 +187,7 @@ async function correctDay(tx: Transaction, orgId: string, employee: DocumentSnap
   const [current, ctx] = await Promise.all([tx.get(ref), dayContext(tx, orgId, employee, day)]);
   if (ctx.locked) throw errors.conflict('MONTH_FINALIZED', 'Attendance for this month is finalized. Ask HR to reopen it.');
   const { inMs, outMs } = instants(day, checkIn, checkOut);
-  const record = recordFor(orgId, employee, day, ctx, inMs, outMs, source);
+  const record = recordFor(orgId, employee, day, ctx, inMs, outMs, source, leaveOf(current));
   const before = { checkIn: ms(current.get('checkIn')), checkOut: ms(current.get('checkOut')), status: current.get('status') ?? null };
   return { record, before, write: (extra: Record<string, unknown>) => tx.set(ref, { ...record, ...extra }, { merge: true }) };
 }
@@ -321,6 +336,13 @@ export const finalize = query(
       .where('status', '==', 'PENDING')
       .get();
     if (!pending.empty) throw errors.conflict('CORRECTIONS_PENDING', `Decide the ${pending.size} correction${pending.size === 1 ? '' : 's'} waiting for approval first.`);
+    const leave = await db
+      .collection(`orgs/${orgId}/leaveRequests`)
+      .where('months', 'array-contains', m)
+      .where('branchId', '==', branchId)
+      .where('status', '==', 'PENDING')
+      .get();
+    if (!leave.empty) throw errors.conflict('LEAVE_PENDING', `Decide the ${leave.size} leave request${leave.size === 1 ? '' : 's'} waiting for approval first.`);
 
     const days = datesOfMonth(m);
     const [employees, shifts, holidays, branch, records] = await Promise.all([
@@ -364,7 +386,7 @@ export const finalize = query(
           locked: false,
         };
         const prior = existing.get(`${e.id}_${day}`);
-        const record = recordFor(orgId, e, day, ctx, ms(prior?.get('checkIn')), ms(prior?.get('checkOut')), (prior?.get('source') as string | undefined) ?? 'FINALIZE', true);
+        const record = recordFor(orgId, e, day, ctx, ms(prior?.get('checkIn')), ms(prior?.get('checkOut')), (prior?.get('source') as string | undefined) ?? 'FINALIZE', leaveOf(prior), true);
         results.push(record);
         await put(recordRef(orgId, e.id, day), { ...record, finalized: true });
       }
