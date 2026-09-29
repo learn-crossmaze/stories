@@ -68,7 +68,7 @@ beforeEach(async () => {
   authorId = (await call<{ id: string }>(catalog.authors.create, sa, { name: 'Robert Louis Stevenson' })).id;
   bookId = await newBook('Treasure Island', '978-0-306-40615-7');
   planId = (await call<{ planId: string }>(plans.create, sa, {
-    orgId: org, name: 'Monthly Two', duration: 'MONTHLY', priceMinor: 30000, depositMinor: 100000, maxSimultaneousBooks: 2, audiences: ['CHILDREN', 'TEENS', 'ADULTS'],
+    orgId: org, name: 'Monthly Two', options: [{ duration: 'MONTHLY', priceMinor: 30000 }], depositMinor: 100000, maxSimultaneousBooks: 2, audiences: ['CHILDREN', 'TEENS', 'ADULTS'],
   })).planId;
 });
 
@@ -311,12 +311,45 @@ describe('M1.4 subscriptions, payments, deposits', () => {
   it('plan edits never change terms already sold', async () => {
     const m = await register('Asha');
     const sub = await subscribe(m);
-    await call(plans.update, sa, { orgId: org, planId, name: 'Monthly Two', duration: 'MONTHLY', priceMinor: 45000, depositMinor: 150000, maxSimultaneousBooks: 1, audiences: ['ADULTS'] });
+    await call(plans.update, sa, { orgId: org, planId, name: 'Monthly Two', options: [{ duration: 'MONTHLY', priceMinor: 45000 }], depositMinor: 150000, maxSimultaneousBooks: 1, audiences: ['ADULTS'] });
     const s = await get(`subscriptions/${sub}`);
     expect(s.planSnapshot).toMatchObject({ priceMinor: 30000, maxSimultaneousBooks: 2 });
     expect(s.planVersion).toBe(1);
     const [c1, c2] = await acquire(bookId, 2);
     await issue(m, [c1, c2]); // still 2 at a time under the old terms
+  });
+
+  it('one plan offers several billing options, with an amount or percentage discount', async () => {
+    const today = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+    const later = new Date(Date.now() + 330 * 60_000 + 30 * 86_400_000).toISOString().slice(0, 10);
+    const base = { orgId: org, name: 'Learner', depositMinor: 100000, maxSimultaneousBooks: 4, audiences: ['ADULTS'] };
+    const options = [
+      { duration: 'ANNUAL', priceMinor: 479900 },
+      { duration: 'MONTHLY', priceMinor: 49900 },
+      { duration: 'QUARTERLY', priceMinor: 139900 },
+      { duration: 'HALF_YEARLY', priceMinor: 259900 },
+    ];
+    expect(await failure(call(plans.create, sa, { ...base, options: [...options, { duration: 'MONTHLY', priceMinor: 1 }] }))).toBe('INVALID_INPUT');
+    expect(await failure(call(plans.create, sa, { ...base, options, discount: { type: 'PERCENT', value: 95, from: today, to: later } }))).toBe('INVALID_INPUT');
+    expect(await failure(call(plans.create, sa, { ...base, options, discount: { type: 'AMOUNT', value: 60000, from: today, to: later } }))).toBe('INVALID_INPUT'); // more than the monthly price
+    const learner = (await call<{ planId: string }>(plans.create, sa, { ...base, options, discount: { type: 'PERCENT', value: 10, from: today, to: later, durations: ['ANNUAL'] } })).planId;
+    expect((await get(`plans/${learner}`)).options.map((o: { duration: string }) => o.duration)).toEqual(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'ANNUAL']);
+
+    const m = await register('Asha');
+    expect(await failure(call(subs.create, lib, { orgId: org, memberId: m, planId: learner }))).toBe('INVALID_INPUT'); // which option?
+    const yearly = await call<{ subscriptionId: string; amountDue: { subscriptionMinor: number } }>(subs.create, lib, { orgId: org, memberId: m, planId: learner, duration: 'ANNUAL' });
+    expect(yearly.amountDue.subscriptionMinor).toBe(431900); // 4,799 less 10% (480) = 4,319
+    expect((await get(`subscriptions/${yearly.subscriptionId}`)).planSnapshot).toMatchObject({ duration: 'ANNUAL', months: 12, listPriceMinor: 479900, discountMinor: 48000, priceMinor: 431900, discountLabel: '10% off', maxSimultaneousBooks: 4 });
+    await call(subs.cancelPending, lib, { orgId: org, subscriptionId: yearly.subscriptionId, reason: 'Changed mind' });
+    const quarterly = await call<{ amountDue: { subscriptionMinor: number } }>(subs.create, lib, { orgId: org, memberId: m, planId: learner, duration: 'QUARTERLY' });
+    expect(quarterly.amountDue.subscriptionMinor).toBe(139900); // the discount is for the yearly option only
+
+    // An amount off every option.
+    await call(plans.update, sa, { ...base, planId: learner, options, discount: { type: 'AMOUNT', value: 10000, from: today, to: later } });
+    const n = await register('Ravi');
+    const monthly = await call<{ amountDue: { subscriptionMinor: number } }>(subs.create, lib, { orgId: org, memberId: n, planId: learner, duration: 'MONTHLY' });
+    expect(monthly.amountDue.subscriptionMinor).toBe(39900);
+    expect(await failure(call(subs.create, lib, { orgId: org, memberId: await register('Nita'), planId, duration: 'ANNUAL' }))).toBe('INVALID_INPUT'); // not offered
   });
 
   it('returns a custom-barcoded copy by its copy code (desk checkbox return)', async () => {

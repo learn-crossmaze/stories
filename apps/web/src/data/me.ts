@@ -8,9 +8,8 @@ export interface MyPlan {
   id: string;
   name: string;
   description: string;
-  duration: Duration;
-  priceMinor: number;
-  listPriceMinor: number;
+  /** Billing options with today's prices. */
+  options: { duration: Duration; months: number; priceMinor: number; listPriceMinor: number; discountMinor: number; discountLabel: string | null }[];
   depositMinor: number;
   maxSimultaneousBooks: number;
   deliveryEligible: boolean;
@@ -125,8 +124,8 @@ export interface Overview {
 
 export const loadOverview = () => callAction<Overview>(services().fns, 'me-overview', {});
 
-export const subscribeToPlan = (m: Membership, planId: string) =>
-  command<{ subscriptionId: string }>('me-subscribe', { orgId: m.orgId, memberId: m.memberId, planId });
+export const subscribeToPlan = (m: Membership, planId: string, duration: Duration) =>
+  command<{ subscriptionId: string }>('me-subscribe', { orgId: m.orgId, memberId: m.memberId, planId, duration });
 
 export const cancelUnpaid = (m: Membership, subscriptionId: string) => command('me-cancelPending', { orgId: m.orgId, subscriptionId });
 

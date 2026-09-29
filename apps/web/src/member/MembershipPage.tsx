@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { toApiError } from '../data/api';
-import { label } from '../data/common';
+import { DURATION_LABELS, type Duration, label, PER_PERIOD, planWithOption } from '../data/common';
 import {
   cancelUnpaid,
   checkOnlinePayment,
@@ -100,7 +100,7 @@ function MembershipBody({ m }: { m: Membership }) {
       <section className="card member-card">
         <div className="member-card-head">
           <div>
-            <h2>{term?.planSnapshot.name ?? t.meNoPlan}</h2>
+            <h2>{term ? planWithOption(term.planSnapshot) : t.meNoPlan}</h2>
             <p className="muted">
               {term
                 ? t.meTerm(day(term.startAt), day(term.endAt))
@@ -117,7 +117,7 @@ function MembershipBody({ m }: { m: Membership }) {
       {pending && (
         <section className="card pay-card">
           <h2>{t.meCompletePayment}</h2>
-          <p>{t.mePendingFor(pending.planSnapshot.name)}</p>
+          <p>{t.mePendingFor(planWithOption(pending.planSnapshot))}</p>
           <dl className="facts">
             <dt>{t.meFee}</dt>
             <dd>{money(pending.amountDue.subscriptionMinor)}</dd>
@@ -167,7 +167,7 @@ function MembershipBody({ m }: { m: Membership }) {
                   plan={p}
                   busy={busy === p.id}
                   disabled={busy !== null || m.member.status !== 'ACTIVE'}
-                  onChoose={() => void act(p.id, () => subscribeToPlan(m, p.id))}
+                  onChoose={(duration) => void act(p.id, () => subscribeToPlan(m, p.id, duration))}
                 />
               ))}
             </ul>
@@ -181,7 +181,7 @@ function MembershipBody({ m }: { m: Membership }) {
         {!m.payments.length ? (
           <p className="muted">{t.meNoPayments}</p>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label={t.mePayments}>
             <table className="table">
               <thead>
                 <tr>
@@ -218,7 +218,7 @@ function MembershipBody({ m }: { m: Membership }) {
             {m.subscriptions.map((s) => (
               <li key={s.id}>
                 <span>
-                  <strong>{s.planSnapshot.name}</strong> <span className="muted small">{label(s.kind)}</span>
+                  <strong>{planWithOption(s.planSnapshot)}</strong> <span className="muted small">{label(s.kind)}</span>
                 </span>
                 <span className="muted small">
                   {label(s.status === 'PENDING_PAYMENT' ? 'AWAITING_PAYMENT' : s.status)}
@@ -253,18 +253,40 @@ function MembershipBody({ m }: { m: Membership }) {
   );
 }
 
-function PlanCard({ plan, busy, disabled, onChoose }: { plan: MyPlan; busy: boolean; disabled: boolean; onChoose: () => void }) {
+/** A plan with its billing options: the member picks how often to pay, then chooses the plan. */
+function PlanCard({ plan, busy, disabled, onChoose }: { plan: MyPlan; busy: boolean; disabled: boolean; onChoose: (duration: Duration) => void }) {
+  const [pick, setPick] = useState<Duration>(plan.options[0]?.duration ?? 'MONTHLY');
+  const chosen = plan.options.find((o) => o.duration === pick) ?? plan.options[0];
   return (
     <li className="plan-card">
       <strong>{plan.name}</strong>
-      <span className="plan-price">
-        {money(plan.priceMinor)} <span className="muted small">/ {label(plan.duration).toLowerCase()}</span>
-      </span>
-      {plan.priceMinor < plan.listPriceMinor && <span className="muted small">{t.meWasPrice(money(plan.listPriceMinor))}</span>}
+      {plan.options.length > 1 ? (
+        <fieldset className="choices">
+          <legend className="small">{t.meHowOften}</legend>
+          {plan.options.map((o) => (
+            <label key={o.duration} className="check">
+              <input type="radio" name={`opt-${plan.id}`} checked={pick === o.duration} onChange={() => setPick(o.duration)} />
+              {DURATION_LABELS[o.duration]} · {money(o.priceMinor)}
+              {o.discountLabel && <span className="badge badge-ok">{o.discountLabel}</span>}
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+      {chosen && (
+        <span className="plan-price">
+          {money(chosen.priceMinor)} <span className="muted small">/ {PER_PERIOD[chosen.duration]}</span>
+        </span>
+      )}
+      {chosen && chosen.priceMinor < chosen.listPriceMinor && (
+        <span className="muted small">
+          {t.meWasPrice(money(chosen.listPriceMinor))}
+          {chosen.discountLabel ? ` · ${chosen.discountLabel}` : ''}
+        </span>
+      )}
       <span className="small">{t.meBooksAtATime(plan.maxSimultaneousBooks)}</span>
       <span className="muted small">{t.meRefundableDeposit(money(plan.depositMinor))}</span>
       {plan.description && <span className="muted small">{plan.description}</span>}
-      <button type="button" className="btn btn-filled" disabled={disabled} onClick={onChoose}>
+      <button type="button" className="btn btn-filled" disabled={disabled || !chosen} onClick={() => chosen && onChoose(chosen.duration)}>
         {busy ? t.saving : t.meChoose}
       </button>
     </li>

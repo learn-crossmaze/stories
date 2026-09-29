@@ -5,7 +5,7 @@ import { queryToken, searchTokens } from '../../src/catalogue/search.js';
 import { addMonths } from '../../src/core/time.js';
 import { canTransition, COPY_STATUSES } from '../../src/inventory/copyState.js';
 import { ageOn, audienceFor, normalizePhone } from '../../src/members/model.js';
-import { effectivePrice } from '../../src/billing/plans.js';
+import { planOptions, priceFor } from '../../src/billing/plans.js';
 
 describe('ISBN', () => {
   it('accepts valid ISBN-13 with or without hyphens', () => {
@@ -70,9 +70,29 @@ describe('dates and prices', () => {
     expect(addMonths(new Date('2026-01-31T10:00:00Z'), 1).toISOString()).toBe('2026-02-28T10:00:00.000Z');
     expect(addMonths(new Date('2026-03-15T00:00:00Z'), 12).toISOString()).toBe('2027-03-15T00:00:00.000Z');
   });
-  it('applies promotional prices only inside their window', () => {
-    const plan = { priceMinor: 50000, promo: { priceMinor: 40000, from: '2026-09-01', to: '2026-09-30' } } as Parameters<typeof effectivePrice>[0];
-    expect(effectivePrice(plan, new Date('2026-09-15T06:00:00Z'))).toBe(40000);
-    expect(effectivePrice(plan, new Date('2026-10-01T06:00:00Z'))).toBe(50000);
+  it('applies promotional prices only inside their window (older single-option plans)', () => {
+    const plan = { duration: 'MONTHLY', priceMinor: 50000, promo: { priceMinor: 40000, from: '2026-09-01', to: '2026-09-30' } } as Parameters<typeof priceFor>[0];
+    expect(priceFor(plan, 'MONTHLY', new Date('2026-09-15T06:00:00Z')).priceMinor).toBe(40000);
+    expect(priceFor(plan, 'MONTHLY', new Date('2026-10-01T06:00:00Z')).priceMinor).toBe(50000);
+  });
+
+  it('prices each billing option, with an amount or percentage discount in its window', () => {
+    const options = [
+      { duration: 'ANNUAL' as const, priceMinor: 300000 },
+      { duration: 'MONTHLY' as const, priceMinor: 30000 },
+      { duration: 'QUARTERLY' as const, priceMinor: 85000 },
+    ];
+    expect(planOptions({ options }).map((o) => o.duration)).toEqual(['MONTHLY', 'QUARTERLY', 'ANNUAL']);
+    const during = new Date('2026-09-15T06:00:00Z');
+    const pct = { options, discount: { type: 'PERCENT' as const, value: 15, from: '2026-09-01', to: '2026-09-30', durations: ['ANNUAL' as const], label: '' } };
+    expect(priceFor(pct, 'ANNUAL', during)).toMatchObject({ months: 12, listPriceMinor: 300000, discountMinor: 45000, priceMinor: 255000, discountLabel: '15% off' });
+    expect(priceFor(pct, 'MONTHLY', during)).toMatchObject({ discountMinor: 0, priceMinor: 30000, discountLabel: null });
+    expect(priceFor(pct, 'ANNUAL', new Date('2026-10-02T06:00:00Z')).priceMinor).toBe(300000);
+    // Percentages round to whole rupees.
+    const odd = { options: [{ duration: 'MONTHLY' as const, priceMinor: 29900 }], discount: { type: 'PERCENT' as const, value: 10, from: '2026-09-01', to: '2026-09-30', durations: [], label: 'Diwali offer' } };
+    expect(priceFor(odd, 'MONTHLY', during)).toMatchObject({ discountMinor: 3000, priceMinor: 26900, discountLabel: 'Diwali offer' });
+    const amt = { options, discount: { type: 'AMOUNT' as const, value: 10000, from: '2026-09-01', to: '2026-09-30', durations: [], label: '' } };
+    expect(priceFor(amt, 'QUARTERLY', during)).toMatchObject({ discountMinor: 10000, priceMinor: 75000, discountLabel: 'Rs. 100 off' });
+    expect(() => priceFor(amt, 'HALF_YEARLY', during)).toThrow();
   });
 });

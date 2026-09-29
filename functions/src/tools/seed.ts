@@ -209,22 +209,27 @@ async function seedLibrary() {
     await call(copies.acquire, { orgId: FRAN, branchId: DEMO_FRANCHISE, bookId: b.id, quantity: 1, acquisitionCostMinor: 29900, condition: 'NEW' });
   }
 
-  // Plans (versioned; prices in paise).
-  const plan = async (orgId: string, name: string, duration: string, price: number, deposit: number, max: number, audiences: string[]) =>
-    (await call<{ planId: string }>(plans.create, { orgId, name, duration, priceMinor: price * 100, depositMinor: deposit * 100, maxSimultaneousBooks: max, audiences, deliveryEligible: max >= 4 })).planId;
+  // Plans (versioned; prices in paise). Each plan offers billing options, and may run a discount.
+  const inDays = (n: number) => new Date(Date.now() + 330 * 60_000 + n * 86_400_000).toISOString().slice(0, 10);
+  const plan = async (orgId: string, name: string, prices: Record<string, number>, deposit: number, max: number, audiences: string[], discount: Record<string, unknown> | null = null) =>
+    (
+      await call<{ planId: string }>(plans.create, {
+        orgId, name, options: Object.entries(prices).map(([duration, price]) => ({ duration, priceMinor: price * 100 })),
+        depositMinor: deposit * 100, maxSimultaneousBooks: max, audiences, deliveryEligible: max >= 4, discount,
+      })
+    ).planId;
   const all = ['CHILDREN', 'TEENS', 'ADULTS'];
-  const monthly = await plan(CORP, 'Monthly · 2 books', 'MONTHLY', 299, 1000, 2, all);
-  const quarterly = await plan(CORP, 'Quarterly · 4 books', 'QUARTERLY', 799, 1500, 4, all);
-  await plan(CORP, 'Half-yearly · 4 books', 'HALF_YEARLY', 1499, 1500, 4, all);
-  await plan(CORP, 'Annual · 6 books', 'ANNUAL', 2699, 2000, 6, all);
-  const little = await plan(CORP, 'Little Readers · 2 books', 'MONTHLY', 199, 500, 2, ['CHILDREN']);
-  const franMonthly = await plan(FRAN, 'Monthly · 2 books', 'MONTHLY', 299, 1000, 2, all);
+  const starter = await plan(CORP, 'Starter · 2 books', { MONTHLY: 299, QUARTERLY: 849, HALF_YEARLY: 1599, ANNUAL: 2999 }, 1000, 2, all);
+  const learner = await plan(CORP, 'Learner · 4 books', { MONTHLY: 499, QUARTERLY: 1399, HALF_YEARLY: 2599, ANNUAL: 4799 }, 1500, 4, all, { type: 'PERCENT', value: 10, from: inDays(-3), to: inDays(45), durations: ['HALF_YEARLY', 'ANNUAL'], label: 'Festive 10% off' });
+  await plan(CORP, 'Reader · 6 books', { QUARTERLY: 1899, ANNUAL: 6499 }, 2000, 6, all, { type: 'AMOUNT', value: 20000, from: inDays(-3), to: inDays(45), durations: [] });
+  const little = await plan(CORP, 'Little Readers · 2 books', { MONTHLY: 199, QUARTERLY: 549 }, 500, 2, ['CHILDREN']);
+  const franMonthly = await plan(FRAN, 'Starter · 2 books', { MONTHLY: 299, ANNUAL: 2999 }, 1000, 2, all);
 
   // Members, subscriptions (paid at the counter), loans and a reservation.
   const member = async (orgId: string, branchId: string, fullName: string, dob: string, phone: string, extra: Record<string, unknown> = {}) =>
     (await call<{ memberId: string }>(members.register, { orgId, homeBranchId: branchId, fullName, dob, phone, ...extra })).memberId;
-  const subscribe = async (orgId: string, memberId: string, planId: string) => {
-    const { subscriptionId, amountDue } = await call<{ subscriptionId: string; amountDue: { totalMinor: number } }>(subs.create, { orgId, memberId, planId });
+  const subscribe = async (orgId: string, memberId: string, planId: string, duration = 'MONTHLY') => {
+    const { subscriptionId, amountDue } = await call<{ subscriptionId: string; amountDue: { totalMinor: number } }>(subs.create, { orgId, memberId, planId, duration });
     await call(subs.recordOfflinePayment, { orgId, subscriptionId, method: 'OFFLINE_UPI', amountMinor: amountDue.totalMinor, reference: 'UPI-DEMO-0001' });
     return subscriptionId;
   };
@@ -232,22 +237,22 @@ async function seedLibrary() {
 
   // Asha signs in to the member app as member@stories.test (linked by email on first visit; Kiran is her ward).
   const asha = await member(CORP, CENTRAL, 'Asha Rao', '1988-04-12', '9876500001', { email: 'member@stories.test' });
-  await subscribe(CORP, asha, quarterly);
+  await subscribe(CORP, asha, learner, 'QUARTERLY');
   await issue(asha, [codes[bookIds[23].id][0], codes[bookIds[12].id][0]]);
   const kiran = await member(CORP, CENTRAL, 'Kiran Rao', '2016-08-20', '', { guardianMemberId: asha, guardianRelationship: 'Mother' });
   await subscribe(CORP, kiran, little);
   await issue(kiran, [codes[bookIds[1].id][0]]);
   const ravi = await member(CORP, CENTRAL, 'Ravi Kumar', '1992-11-03', '9876500002');
-  await subscribe(CORP, ravi, monthly);
+  await subscribe(CORP, ravi, starter);
   await issue(ravi, [codes[bookIds[24].id][0]]);
   await call(res.place, { orgId: CORP, memberId: ravi, bookId: bookIds[23].id, branchId: CENTRAL }); // other copy → held
   const farah = await member(CORP, CENTRAL, 'Farah Khan', '1985-01-30', '9876500003');
-  const farahSub = await subscribe(CORP, farah, monthly);
+  const farahSub = await subscribe(CORP, farah, starter);
   await issue(farah, [codes[bookIds[26].id][0]]);
   await db.doc(`orgs/${CORP}/subscriptions/${farahSub}`).update({ endAt: (await import('firebase-admin/firestore')).Timestamp.fromMillis(Date.now() - 86_400_000) });
   await sweep.expireDueSubscriptions();
   const neel = await member(CORP, CENTRAL, 'Neel Shah', '1999-06-15', '9876500004');
-  await call(subs.create, { orgId: CORP, memberId: neel, planId: monthly }); // waiting for payment
+  await call(subs.create, { orgId: CORP, memberId: neel, planId: starter, duration: 'MONTHLY' }); // waiting for payment
   const fatima = await member(FRAN, DEMO_FRANCHISE, 'Fatima Sheikh', '1990-09-09', '9876500005');
   await subscribe(FRAN, fatima, franMonthly);
 

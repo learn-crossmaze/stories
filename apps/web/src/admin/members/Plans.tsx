@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
-import { listPlans, type Plan } from '../../data/billing';
-import { AGE_GROUPS, DURATIONS, type Duration, label } from '../../data/common';
+import { listPlans, type Plan, planOptions, pricesFor } from '../../data/billing';
+import { AGE_GROUPS, DURATION_LABELS, DURATIONS, type Duration, label } from '../../data/common';
 import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
 import { t } from '../../strings';
@@ -13,40 +13,72 @@ import { ConfirmWithReason, Dialog, DialogActions, FormError, MultiPick, SelectF
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 
+type Row = { on: boolean; price: string };
+const ALL_DURATIONS = Object.keys(DURATIONS) as Duration[];
+
+/** Plan editor: the plan's terms, its billing options (monthly to yearly, each with a price) and an optional promotional discount. */
 function PlanDialog({ orgId, plan, onClose, onSaved }: { orgId: string; plan?: Plan; onClose: () => void; onSaved: () => void }) {
+  const existing = plan ? planOptions(plan) : [];
+  const d = plan?.discount ?? null;
   const [f, setF] = useState({
     name: plan?.name ?? '',
     description: plan?.description ?? '',
-    duration: plan?.duration ?? ('MONTHLY' as Duration),
-    price: plan ? String(plan.priceMinor / 100) : '',
     deposit: plan ? String(plan.depositMinor / 100) : '',
     maxBooks: plan ? String(plan.maxSimultaneousBooks) : '2',
     audiences: plan?.audiences ?? ['CHILDREN', 'TEENS', 'ADULTS'],
     deliveryEligible: plan?.deliveryEligible ?? false,
-    promoPrice: plan?.promo ? String(plan.promo.priceMinor / 100) : '',
-    promoFrom: plan?.promo?.from ?? '',
-    promoTo: plan?.promo?.to ?? '',
     renewalWindowDays: String(plan?.renewalWindowDays ?? 30),
+    discountType: (d?.type ?? '') as '' | 'AMOUNT' | 'PERCENT',
+    discountValue: d ? String(d.type === 'AMOUNT' ? d.value / 100 : d.value) : '',
+    discountFrom: d?.from ?? '',
+    discountTo: d?.to ?? '',
+    discountOn: (d?.durations ?? []) as Duration[],
+    discountLabel: d?.label ?? '',
   });
+  const [rows, setRows] = useState<Record<Duration, Row>>(
+    () =>
+      Object.fromEntries(
+        ALL_DURATIONS.map((k) => {
+          const o = existing.find((x) => x.duration === k);
+          return [k, { on: plan ? !!o : k === 'MONTHLY', price: o ? String(o.priceMinor / 100) : '' }];
+        }),
+      ) as Record<Duration, Row>,
+  );
   const [touched, setTouched] = useState(false);
   const set = <K extends keyof typeof f>(k: K) => (v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
+  const setRow = (k: Duration, r: Partial<Row>) => setRows((s) => ({ ...s, [k]: { ...s[k], ...r } }));
   const rupees = (v: string) => v.trim() !== '' && Number.isFinite(toMinor(v)) && toMinor(v) >= 0;
-  const promo = f.promoPrice.trim() !== '';
+  const offered = ALL_DURATIONS.filter((k) => rows[k].on);
+  const discounted = f.discountType !== '';
+  const value = Number(f.discountValue);
+  const discountErr = !discounted
+    ? undefined
+    : !(value > 0) || (f.discountType === 'PERCENT' && (value > 90 || !Number.isInteger(value)))
+      ? lt.discountValueInvalid
+      : !f.discountFrom || !f.discountTo || f.discountFrom > f.discountTo
+        ? lt.discountDatesInvalid
+        : f.discountType === 'AMOUNT' && offered.filter((k) => !f.discountOn.length || f.discountOn.includes(k)).some((k) => toMinor(f.discountValue) >= toMinor(rows[k].price))
+          ? lt.discountTooBig
+          : undefined;
   const errors = {
     name: f.name.trim().length >= 2 ? undefined : t.required,
-    price: rupees(f.price) ? undefined : 'Enter the price in rupees.',
+    options: !offered.length ? lt.optionsNone : offered.some((k) => !rupees(rows[k].price)) ? lt.optionsPrice : undefined,
     deposit: rupees(f.deposit) ? undefined : 'Enter the deposit in rupees.',
     maxBooks: /^\d+$/.test(f.maxBooks) && +f.maxBooks >= 1 && +f.maxBooks <= 20 ? undefined : 'Between 1 and 20.',
     audiences: f.audiences.length ? undefined : 'Choose at least one.',
-    promo: !promo || (rupees(f.promoPrice) && f.promoFrom && f.promoTo && f.promoFrom <= f.promoTo) ? undefined : 'Enter a promo price and a valid date range.',
+    discount: discountErr,
   };
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
     if (Object.values(errors).some(Boolean)) return;
     const body = {
-      orgId, name: f.name.trim(), description: f.description.trim(), duration: f.duration, priceMinor: toMinor(f.price), depositMinor: toMinor(f.deposit),
-      maxSimultaneousBooks: Number(f.maxBooks), audiences: f.audiences, deliveryEligible: f.deliveryEligible,
-      promo: promo ? { priceMinor: toMinor(f.promoPrice), from: f.promoFrom, to: f.promoTo } : null, renewalWindowDays: Number(f.renewalWindowDays) || 30,
+      orgId, name: f.name.trim(), description: f.description.trim(),
+      options: offered.map((k) => ({ duration: k, priceMinor: toMinor(rows[k].price) })),
+      depositMinor: toMinor(f.deposit), maxSimultaneousBooks: Number(f.maxBooks), audiences: f.audiences, deliveryEligible: f.deliveryEligible,
+      discount: discounted
+        ? { type: f.discountType, value: f.discountType === 'AMOUNT' ? toMinor(f.discountValue) : value, from: f.discountFrom, to: f.discountTo, durations: f.discountOn.filter((k) => rows[k].on), label: f.discountLabel.trim() }
+        : null,
+      renewalWindowDays: Number(f.renewalWindowDays) || 30,
     };
     if (plan) await command('plans-update', { ...body, planId: plan.id });
     else await command('plans-create', body);
@@ -57,11 +89,24 @@ function PlanDialog({ orgId, plan, onClose, onSaved }: { orgId: string; plan?: P
   return (
     <Dialog title={plan ? lt.editPlan : lt.newPlan} onClose={onClose}>
       <form onSubmit={submit} noValidate className="form-grid">
-        <TextField label={lt.planName} value={f.name} onChange={set('name')} error={err('name')} />
-        <SelectField label={lt.duration} value={f.duration} onChange={set('duration')} options={(Object.keys(DURATIONS) as Duration[]).map((d) => ({ value: d, label: label(d) }))} />
-        <TextField label={lt.price} value={f.price} onChange={set('price')} error={err('price')} />
-        <TextField label={lt.depositAmount} value={f.deposit} onChange={set('deposit')} error={err('deposit')} />
+        <TextField label={lt.planName} hint={lt.planNameHint} value={f.name} onChange={set('name')} error={err('name')} />
         <TextField label={lt.maxBooks} type="number" value={f.maxBooks} onChange={set('maxBooks')} error={err('maxBooks')} />
+        <fieldset className="choices span-2">
+          <legend>{lt.billingOptions}</legend>
+          <p className="muted small">{lt.billingOptionsHint}</p>
+          <div className="option-rows">
+            {ALL_DURATIONS.map((k) => (
+              <div key={k} className="option-row">
+                <label className="check">
+                  <input type="checkbox" checked={rows[k].on} onChange={(e) => setRow(k, { on: e.target.checked })} /> {DURATION_LABELS[k]}
+                </label>
+                <TextField label={lt.optionPrice(DURATION_LABELS[k])} value={rows[k].price} disabled={!rows[k].on} onChange={(v) => setRow(k, { price: v })} />
+              </div>
+            ))}
+          </div>
+          {err('options') && <span className="field-error">{errors.options}</span>}
+        </fieldset>
+        <TextField label={lt.depositAmount} value={f.deposit} onChange={set('deposit')} error={err('deposit')} />
         <TextField label={lt.renewalWindow} type="number" value={f.renewalWindowDays} onChange={set('renewalWindowDays')} />
         <div className="span-2">
           <MultiPick legend={lt.audiences} options={AGE_GROUPS.map((a) => ({ value: a, label: label(a) }))} value={f.audiences} onChange={(v) => set('audiences')(v as typeof f.audiences)} error={err('audiences')} />
@@ -71,13 +116,37 @@ function PlanDialog({ orgId, plan, onClose, onSaved }: { orgId: string; plan?: P
           </label>
         </div>
         <fieldset className="choices span-2">
-          <legend>{lt.promo}</legend>
-          <div className="form-grid-3">
-            <TextField label={lt.promoPrice} value={f.promoPrice} onChange={set('promoPrice')} />
-            <TextField label={lt.promoFrom} type="date" value={f.promoFrom} onChange={set('promoFrom')} />
-            <TextField label={lt.promoTo} type="date" value={f.promoTo} onChange={set('promoTo')} />
+          <legend>{lt.discount}</legend>
+          <div className="form-grid">
+            <SelectField
+              label={lt.discountType}
+              value={f.discountType}
+              onChange={set('discountType')}
+              options={[
+                { value: '', label: lt.discountNone },
+                { value: 'AMOUNT', label: lt.discountAmount },
+                { value: 'PERCENT', label: lt.discountPercent },
+              ]}
+            />
+            {discounted && (
+              <TextField label={f.discountType === 'AMOUNT' ? lt.discountAmountValue : lt.discountPercentValue} value={f.discountValue} onChange={set('discountValue')} />
+            )}
+            {discounted && <TextField label={lt.promoFrom} type="date" value={f.discountFrom} onChange={set('discountFrom')} />}
+            {discounted && <TextField label={lt.promoTo} type="date" value={f.discountTo} onChange={set('discountTo')} />}
+            {discounted && <TextField label={lt.discountLabel} hint={lt.discountLabelHint} value={f.discountLabel} onChange={set('discountLabel')} />}
           </div>
-          {err('promo') && <span className="field-error">{errors.promo}</span>}
+          {discounted && (
+            <div role="group" aria-label={lt.discountAppliesTo}>
+              <p className="small">{lt.discountAppliesTo}</p>
+              {offered.map((k) => (
+                <label key={k} className="check">
+                  <input type="checkbox" checked={f.discountOn.includes(k)} onChange={(e) => set('discountOn')(e.target.checked ? [...f.discountOn, k] : f.discountOn.filter((x) => x !== k))} /> {DURATION_LABELS[k]}
+                </label>
+              ))}
+              <p className="muted small">{lt.discountAllHint}</p>
+            </div>
+          )}
+          {err('discount') && <span className="field-error">{errors.discount}</span>}
         </fieldset>
         <div className="span-2">
           <TextField label={lt.description} value={f.description} onChange={set('description')} />
@@ -86,6 +155,23 @@ function PlanDialog({ orgId, plan, onClose, onSaved }: { orgId: string; plan?: P
         </div>
       </form>
     </Dialog>
+  );
+}
+
+/** The plan's options with today's prices, as a small table. */
+export function PlanPrices({ plan }: { plan: Plan }) {
+  return (
+    <ul className="plan-prices">
+      {pricesFor(plan).map((p) => (
+        <li key={p.duration}>
+          <span>{DURATION_LABELS[p.duration]}</span>
+          <span>
+            {p.discountMinor > 0 && <s className="muted small">{money(p.listPriceMinor)}</s>} <strong>{money(p.priceMinor)}</strong>
+            {p.discountLabel && <span className="badge badge-ok">{p.discountLabel}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -121,10 +207,12 @@ export function PlansPage() {
                 <h2>{p.name}</h2>
                 <span className="muted small">{lt.version(p.version)}</span>
               </header>
-              <p className="plan-price">
-                {money(p.priceMinor)} <span className="muted small">/ {label(p.duration).toLowerCase()}</span>
-              </p>
-              {p.promo && <p className="small">Promo {money(p.promo.priceMinor)} · {p.promo.from} → {p.promo.to}</p>}
+              <PlanPrices plan={p} />
+              {p.discount && (
+                <p className="small">
+                  {lt.discountSummary(p.discount.type === 'AMOUNT' ? money(p.discount.value) : `${p.discount.value}%`, p.discount.from, p.discount.to, p.discount.durations.map((k) => DURATION_LABELS[k]))}
+                </p>
+              )}
               <ul className="plan-facts small">
                 <li>{p.maxSimultaneousBooks} {lt.maxBooks.toLowerCase()} · unlimited exchanges</li>
                 <li>{lt.depositAmount.replace(' (₹)', '')}: {money(p.depositMinor)}</li>

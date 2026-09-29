@@ -65,7 +65,7 @@ beforeEach(async () => {
   central = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'CEN', name: 'Central', address, contact })).branchId;
   await call(staff.setRoles, sa, { orgId: org, email: lib.email, roles: ['LIBRARIAN'], branchIds: [central] });
   const planId = (await call<{ planId: string }>(plans.create, sa, {
-    orgId: org, name: 'Monthly Two', duration: 'MONTHLY', priceMinor: 30000, depositMinor: 100000, maxSimultaneousBooks: 2, audiences: ['ADULTS'],
+    orgId: org, name: 'Monthly Two', options: [{ duration: 'MONTHLY', priceMinor: 30000 }], depositMinor: 100000, maxSimultaneousBooks: 2, audiences: ['ADULTS'],
   })).planId;
   memberId = (await call<{ memberId: string }>(members.register, lib, {
     orgId: org, homeBranchId: central, fullName: 'Asha Rao', dob: '1990-05-01', phone: '9876500001', email: 'asha@example.com',

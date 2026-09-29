@@ -1,7 +1,7 @@
 import { memberAudit, type AuditEntry } from '../../data/org';
 import { memberPayments, type Subscription } from '../../data/billing';
 import { type Loan } from '../../data/circulation';
-import { label } from '../../data/common';
+import { label, planWithOption } from '../../data/common';
 import { useAsync } from '../../shared/useAsync';
 import { day, money, when } from '../../shared/format';
 import { t } from '../../strings';
@@ -30,7 +30,7 @@ export function SubscriptionHistory({ subs, loading, error, onRetry }: { subs: S
           {subs.map((s) => (
             <tr key={s.id}>
               <td>
-                {s.planSnapshot.name}
+                {planWithOption(s.planSnapshot)}
                 <div className="muted small">{s.kind === 'RENEWAL' ? lt.renewal : lt.newSubscription}</div>
               </td>
               <td className="nowrap">{s.startAt ? `${day(s.startAt)} → ${day(s.endAt)}` : '—'}</td>

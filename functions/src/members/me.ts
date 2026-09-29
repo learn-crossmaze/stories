@@ -10,8 +10,8 @@ import { id } from '../core/schemas.js';
 import { cancelReservation, placeReservation } from '../circulation/reservations.js';
 import type { Member } from './model.js';
 import { requestOnlinePayment, settleOpenRequests } from '../billing/online.js';
-import { effectivePrice, type Plan } from '../billing/plans.js';
-import { cancelPendingSubscription, startSubscription } from '../billing/subscriptions.js';
+import { type Plan, pricesFor } from '../billing/plans.js';
+import { cancelPendingSubscription, createSchema, startSubscription } from '../billing/subscriptions.js';
 
 // Member self-service ("me-*"): a signed-in member sees and acts on their own
 // memberships and those of the children they are guardian for. Access is by
@@ -157,7 +157,7 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
           .filter((p) => p.audiences.includes(member.audience))
           .map((p) =>
             plain({
-              id: p.id, name: p.name, description: p.description, duration: p.duration, priceMinor: effectivePrice(p), listPriceMinor: p.priceMinor,
+              id: p.id, name: p.name, description: p.description, options: pricesFor(p),
               depositMinor: p.depositMinor, maxSimultaneousBooks: p.maxSimultaneousBooks, deliveryEligible: p.deliveryEligible,
               renewalWindowDays: p.renewalWindowDays,
             }),
@@ -170,7 +170,7 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
 });
 
 /** A member (or their guardian) chooses a plan: a subscription waiting for payment is created. */
-export const subscribe = command('me-subscribe', z.strictObject({ orgId: id, memberId: id, planId: id }), (ctx, tx) =>
+export const subscribe = command('me-subscribe', createSchema, (ctx, tx) =>
   startSubscription(ctx, tx, (member) => requireOwner(ctx.actor, member, ctx.input.orgId, tx)),
 );
 

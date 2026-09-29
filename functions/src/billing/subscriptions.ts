@@ -10,7 +10,7 @@ import { addMonths } from '../core/time.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { balanceOf, depositRef, postLedger } from './ledger.js';
-import { DURATIONS, effectivePrice, type Plan } from './plans.js';
+import { DURATIONS, type Duration, planOptions, type Plan, priceFor } from './plans.js';
 import { currentTerm } from './term.js';
 
 /**
@@ -18,7 +18,13 @@ import { currentTerm } from './term.js';
  * the plan terms and the amounts due; the deposit due is only the top-up the
  * current deposit balance doesn't already cover.
  */
-export const createSchema = z.strictObject({ orgId: id, memberId: id, planId: id });
+export const createSchema = z.strictObject({
+  orgId: id,
+  memberId: id,
+  planId: id,
+  /** Billing option (monthly, quarterly…); may be left out when the plan has only one. */
+  duration: z.enum(Object.keys(DURATIONS) as [Duration, ...Duration[]]).optional(),
+});
 
 /**
  * Shared by staff (subscriptions-create) and members buying their own plan
@@ -59,7 +65,11 @@ export async function startSubscription(
       throw errors.conflict('DEPOSIT_SETTLING', 'The deposit is being settled; finish the settlement before subscribing again.');
     }
 
-    const price = effectivePrice(plan);
+    const options = planOptions(plan);
+    const duration = input.duration ?? (options.length === 1 ? options[0].duration : undefined);
+    if (!duration) throw errors.invalid('Choose how often to pay: this plan has several billing options.');
+    const quote = priceFor(plan, duration);
+    const price = quote.priceMinor;
     const depositDue = Math.max(0, plan.depositMinor - balanceOf(deposit));
     const ref = db.collection(`orgs/${input.orgId}/subscriptions`).doc();
     const sub = {
@@ -71,10 +81,12 @@ export async function startSubscription(
       planVersion: plan.version,
       planSnapshot: {
         name: plan.name,
-        duration: plan.duration,
-        months: DURATIONS[plan.duration],
+        duration,
+        months: quote.months,
         priceMinor: price,
-        listPriceMinor: plan.priceMinor,
+        listPriceMinor: quote.listPriceMinor,
+        discountMinor: quote.discountMinor,
+        discountLabel: quote.discountLabel,
         depositMinor: plan.depositMinor,
         maxSimultaneousBooks: plan.maxSimultaneousBooks,
         deliveryEligible: plan.deliveryEligible,
@@ -92,7 +104,7 @@ export async function startSubscription(
     if (term?.rollover) tx.update(memberSnap.ref, term.rollover);
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'subscription.create', entityType: 'subscription', entityId: ref.id, branchId: member.homeBranchId, memberId: input.memberId,
-      after: { memberId: input.memberId, planId: input.planId, planVersion: plan.version, kind, amountDue: sub.amountDue },
+      after: { memberId: input.memberId, planId: input.planId, planVersion: plan.version, duration, kind, discountMinor: quote.discountMinor, amountDue: sub.amountDue },
     });
     return { subscriptionId: ref.id, amountDue: sub.amountDue };
 }
