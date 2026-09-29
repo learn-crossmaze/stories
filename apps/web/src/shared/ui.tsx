@@ -89,7 +89,7 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 /** Placeholder rows while a table loads. */
 export function SkeletonRows({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="skeleton-list" aria-busy="true" aria-label={t.loading}>
+    <div className="skeleton-list" role="status" aria-busy="true" aria-label={t.loading}>
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="skeleton-row" />
       ))}

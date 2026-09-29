@@ -57,6 +57,7 @@ export const DEFAULT_DOCUMENT_TYPES: DocumentType[] = [
   { id: 'address-proof', name: 'Address proof', category: 'ADDRESS', required: false, hasExpiry: false, reminderDays: 30, selfUpload: true, checklistKey: 'address-proof', status: 'ACTIVE' },
   { id: 'photo', name: 'Photograph', category: 'IDENTITY', required: false, hasExpiry: false, reminderDays: 30, selfUpload: true, checklistKey: 'photo', status: 'ACTIVE' },
   { id: 'offer-letter', name: 'Signed offer letter', category: 'CONTRACT', required: true, hasExpiry: false, reminderDays: 30, selfUpload: false, checklistKey: 'offer-letter', status: 'ACTIVE' },
+  { id: 'appointment-letter', name: 'Appointment letter', category: 'CONTRACT', required: false, hasExpiry: false, reminderDays: 30, selfUpload: false, checklistKey: null, status: 'ACTIVE' },
   { id: 'offer-letter-issued', name: 'Offer letter', category: 'CONTRACT', required: false, hasExpiry: false, reminderDays: 30, selfUpload: false, checklistKey: null, status: 'ACTIVE' },
   { id: 'education', name: 'Education certificate', category: 'EDUCATION', required: false, hasExpiry: false, reminderDays: 30, selfUpload: true, checklistKey: null, status: 'ACTIVE' },
   { id: 'previous-employment', name: 'Previous employment letter', category: 'EMPLOYMENT', required: false, hasExpiry: false, reminderDays: 30, selfUpload: true, checklistKey: null, status: 'ACTIVE' },

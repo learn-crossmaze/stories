@@ -40,6 +40,7 @@ export const paths = {
   adminSettingsSchedule: '/admin/settings/schedule',
   adminSettingsLeave: '/admin/settings/leave',
   adminSettingsDocuments: '/admin/settings/documents',
+  adminSettingsLetters: '/admin/settings/letters',
   adminSettingsPayroll: '/admin/settings/payroll',
   adminDocuments: '/admin/documents',
   adminOffers: '/admin/offer-letters',

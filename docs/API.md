@@ -80,6 +80,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Settings | `designations-create/rename/archive`, `hr-setChecklists`, `documentTypes-save/archive` | `hr.config` |
 | Documents | `documents-upload` (base64 PDF/JPEG/PNG, 5 MB), `documents-remove` | `documents.verify` or `employees.edit` at the employee's branch; the employee for self-upload types (and to withdraw a pending upload) |
 | Offer letters | `offers-preview` (query; PDF marked PREVIEW), `offers-release` (files the PDF in the employee's documents), `offers-withdraw` (`offerId`, `reason`), `offers-open` (query; audited) | `offers.release` (HR, FO, BM) at the employee's branch; never your own letter. `offers-open` also for the employee |
+| Letters and templates | `letters-preview` (query), `letters-issue` (`kind` APPOINTMENT or CUSTOM, `templateId`, values the template uses); `letterTemplates-save/publish/archive`, `letterTemplates-preview` (query, sample values), `letterTemplates-defaults` (query: built-in wording and placeholders) | `letters.issue` at the employee's branch (never your own) for letters; `hr.config` for templates; `letterTemplates-defaults` any member |
 | | `documents-review` (`VERIFY` / `REJECT` with reason; never your own upload) | `documents.verify` |
 | | `documents-open` (query, audited) | as upload, or the employee |
 | Attendance | `shifts-save/archive`, `holidays-save/remove` | `hr.config` |

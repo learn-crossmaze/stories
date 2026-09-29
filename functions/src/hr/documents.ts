@@ -60,6 +60,7 @@ export const DEFAULT_DOCUMENT_TYPES: Record<string, DocumentType> = {
   'offer-letter': { name: 'Signed offer letter', category: 'CONTRACT', required: true, hasExpiry: false, reminderDays: 30, selfUpload: false, checklistKey: 'offer-letter', status: 'ACTIVE' },
   // Letters released through Stories are filed here automatically (offers-release); HR may also file older ones.
   'offer-letter-issued': { name: 'Offer letter', category: 'CONTRACT', required: false, hasExpiry: false, reminderDays: 30, selfUpload: false, checklistKey: null, status: 'ACTIVE' },
+  'appointment-letter': { name: 'Appointment letter', category: 'CONTRACT', required: false, hasExpiry: false, reminderDays: 30, selfUpload: false, checklistKey: null, status: 'ACTIVE' },
   education: { name: 'Education certificate', category: 'EDUCATION', required: false, hasExpiry: false, reminderDays: 30, selfUpload: true, checklistKey: null, status: 'ACTIVE' },
   'previous-employment': { name: 'Previous employment letter', category: 'EMPLOYMENT', required: false, hasExpiry: false, reminderDays: 30, selfUpload: true, checklistKey: null, status: 'ACTIVE' },
   'driving-licence': { name: 'Driving licence', category: 'IDENTITY', required: false, hasExpiry: true, reminderDays: 30, selfUpload: true, checklistKey: null, status: 'ACTIVE' },

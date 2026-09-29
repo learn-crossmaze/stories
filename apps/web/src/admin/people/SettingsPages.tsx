@@ -9,6 +9,7 @@ import { ht } from '../../strings/hr';
 import { useWorkspace } from '../Workspace';
 import { DocumentTypesSection } from './DocumentTypesSettings';
 import { LeaveTypesSection } from './LeaveTypesSettings';
+import { LetterTemplatesSection } from './LetterTemplatesSettings';
 import { PayrollSettingsSection } from './PayrollSettings';
 import { HolidaysSection, ShiftsSection } from './ScheduleSettings';
 
@@ -46,4 +47,6 @@ function DocumentTypes({ orgId }: { orgId: string }) {
   return <DocumentTypesSection orgId={orgId} checklist={templates.data?.onboarding ?? []} />;
 }
 
-export const DocumentTypesSettingsPage = () => <SettingsPage title={ht.navDocumentTypes}>{(orgId) => <DocumentTypes orgId={orgId} />}</SettingsPage>;
+export const LetterTemplatesSettingsPage = () => <SettingsPage title={ht.navLetterTemplates}>{(orgId) => <LetterTemplatesSection orgId={orgId} />}</SettingsPage>;
+
+export const DocumentTypesSettingsPage =() => <SettingsPage title={ht.navDocumentTypes}>{(orgId) => <DocumentTypes orgId={orgId} />}</SettingsPage>;

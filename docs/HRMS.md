@@ -81,6 +81,7 @@ DRAFT ──start onboarding──▶ ONBOARDING ──mark as joined──▶ A
 | hr.config | HO, HR, FO |
 | documents.verify | HR, FO (Phase 2) |
 | offers.release | HR, FO, BM (own branches); never your own letter (§12) |
+| letters.issue | HR, FO, BM (own branches): appointment and custom letters; never your own (§13) |
 | attendance.view / attendance.finalize | HO, HR, FO, BM, FIN / HR, FO (Phase 3) |
 | leave.adjust / leave.approve | HR, FO / HR, FO, BM (Phase 4) |
 | salary.view / salary.edit / payslips.viewAll | HR, FIN, FO / HR, FO / HR, FIN, FO (Phase 5) |
@@ -414,7 +415,7 @@ a branch manager's own letter comes from HR or another manager at the branch. Th
   position, department, employment type, reporting manager and joining date. The releaser adds the annual cost to company,
   probation, notice period, the date to accept by (today up to the joining date) and any other terms.
 - **Preview** (`offers-preview`, a query): the PDF exactly as it would be released, marked PREVIEW. Nothing is stored.
-- **Release** (`offers-release`): numbers the letter, generates the PDF (`functions/src/hr/offerLetterPdf.ts`, A4,
+- **Release** (`offers-release`): numbers the letter, generates the PDF (`functions/src/hr/letterPdf.ts`, A4, worded by the offer template in force, §13,
   letterhead with the organization and branch address, signed by the releaser's name and job title), and in one transaction:
   - stores the file privately (`hr/{orgId}/{employeeId}/{id}.pdf`) and files it in the employee's documents as a
     verified **Offer letter**, so it shows under **My documents** in the Staff view at once;
@@ -427,6 +428,47 @@ a branch manager's own letter comes from HR or another manager at the branch. Th
 - Offers go to employees in draft, onboarding or active. The signed copy the employee returns is still uploaded
   under **Signed offer letter**, which ticks the onboarding item "Offer letter signed".
 
-**Known limits:** one letter template (edit `offerLetterPdf.ts` to change the wording). Standard PDF fonts cover
-English (Latin) text only: other scripts print as "?". The salary break-up is not part of the letter.
+**Known limits:** standard PDF fonts cover English (Latin) text only: other scripts print as "?". The salary break-up
+is not part of the letter. The wording comes from letter templates (§13).
+
+## 13. Letter templates and other letters
+
+| Path | Contents | Who reads it |
+|---|---|---|
+| `orgs/{o}/letterTemplates/{id}` | `name`, `kind` (OFFER, APPOINTMENT, CUSTOM), `branchId` (null = all branches), `subject`, `body`, `acceptance`, `status` (DRAFT, PUBLISHED, ARCHIVED), who changed and published it | anyone in the org (wording only); written by functions |
+| `orgs/{o}/offerLetters/{id}` | every issued letter, now with `kind`, `templateId`, `templateName` and `subject` (older records without `kind` are offers) | `offers.release` or `letters.issue` at the branch; the employee |
+
+**Templates** (Settings → **Letter templates**, `hr.config`: head office, HR, franchise owner):
+
+- **Kinds:** *Offer letter* and *Appointment letter* have built-in wording (`BUILT_IN` in
+  `functions/src/hr/letterTemplates.ts`); *Custom letters* (experience, relieving, confirmation…) are new templates.
+- **Per branch:** a template applies to all branches or to one. For offer and appointment letters the wording used is
+  the employee's branch's published template, else the one for all branches, else the built-in wording. A custom
+  template for one branch can only be issued to that branch's staff.
+- **Draft → published:** new templates are drafts and are never used. *Publish* makes one live; an offer or
+  appointment template replaces (archives) the one published for the same branch or for all branches. Editing a
+  published template changes letters issued from then on; letters already issued keep their PDF. *Archive* stops
+  using a template. *Customize* starts a draft from the built-in wording; *Copy for a branch* starts a branch draft.
+- **Preview** (`letterTemplates-preview`) shows the draft as a PDF with sample values.
+- **Text:** one paragraph per line. `# Heading`, `- bullet`, and `* Label: value` (a row of facts, left out when a
+  placeholder in it is empty). A line made only of empty placeholders (e.g. `{{terms}}`) is left out.
+- **Placeholders:** `{{name}}`, `{{firstName}}`, `{{employeeId}}`, `{{designation}}`, `{{department}}`,
+  `{{employmentType}}`, `{{workLocation}}`, `{{joiningDate}}`, `{{exitDate}}`, `{{ctc}}`, `{{ctcWords}}`,
+  `{{probationMonths}}`, `{{noticeDays}}`, `{{acceptBy}}`, `{{reportingTo}}`, `{{terms}}`, `{{date}}`, `{{org}}`,
+  `{{signatory}}`, `{{signatoryTitle}}`. Unknown placeholders are refused when saving. A letter is refused when its
+  text (outside facts rows) needs a value that is missing, e.g. an experience letter using `{{exitDate}}` for someone
+  without a last working day.
+- Every letter has the letterhead, reference number and date, the employee's name and ID, the subject, the text, a
+  signature block with the issuer's name and job title, and (if ticked) an acceptance block.
+
+**Issuing** (`letters-issue`, `letters-preview`; `letters.issue`: HR, franchise owner, branch manager at their
+branches; never to yourself): the employee profile's **Letters** tab or the **Letters** page → *Issue letter*, choose
+*Appointment letter* or a published custom letter. The form asks only for the values the template uses; blanks come
+from the employee record (position, department, manager, joining date). Letters go to employees past draft.
+
+- Numbers: `OL/…` offers, `AL/…` appointment letters, `LT/…` custom letters (`{prefix}/{employee ID}/{year}/{n}`).
+- Filed in the employee's documents as verified: *Appointment letter* (`appointment-letter`), or for a custom letter
+  a document type named after the template (`letter-{templateId}`). A new letter replaces the earlier one of the same
+  kind (and template).
+- Open and withdraw work as for offers (`offers-open`, `offers-withdraw`), with `letters.issue` for non-offer letters.
 

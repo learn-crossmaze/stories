@@ -3,6 +3,7 @@ import * as attendance from './attendance.js';
 import * as documents from './documents.js';
 import * as employees from './employees.js';
 import * as leave from './leave.js';
+import * as letterTemplates from './letterTemplates.js';
 import * as offers from './offers.js';
 import * as payroll from './payroll.js';
 import * as schedule from './schedule.js';
@@ -32,6 +33,13 @@ export const routes = {
   'offers-release': offers.release,
   'offers-withdraw': offers.withdraw,
   'offers-open': offers.open,
+  'letters-preview': offers.previewLetter,
+  'letters-issue': offers.issueLetter,
+  'letterTemplates-save': letterTemplates.save,
+  'letterTemplates-publish': letterTemplates.publish,
+  'letterTemplates-archive': letterTemplates.archive,
+  'letterTemplates-preview': letterTemplates.preview,
+  'letterTemplates-defaults': letterTemplates.defaults,
   'shifts-save': schedule.saveShift,
   'shifts-archive': schedule.archiveShift,
   'holidays-save': schedule.saveHoliday,
