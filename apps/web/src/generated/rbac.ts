@@ -272,6 +272,11 @@ export const PERMISSIONS = {
     "HR",
     "FO"
   ],
+  "offers.release": [
+    "HR",
+    "FO",
+    "BM"
+  ],
   "attendance.view": [
     "HO",
     "HR",

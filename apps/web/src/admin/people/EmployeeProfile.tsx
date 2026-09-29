@@ -18,11 +18,12 @@ import { EmployeeAttendancePanel } from './EmployeeAttendance';
 import { EmployeeLeavePanel } from './EmployeeLeave';
 import { EmployeeSalaryPanel } from './EmployeeSalary';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
+import { EmployeeOffersPanel } from './OfferLetters';
 import { EmployeeDialog, EmployeeStatusBadge } from './People';
 import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
 
-type Tab = 'overview' | 'personal' | 'documents' | 'attendance' | 'leave' | 'salary' | 'bank' | 'lifecycle' | 'history' | 'access';
+type Tab = 'overview' | 'personal' | 'documents' | 'offers' | 'attendance' | 'leave' | 'salary' | 'bank' | 'lifecycle' | 'history' | 'access';
 
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : (ht.status[String(v)] ?? ht.employmentType[String(v)] ?? String(v)));
 
@@ -97,6 +98,7 @@ export function EmployeeProfilePage() {
           { value: 'overview' as const, label: ht.tabOverview },
           ...(canPrivate || e.uid === user?.uid ? [{ value: 'personal' as const, label: ht.tabPersonal }] : []),
           ...(canManageDocs || self ? [{ value: 'documents' as const, label: ht.tabDocuments }] : []),
+          ...(perm('offers.release') ? [{ value: 'offers' as const, label: ht.tabOffers }] : []),
           ...(canViewAttendance || self ? [{ value: 'attendance' as const, label: ht.tabAttendance }] : []),
           ...(canViewAttendance || self ? [{ value: 'leave' as const, label: ht.tabLeave }] : []),
           ...(perm('salary.view') || self ? [{ value: 'salary' as const, label: ht.tabSalary }] : []),
@@ -165,6 +167,8 @@ export function EmployeeProfilePage() {
           )}
         </section>
       )}
+
+      {tab === 'offers' && <EmployeeOffersPanel orgId={orgId} employee={e} />}
 
       {tab === 'documents' && <EmployeeDocumentsPanel orgId={orgId} employee={e} canManage={canManageDocs} canVerify={canVerifyDocs} onChanged={employee.reload} />}
 

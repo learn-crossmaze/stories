@@ -72,6 +72,7 @@ nothing else.
 | employees.bank (set / reveal salary account; reveals audited) | ✓ | | ✓ | ✓ | | | | | | |
 | hr.config (designations, checklist templates) | ✓ | ✓ | | ✓ | | | | ✓ | | |
 | documents.verify (verify employee documents; see docs/HRMS.md §7) | ✓ | | | ✓ | | | | ✓ | | |
+| offers.release (release and withdraw offer letters; never your own; see docs/HRMS.md §12) | ✓ | | | ✓ | branch | | | ✓ | | |
 | attendance.view (day board, months, corrections) | ✓ | ✓ | ✓ | ✓ | branch | | | ✓ | self | |
 | attendance.finalize (lock a month, reopen) | ✓ | | | ✓ | | | | ✓ | | |
 | leave.adjust (opening balances, corrections, credit leave, cancel others' leave) | ✓ | | | ✓ | | | | ✓ | | |

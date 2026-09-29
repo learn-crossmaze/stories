@@ -12,6 +12,7 @@ it is tested and documented.
 | 4. Leave | Leave types and policies, a balance ledger with accrual, applications and approvals, leave on attendance | **Done** |
 | 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | **Done** |
 | 6. Self-service & dashboards | My profile, attendance, leave and payslips; HR dashboards; in-app notifications | **Done** |
+| Offer letters | Prepare, preview, release and withdraw offer letters; released letters are filed in the employee's documents (§12) | **Done** |
 
 Decisions for later phases (approved): the Tasks module is deferred, so "My tasks" is a placeholder. Notifications
 are in-app first. TDS is entered manually per employee per month. PF, ESI and PT are configurable with effective
@@ -78,6 +79,7 @@ DRAFT ──start onboarding──▶ ONBOARDING ──mark as joined──▶ A
 | employees.bank | HR, FIN |
 | hr.config | HO, HR, FO |
 | documents.verify | HR, FO (Phase 2) |
+| offers.release | HR, FO, BM (own branches); never your own letter (§12) |
 | attendance.view / attendance.finalize | HO, HR, FO, BM, FIN / HR, FO (Phase 3) |
 | leave.adjust / leave.approve | HR, FO / HR, FO, BM (Phase 4) |
 | salary.view / salary.edit / payslips.viewAll | HR, FIN, FO / HR, FO / HR, FIN, FO (Phase 5) |
@@ -385,4 +387,39 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - Notifications are in-app only: no email, SMS or push yet.
 - The Overview reads employee and attendance lists in the browser, which suits organizations of up to a few
   thousand staff.
+
+## 12. Offer letters
+
+| Path | Contents | Who reads it |
+|---|---|---|
+| `orgs/{o}/offerLetters/{id}` | `number` (`OL/{employee ID}/{year}/{n}`), the terms (`designation`, `department`, `employmentType`, `joiningDate`, `annualCtc` in whole rupees, `probationMonths`, `noticeDays`, `acceptBy`, `reportingTo`, `terms`), `workLocation`, `signatoryName/Title`, `status` (RELEASED, SUPERSEDED, WITHDRAWN), `documentId`, who released or withdrew it, and copies of the employee's name, code, uid and branch | `offers.release` at the employee's branch (head-office staff: all branches); the employee |
+| the employee's `documents/{id}` | the released PDF, type **Offer letter** (`offer-letter-issued`), status VERIFIED, `offerId` | as any employee document (§7) |
+
+**Who:** `offers.release` is held by HR Admin, Franchise Owner and Branch Manager (at their own branches; a head-office
+employee needs all branches). **Nobody releases, previews or withdraws their own offer letter**, whatever their role:
+a branch manager's own letter comes from HR or another manager at the branch. The check is on the server, by account
+(or by email for a record not yet linked to an account).
+
+**Flow**
+
+- **Prepare:** Admin → People → **Offer letters**, or Operations → My team → **Offer letters** (*New offer letter*,
+  pick the employee), or the employee profile's **Offer letter** tab. The form starts from the employee record:
+  position, department, employment type, reporting manager and joining date. The releaser adds the annual cost to company,
+  probation, notice period, the date to accept by (today up to the joining date) and any other terms.
+- **Preview** (`offers-preview`, a query): the PDF exactly as it would be released, marked PREVIEW. Nothing is stored.
+- **Release** (`offers-release`): numbers the letter, generates the PDF (`functions/src/hr/offerLetterPdf.ts`, A4,
+  letterhead with the organization and branch address, signed by the releaser's name and job title), and in one transaction:
+  - stores the file privately (`hr/{orgId}/{employeeId}/{id}.pdf`) and files it in the employee's documents as a
+    verified **Offer letter**, so it shows under **My documents** in the Staff view at once;
+  - marks any earlier released letter, and its document, as replaced;
+  - notifies the employee (`offer.released`) and writes an `employee.offer.release` audit entry.
+- **Open** (`offers-open`): the letter for releasers at the branch or the employee, audited. The employee can also
+  open it from My documents (`documents-open`).
+- **Withdraw** (`offers-withdraw`, with a reason): the offer becomes WITHDRAWN, its document is removed (kept for the
+  record), and the employee is told.
+- Offers go to employees in draft, onboarding or active. The signed copy the employee returns is still uploaded
+  under **Signed offer letter**, which ticks the onboarding item "Offer letter signed".
+
+**Known limits:** one letter template (edit `offerLetterPdf.ts` to change the wording). Standard PDF fonts cover
+English (Latin) text only: other scripts print as "?". The salary break-up is not part of the letter.
 
