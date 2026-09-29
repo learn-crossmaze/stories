@@ -9,6 +9,7 @@ import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubm
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
+import { DocumentTypesSection } from './DocumentTypesSettings';
 
 function DesignationDialog({ orgId, designation, onClose, onSaved }: { orgId: string; designation?: Designation; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(designation?.name ?? '');
@@ -165,6 +166,8 @@ export function HrSettingsPage() {
           </div>
         )}
       </section>
+
+      <DocumentTypesSection orgId={org.id} checklist={onboarding} />
 
       <section className="section">
         <h2>{ht.checklists}</h2>

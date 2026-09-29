@@ -110,6 +110,19 @@ service cloud.firestore {
       return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).r.hasAny(perms()[perm]));
     }
 
+    // Employee documents: the employee (uid), or HR (verifiers and employee
+    // editors) whose scope covers branch b (null = head office: all branches).
+    // Builds the permission map once, because a list query evaluates every
+    // branch of every matching rule within one expression budget.
+    function seesDocuments(o, b, uid) {
+      let p = perms();
+      let c = orgClaims(o);
+      return (signedIn() && uid != null && uid == request.auth.uid) || isSA()
+        || (c != null
+          && c.r.hasAny(p['documents.verify'].concat(p['employees.edit']))
+          && ('*' in c.b || b in c.b));
+    }
+
     // Checks "all branches" before touching `b`, so org-wide staff can run
     // unfiltered list queries (b comes from resource.data).
     function canAt(o, b, perm) {
@@ -138,6 +151,16 @@ service cloud.firestore {
       allow read: if can(resource.data.orgId, 'staff.view')
         && (allBranches(resource.data.orgId)
             || resource.data.branchIds.hasAny(orgClaims(resource.data.orgId).b));
+    }
+
+    // Employee documents (orgs/{o}/employees/{e}/documents/{d}). HR (verifiers
+    // and employee editors) at the employee's branch and the employee see the
+    // records; the files themselves are private in Storage and only come back
+    // through the audited documents-open call. Queue queries run as a
+    // collection group filtered on orgId (and branchId for branch staff).
+    match /{path=**}/documents/{d} {
+      allow read: if seesDocuments(resource.data.orgId, resource.data.get('branchId', null), resource.data.get('employeeUid', null));
+      allow write: if false;
     }
 
     // ---------------------------------------------------------------- catalogue
@@ -320,9 +343,21 @@ service cloud.firestore {
         match /private/bank {
           allow read, write: if false;
         }
+
+        // One employee's documents (the profile's Documents tab lists them unfiltered).
+        match /documents/{d} {
+          allow read: if seesDocuments(o, employee(o, e).get('branchId', null), employee(o, e).get('uid', null));
+          allow write: if false;
+        }
       }
 
       match /designations/{d} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
+      // Document types (defaults live in code; these override or add to them).
+      match /documentTypes/{t} {
         allow read: if inOrg(o);
         allow write: if false;
       }

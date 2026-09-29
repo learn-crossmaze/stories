@@ -71,7 +71,8 @@ nothing else.
 | employees.lifecycle (onboarding, resignation, offboarding checklists) | ✓ | ✓ | | ✓ | | | | ✓ | | |
 | employees.bank (set / reveal salary account; reveals audited) | ✓ | | ✓ | ✓ | | | | | | |
 | hr.config (designations, checklist templates) | ✓ | ✓ | | ✓ | | | | ✓ | | |
-| documents.verify · attendance.view · attendance.finalize · leave.adjust · salary.view/edit · payslips.viewAll | reserved for HRMS phases 2–5, see docs/HRMS.md §4 |||||||||||
+| documents.verify (verify employee documents; see docs/HRMS.md §7) | ✓ | | | ✓ | | | | ✓ | | |
+| attendance.view · attendance.finalize · leave.adjust · salary.view/edit · payslips.viewAll | reserved for HRMS phases 3–5, see docs/HRMS.md §4 |||||||||||
 | attendance.manage / corrections.approve | ✓ | | | ✓ | ✓ | | | ✓ | self (request) | |
 | leave.approve | ✓ | | | ✓ | ✓ | | | ✓ | self (apply) | |
 | payroll.run | ✓ | | | ✓ | | | | ✓ (own org) | | |

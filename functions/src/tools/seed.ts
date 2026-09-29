@@ -10,7 +10,8 @@
 process.env.GCLOUD_PROJECT = 'demo-stories';
 process.env.FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
 process.env.FIREBASE_AUTH_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099';
-if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(process.env.FIRESTORE_EMULATOR_HOST) || !/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST)) {
+process.env.FIREBASE_STORAGE_EMULATOR_HOST = process.env.FIREBASE_STORAGE_EMULATOR_HOST ?? '127.0.0.1:9199';
+if (![process.env.FIRESTORE_EMULATOR_HOST, process.env.FIREBASE_AUTH_EMULATOR_HOST, process.env.FIREBASE_STORAGE_EMULATOR_HOST].every((h) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(h ?? ''))) {
   throw new Error('Refusing to seed: emulator hosts must be local.');
 }
 
@@ -308,6 +309,29 @@ async function seedHr() {
   await call(emp.transition, { orgId: CORP, employeeId, transition: 'START_ONBOARDING' });
   await call(emp.checkItem, { orgId: CORP, employeeId, list: 'onboarding', key: 'offer-letter', done: true });
 
+  // Documents: verified ones for the branch manager (one driving licence expiring soon), one awaiting verification.
+  const docs = await import('../hr/documents.js');
+  const pdf = Buffer.from('%PDF-1.4\n% Stories demo document\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n').toString('base64');
+  const inDays = (n: number) => new Date(Date.now() + 330 * 60_000 + n * 86_400_000).toISOString().slice(0, 10);
+  const manager = await byEmail('manager@stories.test');
+  if (manager) {
+    for (const [typeId, extra] of [['pan-card', { number: 'ABCPM1234K' }], ['aadhaar', {}], ['driving-licence', { expiresOn: inDays(12), number: 'KA01 20200012345' }]] as const) {
+      await call(docs.upload, { orgId: CORP, employeeId: manager.id, typeId, fileName: `${typeId}.pdf`, content: pdf, ...extra });
+    }
+  }
+  await call(docs.upload, { orgId: CORP, employeeId, typeId: 'pan-card', fileName: 'pan.pdf', content: pdf, number: 'ABCNJ5678L' });
+  const delivery = await byEmail('delivery@stories.test');
+  const deliveryUid = delivery?.get('uid') as string | undefined;
+  if (delivery && deliveryUid) {
+    // Uploaded by the employee themselves, so it waits for HR.
+    await (docs.upload as unknown as Callable).run({
+      data: { orgId: CORP, employeeId: delivery.id, typeId: 'driving-licence', fileName: 'licence.pdf', content: pdf, expiresOn: inDays(400), requestId: randomUUID() },
+      auth: { uid: deliveryUid, token: { email: 'delivery@stories.test', email_verified: true } },
+      rawRequest: {},
+      acceptsStreaming: false,
+    });
+  }
+
   await db.doc('seed/hr').set({ at: FieldValue.serverTimestamp() });
-  console.log(`Seeded ${created} employee records, ${Object.keys(titles).length} designations and one hire in onboarding.`);
+  console.log(`Seeded ${created} employee records, ${Object.keys(titles).length} designations, one hire in onboarding and employee documents.`);
 }

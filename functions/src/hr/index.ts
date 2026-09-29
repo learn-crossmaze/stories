@@ -1,4 +1,5 @@
 // Staff HRMS: employee records, lifecycle and HR settings (hr router, docs/HRMS.md).
+import * as documents from './documents.js';
 import * as employees from './employees.js';
 import * as settings from './settings.js';
 
@@ -16,4 +17,12 @@ export const routes = {
   'designations-rename': settings.renameDesignation,
   'designations-archive': settings.archiveDesignation,
   'hr-setChecklists': settings.setChecklists,
+  'documents-upload': documents.upload,
+  'documents-review': documents.review,
+  'documents-remove': documents.remove,
+  'documents-open': documents.open,
+  'documentTypes-save': documents.saveType,
+  'documentTypes-archive': documents.archiveType,
 };
+
+export const expireDocuments = documents.expireSweep;

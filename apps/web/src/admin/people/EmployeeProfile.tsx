@@ -14,11 +14,12 @@ import { ht } from '../../strings/hr';
 import { Notice, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { EmployeeDialog, EmployeeStatusBadge } from './People';
 import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
 
-type Tab = 'overview' | 'personal' | 'bank' | 'lifecycle' | 'history' | 'access';
+type Tab = 'overview' | 'personal' | 'documents' | 'bank' | 'lifecycle' | 'history' | 'access';
 
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : (ht.status[String(v)] ?? ht.employmentType[String(v)] ?? String(v)));
 
@@ -43,12 +44,15 @@ export function EmployeeProfilePage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
-  if (employee.loading) return <SkeletonRows rows={5} />;
+  if (employee.loading && !employee.data) return <SkeletonRows rows={5} />;
   if (employee.error) return <ErrorState message={employee.error} onRetry={employee.reload} />;
   if (!e) return <EmptyState icon="person" title={t.notFoundTitle} message="" />;
 
   const canEdit = perm('employees.edit') && e.status !== 'OFFBOARDED';
   const canLifecycle = perm('employees.lifecycle');
+  const canVerifyDocs = perm('documents.verify');
+  const canManageDocs = canVerifyDocs || perm('employees.edit');
+  const self = !!e.uid && e.uid === user?.uid;
   const refresh = () => {
     employee.reload();
     profile.reload();
@@ -87,6 +91,7 @@ export function EmployeeProfilePage() {
         tabs={[
           { value: 'overview' as const, label: ht.tabOverview },
           ...(canPrivate || e.uid === user?.uid ? [{ value: 'personal' as const, label: ht.tabPersonal }] : []),
+          ...(canManageDocs || self ? [{ value: 'documents' as const, label: ht.tabDocuments }] : []),
           ...(canBank ? [{ value: 'bank' as const, label: ht.tabBank }] : []),
           { value: 'lifecycle' as const, label: ht.tabLifecycle },
           { value: 'history' as const, label: ht.tabHistory, count: history.data?.length },
@@ -152,6 +157,8 @@ export function EmployeeProfilePage() {
           )}
         </section>
       )}
+
+      {tab === 'documents' && <EmployeeDocumentsPanel orgId={orgId} employee={e} canManage={canManageDocs} canVerify={canVerifyDocs} onChanged={employee.reload} />}
 
       {tab === 'bank' && canBank && <BankPanel orgId={orgId} employee={e} profile={p} canEdit={e.status !== 'OFFBOARDED'} onSaved={refresh} />}
 

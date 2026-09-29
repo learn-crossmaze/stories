@@ -574,3 +574,11 @@ main h1[tabindex='-1']:focus { outline: none; }
 .checklist-editor .checklist-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
 .checklist-editor input[type='text'] { min-height: 40px; padding: 0 12px; border: 1px solid var(--outline); border-radius: var(--radius-md); background: var(--surface-raised); color: var(--on-surface); font: inherit; min-width: 0; }
 @media (max-width: 600px) { .checklist-editor .checklist-row { grid-template-columns: 1fr; } }
+
+/* Employee documents */
+.doc-required { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.doc-required li { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-height: 40px; border-bottom: 1px solid var(--outline); }
+.doc-required li:last-child { border-bottom: 0; }
+.doc-required li > span:first-child { flex: 1; min-width: 160px; }
+.expiry-warn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--danger); }
+.expiry-warn .icon { width: 16px; height: 16px; }

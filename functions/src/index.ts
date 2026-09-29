@@ -15,6 +15,7 @@ import { expireSubscriptions, handleRazorpayWebhook } from './billing/index.js';
 import { expireHolds } from './circulation/index.js';
 import { REGION } from './core/firebase.js';
 import { router } from './core/router.js';
+import { expireDocuments } from './hr/index.js';
 import { ROUTES } from './routes.js';
 
 setGlobalOptions({ region: REGION, maxInstances: 5 });
@@ -38,4 +39,4 @@ export const hr = router(ROUTES.hr);
 export const razorpayWebhook = onRequest({ region: REGION }, (req, res) => handleRazorpayWebhook(req, res).then(() => undefined));
 
 /** Scheduled jobs (idempotent). */
-export const scheduled = { expireSubscriptions, expireHolds };
+export const scheduled = { expireSubscriptions, expireHolds, expireDocuments };

@@ -7,7 +7,7 @@ it is tested and documented.
 | Phase | Scope | Status |
 |---|---|---|
 | 1. Foundation | Employee records, private and bank details, designations, directory, profile tabs, effective-dated history, lifecycle, account linking, backfill of existing staff, onboarding and offboarding checklists, new permissions, `hr` router | **Done** |
-| 2. Documents | Document types, private uploads (`hr/**` in Storage, signed URLs only), verification, expiry reminders | Planned |
+| 2. Documents | Document types, private uploads, verification, expiry reminders, required-document tracking | **Done** |
 | 3. Attendance & shifts | Shifts and rosters, check-in and check-out, corrections, month finalization | Planned |
 | 4. Leave | Leave types and policies, a balance ledger, applications and approvals, holidays | Planned |
 | 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | Planned |
@@ -105,3 +105,45 @@ Records without a branch (head office staff) need the permission across all bran
 - The directory loads up to 1,000 records per organization and filters them in the browser.
 - Employees can read their own record and personal details through the rules. Their self-service screens arrive in
   Phase 6.
+
+## 7. Documents (Phase 2)
+
+| Path | Contents | Who reads it |
+|---|---|---|
+| `orgs/{o}/documentTypes/{id}` | `name`, `category`, `required`, `hasExpiry`, `reminderDays`, `selfUpload`, `checklistKey`, `status` (overrides a default type with the same id, or adds a new type) | anyone in the org |
+| `orgs/{o}/employees/{e}/documents/{d}` | `typeId/typeName`, `fileName`, `contentType`, `size`, `storagePath`, `storageBucket`, `number`, `issuedOn`, `expiresOn`, `status`, uploader, verifier, `rejectReason`, and copies of `orgId`, `branchId`, `employeeUid`, `employeeName`, `employeeCode` for the queue | HR who may verify documents or edit employees, at the employee's branch; the employee |
+| Storage `hr/{orgId}/{employeeId}/{d}.{pdf,jpg,png}` | the file | nobody directly (Storage rules deny it); through `documents-open` only |
+
+**Default types:** Aadhaar card, PAN card, bank proof, and signed offer letter are required. Address proof, photograph,
+education certificate and previous employment letter are optional. Driving licence and police verification have
+expiry dates. HR changes or adds types under **HR settings → Document types**.
+
+**Flow**
+
+- **Upload** (`documents-upload`): the file is a PDF, JPEG or PNG of 5 MB at most. The server checks the file's
+  real type from its first bytes, not its name.
+  - A verifier uploading for someone else: the document is **verified** at once.
+  - An employee uploading a self-upload type, or HR staff uploading about themselves: it is **awaiting
+    verification**.
+- **Review** (`documents-review`): verify, or reject with a reason. Nobody verifies a document they uploaded.
+- **On verification:**
+  - older verified or expired copies of the same type become **replaced**;
+  - the matching onboarding checklist item is ticked (for example, a PAN card ticks "PAN recorded").
+- **Open** (`documents-open`): returns the file to HR at the branch or to the employee, and writes an
+  `employee.document.open` audit entry. There are no signed URLs, so no extra Google Cloud permission is needed.
+- **Remove** (`documents-remove`): HR can remove any document; employees can withdraw their own upload while it
+  is pending or rejected. The record and file are kept.
+- **Expiry:** the daily job `scheduled-expireDocuments` (00:30 IST) marks verified documents past their expiry
+  date as **expired**. The Documents page and the dashboard list documents expiring within each type's reminder
+  window, and those that have expired.
+
+**Screens**
+
+- People → **Documents**: a queue with Awaiting verification, Expiring soon and Expired.
+- The employee profile's **Documents** tab: required documents (verified, awaiting verification, missing…) and the
+  documents on file, with upload, open, verify, reject and remove.
+- **HR settings → Document types.**
+- **Dashboard**: HR sees counts of documents to verify, expiring and expired.
+
+**Known limits:** employees' own screens to upload and view their documents arrive with Phase 6 (self-service).
+The server already supports them. Files are capped at 5 MB, the size a callable request can carry.
