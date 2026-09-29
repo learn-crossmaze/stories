@@ -2,17 +2,30 @@
 
 ## Plans
 
-`orgs/{o}/plans/{planId}` (managed with `plans.manage`, head office). Fields: name, duration (MONTHLY 1 /
-QUARTERLY 3 / HALF_YEARLY 6 / ANNUAL 12 months), price, security deposit, books at a time, audiences
-(CHILDREN/TEENS/ADULTS), home-delivery eligibility, optional promotional price with a date window (IST), renewal
-window (days before expiry). **Every edit is a new version** (`plans/{id}/versions/{n}`); archiving stops sales.
+`orgs/{o}/plans/{planId}` (managed with `plans.manage`, head office). One plan (e.g. *Learner · 4 books*) holds:
+
+- **Terms:** name, description, books at a time, security deposit, audiences (CHILDREN/TEENS/ADULTS),
+  home-delivery eligibility, renewal window (days before expiry).
+- **Billing options** (`options`): one to four of MONTHLY (1 month), QUARTERLY (3), HALF_YEARLY (6) and ANNUAL
+  (12, shown as *Yearly*), each with its own price for the whole period. Stored shortest first.
+- **Promotional discount** (`discount`, optional): `type` AMOUNT (paise off) or PERCENT (1–90 % off, rounded to whole
+  rupees), a date window `from`–`to` (IST), `durations` it applies to (empty = every option), and an optional
+  `label` shown to members (default "10% off" / "Rs. 100 off"). An amount off must be less than the price of every
+  option it covers. The price never goes below zero.
+- **Every edit is a new version** (`plans/{id}/versions/{n}`); archiving stops sales.
+- **Older plans** (one `duration` + `priceMinor`, maybe a fixed `promo` price) keep working as a plan with one
+  option; saving such a plan converts it to options.
+
+Pricing lives in `priceFor()` / `pricesFor()` (`functions/src/billing/plans.ts`, mirrored in `apps/web/src/data/billing.ts`
+for display; the server's price is the one charged).
 
 ## Subscriptions
 
 `orgs/{o}/subscriptions`: PENDING_PAYMENT → ACTIVE → EXPIRED (or CANCELLED while unpaid).
 
-- `subscriptions-create` stores a **plan snapshot** (price actually charged, deposit, limit, months) and the amount
-  due: plan fee + **deposit top-up** = plan deposit − current deposit balance (never negative). Plan changes never
+- `subscriptions-create` / `me-subscribe` take the plan **and a billing option** (`duration`; optional when the plan
+  has only one). They store a **plan snapshot** (option, months, list price, discount and its label, price actually
+  charged, deposit, limit) and the amount due: plan fee + **deposit top-up** = plan deposit − current deposit balance (never negative). Plan changes never
   alter a subscription already sold (tested).
 - Only one unpaid subscription per member; renewals open `renewalWindowDays` before the current term ends.
 - **Renewal (D6):** paid before expiry → starts exactly when the current term ends (no gap, no overlap) and is

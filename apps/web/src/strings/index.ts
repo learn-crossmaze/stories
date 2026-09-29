@@ -92,6 +92,7 @@ export const t = {
   meNoPlans: 'No plans are available for this membership right now. Please ask your branch.',
   meRenewWindow: 'Renewals open shortly before your current plan ends; the new term starts when the current one ends.',
   meWasPrice: (p: string) => `usually ${p}`,
+  meHowOften: 'How often to pay',
   meBooksAtATime: (n: number) => `${n} books at a time`,
   meRefundableDeposit: (p: string) => `+ ${p} refundable deposit (once)`,
   meChoose: 'Choose',

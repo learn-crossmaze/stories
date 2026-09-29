@@ -57,8 +57,8 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `copies-locate` (query) — which branch holds a copy, by barcode or code | `books.view` in the org (any branch) |
 | Members | `members-register/update/setStatus` | `members.manage` at the home branch |
 | | `members-indexList` (query) — one-time fill of plan/renewal date for a branch's older members | `members.view` at the branch |
-| Plans | `plans-create/update/archive` | `plans.manage` |
-| Subscriptions | `subscriptions-create/cancelPending` | `subscriptions.manage` |
+| Plans | `plans-create/update/archive` (`options[]`: 1–4 of `{duration, priceMinor}`; `discount`: `{type AMOUNT|PERCENT, value, from, to, durations[], label}` or null; see SUBSCRIPTIONS.md) | `plans.manage` |
+| Subscriptions | `subscriptions-create/cancelPending` (`duration`: the billing option; optional when the plan has one) | `subscriptions.manage` |
 | Payments | `payments-recordOffline` | `payments.recordOffline` |
 | | `payments-createRequest` (`subscriptionId, channel: LINK\|QR, requestId`), `payments-cancelRequest` | `payments.recordOffline` at the subscription's branch |
 | | `payments-checkRequest` (query) | `payments.view` |

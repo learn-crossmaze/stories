@@ -6,7 +6,7 @@ import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { depositAccount, ledger, memberAdjustments, memberSubscriptions } from '../../data/billing';
 import { type Loan, memberLoans, memberReservations } from '../../data/circulation';
-import { label, toDate } from '../../data/common';
+import { label, planWithOption, toDate } from '../../data/common';
 import { getMember, wardsOf } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { day, money, since, when } from '../../shared/format';
@@ -170,7 +170,7 @@ export function MemberDetailPage() {
               ) : current ? (
                 <>
                   <p className="lead">
-                    <strong>{current.planSnapshot.name}</strong> · {lt.activeUntil(day(current.endAt))}
+                    <strong>{planWithOption(current.planSnapshot)}</strong> · {lt.activeUntil(day(current.endAt))}
                   </p>
                   <p>
                     {lt.held(m.activeLoanCount + m.allocatedCount, max)} · {lt.exchangesThisTerm(current.exchangesThisTerm)}
@@ -181,14 +181,14 @@ export function MemberDetailPage() {
               )}
               {next && (
                 <p>
-                  {lt.renewsOn(day(next.startAt))} · {next.planSnapshot.name}
+                  {lt.renewsOn(day(next.startAt))} · {planWithOption(next.planSnapshot)}
                 </p>
               )}
               <p className="muted small">{lt.lifetime(m.lifetimeLoans, m.lifetimeExchanges)}</p>
               {pending && (
                 <div className="pending-box">
                   <p>
-                    <strong>{lt.pendingPayment}:</strong> {pending.planSnapshot.name} · {money(pending.amountDue.totalMinor)}
+                    <strong>{lt.pendingPayment}:</strong> {planWithOption(pending.planSnapshot)} · {money(pending.amountDue.totalMinor)}
                   </p>
                   <div className="row">
                     {perm('payments.recordOffline') && (

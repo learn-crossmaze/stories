@@ -24,6 +24,12 @@ export const LANGUAGES = {
 export const COPY_STATUSES = ['AVAILABLE', 'RESERVED', 'ISSUED', 'IN_TRANSIT', 'UNDER_INSPECTION', 'DAMAGED', 'LOST', 'RETIRED'] as const;
 export const CONDITIONS = ['NEW', 'GOOD', 'FAIR', 'POOR'] as const;
 export const DURATIONS = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, ANNUAL: 12 } as const;
+/** Billing periods as members read them. */
+export const DURATION_LABELS = { MONTHLY: 'Monthly', QUARTERLY: 'Quarterly', HALF_YEARLY: 'Half-yearly', ANNUAL: 'Yearly' } as const;
+/** A subscription's plan with its billing option, e.g. "Learner (Quarterly)". */
+export const planWithOption = (s: { name: string; duration?: string }) =>
+  s.duration && s.duration in DURATION_LABELS ? `${s.name} (${DURATION_LABELS[s.duration as keyof typeof DURATION_LABELS]})` : s.name;
+export const PER_PERIOD = { MONTHLY: 'month', QUARTERLY: 'quarter', HALF_YEARLY: '6 months', ANNUAL: 'year' } as const;
 
 export type Genre = (typeof GENRES)[number];
 export type AgeGroup = (typeof AGE_GROUPS)[number];

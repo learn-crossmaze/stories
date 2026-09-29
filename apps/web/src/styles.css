@@ -658,3 +658,12 @@ main h1[tabindex='-1']:focus { outline: none; }
 .checkin-card p { margin: 2px 0; }
 .holiday-list li { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--outline); }
 .holiday-list li > span:nth-child(2) { flex: 1; min-width: 180px; }
+
+/* Plan billing options */
+.option-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; }
+.option-row .check { margin-bottom: 4px; }
+.plan-prices { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 4px; }
+.plan-prices li { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.plan-prices strong { font: 600 17px var(--font-display); }
+.plan-prices .badge { margin-left: 6px; }
+.option-choice { display: flex; gap: 8px; flex-wrap: wrap; }

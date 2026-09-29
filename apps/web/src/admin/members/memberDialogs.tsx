@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
 import { command } from '../../data/api';
-import { listPlans, type Plan, type Subscription } from '../../data/billing';
+import { listPlans, type Plan, pricesFor, type Subscription } from '../../data/billing';
 import { type Book } from '../../data/catalogue';
-import { label } from '../../data/common';
+import { DURATION_LABELS, type Duration, planWithOption } from '../../data/common';
 import { type Member } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
@@ -37,7 +37,7 @@ export function PaymentDialog({ orgId, sub, onClose, onDone }: { orgId: string; 
         <dl className="facts">
           <dt>{lt.planFee}</dt>
           <dd>
-            {money(sub.amountDue.subscriptionMinor)} · {sub.planSnapshot.name}
+            {money(sub.amountDue.subscriptionMinor)} · {planWithOption(sub.planSnapshot)}
           </dd>
           <dt>{lt.depositTopUp}</dt>
           <dd>{money(sub.amountDue.depositMinor)}</dd>
@@ -71,10 +71,13 @@ export function SubscribeDialog({
   const plans = useAsync(() => listPlans(orgId), [orgId]);
   const eligible = (plans.data ?? []).filter((p) => p.status === 'ACTIVE' && p.audiences.includes(member.audience));
   const [planId, setPlanId] = useState('');
+  const [duration, setDuration] = useState<Duration | ''>('');
   const chosen = eligible.find((p) => p.id === planId) ?? eligible[0];
+  const prices = chosen ? pricesFor(chosen) : [];
+  const option = prices.find((p) => p.duration === duration) ?? prices[0];
   const { busy, error, submit } = useSubmit(async () => {
-    if (!chosen) return;
-    await command('subscriptions-create', { orgId, memberId: member.id, planId: chosen.id });
+    if (!chosen || !option) return;
+    await command('subscriptions-create', { orgId, memberId: member.id, planId: chosen.id, duration: option.duration });
     onCreated();
     onClose();
   });
@@ -90,13 +93,40 @@ export function SubscribeDialog({
             <legend>{lt.choosePlan}</legend>
             {eligible.map((p: Plan) => (
               <label key={p.id} className="plan-choice">
-                <input type="radio" name="plan" checked={chosen?.id === p.id} onChange={() => setPlanId(p.id)} />
+                <input
+                  type="radio"
+                  name="plan"
+                  checked={chosen?.id === p.id}
+                  onChange={() => {
+                    setPlanId(p.id);
+                    setDuration('');
+                  }}
+                />
                 <span>
-                  <strong>{p.name}</strong> · {label(p.duration)} · {p.maxSimultaneousBooks} {lt.maxBooks.toLowerCase()}
+                  <strong>{p.name}</strong> · {p.maxSimultaneousBooks} {lt.maxBooks.toLowerCase()}
                   <span className="muted small">
                     {' '}
-                    {money(p.priceMinor)} + {lt.depositAmount.replace(' (₹)', '').toLowerCase()} {money(p.depositMinor)}
+                    {lt.depositAmount.replace(' (₹)', '').toLowerCase()} {money(p.depositMinor)}
                   </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {chosen && prices.length > 0 && (
+          <fieldset className="choices plan-choices">
+            <legend>{lt.chooseOption}</legend>
+            {prices.map((o) => (
+              <label key={o.duration} className="plan-choice">
+                <input type="radio" name="option" checked={option?.duration === o.duration} onChange={() => setDuration(o.duration)} />
+                <span>
+                  <strong>{DURATION_LABELS[o.duration]}</strong> · {money(o.priceMinor)}
+                  {o.discountMinor > 0 && (
+                    <span className="muted small">
+                      {' '}
+                      <s>{money(o.listPriceMinor)}</s> {o.discountLabel}
+                    </span>
+                  )}
                 </span>
               </label>
             ))}
