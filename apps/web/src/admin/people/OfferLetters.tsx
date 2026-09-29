@@ -5,7 +5,6 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { ApiError } from '../../data/api';
-import { todayIST } from '../../data/attendance';
 import { EMPLOYMENT_TYPES, type Employee, type EmploymentType, listEmployees } from '../../data/hr';
 import { type LetterTemplate, listTemplates, templateDefaults, usedPlaceholders } from '../../data/letterTemplates';
 import {
@@ -24,8 +23,9 @@ import {
   withdrawOffer,
 } from '../../data/offers';
 import { paths } from '../../paths';
+import { addDays, todayIST } from '../../shared/dates';
 import { day } from '../../shared/format';
-import { EmptyState, ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -34,7 +34,6 @@ import { ConfirmWithReason, Dialog, FormError, SelectField, TextArea, TextField 
 import { useWorkspace } from '../Workspace';
 
 const OFFERABLE = ['DRAFT', 'ONBOARDING', 'ACTIVE'];
-const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const whole = (v: string) => /^\d+$/.test(v.trim());
 
 /** Whether the signed-in user may release offers / issue other letters for this employee (never their own). */
@@ -470,7 +469,7 @@ export function OfferLettersPage() {
   const [issuing, setIssuing] = useState(false);
   const [withdrawing, setWithdrawing] = useState<OfferLetter | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
 
   const mayDo = (p: 'offers.release' | 'letters.issue', branchId: string | null) => (branchId ? can(claims, p, orgId, branchId) : can(claims, p, orgId) && scope === 'ALL');
   const isMe = (e: { uid: string | null; email?: string | null }) => (!!e.uid && e.uid === user?.uid) || (!e.uid && !!e.email && e.email.toLowerCase() === user?.email?.toLowerCase());
@@ -502,7 +501,7 @@ export function OfferLettersPage() {
       ) : !offers.data?.length ? (
         <EmptyState icon="folder" title={ht.offersNone} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -542,7 +541,7 @@ export function OfferLettersPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {releasing && (
         <OfferDialog

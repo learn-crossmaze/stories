@@ -7,6 +7,7 @@ import type { Employee } from '../../data/hr';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { TableWrap } from '../../shared/ui';
 
 const TONE: Record<string, string> = { PRESENT: 'ok', HALF_DAY: 'warn', ABSENT: 'danger', WEEKLY_OFF: 'muted', HOLIDAY: 'info', ON_LEAVE: 'info', IN_PROGRESS: 'info', NOT_IN: 'muted' };
 
@@ -167,7 +168,7 @@ export function useCorrectionDecision(orgId: string, onDone: () => void) {
 export function MonthRecords({ records, onAdjust }: { records: AttendanceRecord[]; onAdjust?: (r: AttendanceRecord) => void }) {
   if (!records.length) return <p className="muted">{ht.noRecords}</p>;
   return (
-    <div className="table-wrap">
+    <TableWrap>
       <table className="table compact">
         <thead>
           <tr>
@@ -210,6 +211,6 @@ export function MonthRecords({ records, onAdjust }: { records: AttendanceRecord[
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }

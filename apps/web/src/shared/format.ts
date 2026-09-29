@@ -1,9 +1,12 @@
 // Display formatting (en-IN). Amounts are stored in paise.
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
+const wholeInr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' });
 const dateTimeFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
 export const money = (minor: number) => inr.format(minor / 100).replace(/\.00$/, '');
+/** Whole rupees (payroll amounts are kept in rupees, not paise). */
+export const rupees = (n: number) => wholeInr.format(n);
 export const toMinor = (rupees: string) => Math.round(Number(rupees.replace(/[₹,\s]/g, '')) * 100);
 
 /** Firestore Timestamp, Date, or an ISO date string (member data from the server). */

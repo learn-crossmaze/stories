@@ -3,6 +3,8 @@
  * dialogs can check patterns and preview codes as you type. The server has
  * the final say.
  */
+import { todayIST } from '../../shared/dates';
+
 export type CodeKind = 'book' | 'copy' | 'member' | 'location' | 'employee';
 export type BranchKind = Exclude<CodeKind, 'book'>;
 export const BRANCH_KINDS: BranchKind[] = ['copy', 'member', 'location', 'employee'];
@@ -68,7 +70,7 @@ export function patternProblem(kind: CodeKind, pattern: string): string | null {
 
 /** Example code for the settings preview. */
 export function previewCode(pattern: string, values: Record<string, string>, n = 1, now = new Date()) {
-  const day = new Date(now.getTime() + 330 * 60_000).toISOString();
+  const day = todayIST(now);
   const all: Record<string, string> = { BOOK: '000123', KIND: 'SH', ...values, YYYY: day.slice(0, 4), YY: day.slice(2, 4), MM: day.slice(5, 7) };
   return pattern.replace(/\{([A-Z]+)(?::(\d))?\}/g, (_, name: string, width?: string) =>
     name === 'SEQ' ? String(n).padStart(Number(width ?? 1), '0') : (all[name] ?? ''),

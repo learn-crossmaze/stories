@@ -378,7 +378,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - Their job details and today's check-in.
 - This month's attendance, leave left this year, and the latest payslip (with its PDF), each linking to its page.
 - **My documents**: status of the required documents, and uploads for self-upload types.
-- **My tasks**: a placeholder until the Tasks module is built.
+- **Checklist**: while joining or leaving, the open onboarding or offboarding checklist (read-only; HR ticks it).
 - My attendance, My leave and My payslips stay as pages, reached from here.
 
 **Admin → People → Overview** (`employees.view`; everything is limited to the viewer's branches):
@@ -388,6 +388,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - **Waiting on you:** leave, corrections, documents and payroll runs you can decide, never your own.
 - **Breakdowns:** active staff by branch and by department, and approved leave days this month by type.
 - **Payroll:** the last approved month's gross, net and cost to company. Only salary viewers see this.
+- If a part cannot be loaded, the rest stays on screen with a note and a retry.
 
 **Known limits:**
 

@@ -1,5 +1,7 @@
 import { PDFDocument, type PDFFont, rgb, StandardFonts } from 'pdf-lib';
 
+import { pdfText } from '../core/pdfText.js';
+
 /** A letter ready to print: the template already filled in (docs/HRMS.md §13). */
 export interface RenderedLetter {
   number: string;
@@ -20,8 +22,6 @@ export interface RenderedLetter {
   signatoryTitle: string;
 }
 
-/** Standard PDF fonts only carry Latin-1: anything else (another script, emoji) becomes '?'. */
-const latin1 = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/[^\n\x20-\x7E\xA0-\xFF]/g, '?');
 
 /** "29 September 2026". */
 export const longDate = (d: string) => {
@@ -35,8 +35,8 @@ export const longDate = (d: string) => {
  * acceptance block. A preview carries a PREVIEW mark on every page.
  */
 export async function letterPdf(letter: RenderedLetter, context: { orgName: string; branchLines: string[]; preview: boolean }): Promise<Uint8Array> {
-  const o = Object.fromEntries(Object.entries(letter).map(([k, v]) => [k, typeof v === 'string' ? latin1(v) : v])) as unknown as RenderedLetter;
-  const ctx = { ...context, orgName: latin1(context.orgName) || 'Stories', branchLines: context.branchLines.map(latin1) };
+  const o = Object.fromEntries(Object.entries(letter).map(([k, v]) => [k, typeof v === 'string' ? pdfText(v) : v])) as unknown as RenderedLetter;
+  const ctx = { ...context, orgName: pdfText(context.orgName) || 'Stories', branchLines: context.branchLines.map(pdfText) };
   const pdf = await PDFDocument.create();
   pdf.setTitle(`${o.subject} ${o.number}`);
   pdf.setProducer('Stories');

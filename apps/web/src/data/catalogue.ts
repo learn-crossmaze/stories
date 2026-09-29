@@ -1,5 +1,5 @@
 // Shared catalogue: titles, reference data, book numbering.
-import { collection, doc, type DocumentSnapshot, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
+import { collection, doc, type DocumentSnapshot, getCountFromServer, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
 
 import { AgeGroup, db, Genre, LANGUAGES, page, queryToken, READING_LEVELS, withId } from './common';
 
@@ -62,4 +62,15 @@ export async function getBook(id: string): Promise<Book | null> {
 export async function getBookNumbering(): Promise<string | null> {
   const s = await getDoc(doc(db(), 'config/numbering'));
   return (s.get('book') as string | null | undefined) ?? null;
+}
+
+/** Titles in the shared catalogue, and how many were added this month (count queries). */
+export async function catalogueCounts(month: string): Promise<{ titles: number; addedThisMonth: number }> {
+  const books = collection(db(), 'books');
+  const start = Timestamp.fromDate(new Date(`${month}-01T00:00:00+05:30`));
+  const [titles, addedThisMonth] = await Promise.all([
+    getCountFromServer(query(books, where('status', '==', 'ACTIVE'))),
+    getCountFromServer(query(books, where('createdAt', '>=', start))),
+  ]);
+  return { titles: titles.data().count, addedThisMonth: addedThisMonth.data().count };
 }

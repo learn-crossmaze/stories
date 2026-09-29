@@ -1,5 +1,6 @@
 import { PDFDocument, type PDFFont, type PDFPage, rgb, StandardFonts } from 'pdf-lib';
 
+import { pdfText } from '../core/pdfText.js';
 import { inWords, rupees } from './payrollRules.js';
 
 /**
@@ -23,8 +24,9 @@ export async function payslipPdf(slip: Record<string, unknown>, ctx: { orgName: 
   const text = (s: string, x: number, yy: number, opts: { size?: number; f?: PDFFont; color?: ReturnType<typeof rgb>; alignRight?: boolean } = {}) => {
     const size = opts.size ?? 10;
     const f = opts.f ?? font;
-    const w = f.widthOfTextAtSize(s, size);
-    page.drawText(s, { x: opts.alignRight ? x - w : x, y: yy, size, font: f, color: opts.color ?? ink });
+    const safe = pdfText(s);
+    const w = f.widthOfTextAtSize(safe, size);
+    page.drawText(safe, { x: opts.alignRight ? x - w : x, y: yy, size, font: f, color: opts.color ?? ink });
   };
   const rule = (yy: number) => page.drawLine({ start: { x: left, y: yy }, end: { x: right, y: yy }, thickness: 0.7, color: line });
 

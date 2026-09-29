@@ -12,7 +12,7 @@ import { useAsync } from '../../shared/useAsync';
 import { day, money, since, when } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog } from '../components/Dialog';
 import { Notice, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -68,7 +68,7 @@ export function MemberDetailPage() {
 
   if (member.loading) return <SkeletonRows rows={5} />;
   if (member.error) return <ErrorState message={member.error} onRetry={member.reload} />;
-  if (!m) return <EmptyState icon="person" title={t.notFoundTitle} message="" />;
+  if (!m) return <EmptyState page icon="person" title={t.notFoundTitle} message="" />;
 
   const refresh = () => {
     member.reload();
@@ -281,7 +281,7 @@ export function MemberDetailPage() {
             ) : !activeLoans.length ? (
               <p className="muted">{lt.noCurrentBooks}</p>
             ) : (
-              <div className="table-wrap">
+              <TableWrap>
                 <table className="table">
                   <thead>
                     <tr>
@@ -314,7 +314,7 @@ export function MemberDetailPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableWrap>
             )}
           </section>
 

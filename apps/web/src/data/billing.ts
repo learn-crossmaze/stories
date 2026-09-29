@@ -2,6 +2,7 @@
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 
 import { AgeGroup, db, Duration, DURATIONS, Scope, scoped, withId } from './common';
+import { todayIST } from '../shared/dates';
 
 export interface PlanOption {
   duration: Duration;
@@ -56,7 +57,7 @@ export interface Price {
 export function priceFor(plan: Plan, duration: Duration, now = new Date()): Price {
   const opt = planOptions(plan).find((o) => o.duration === duration)!;
   const list = opt.priceMinor;
-  const today = new Date(now.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+  const today = todayIST(now);
   const d = plan.discount;
   let off = 0;
   let label: string | null = null;

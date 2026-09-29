@@ -2,7 +2,7 @@
 import { useState } from 'react';
 
 import { command } from '../../data/api';
-import { monthIST } from '../../data/attendance';
+import { monthIST } from '../../shared/dates';
 import { DEFAULT_SETTINGS, listSettings, type StatutorySettings } from '../../data/payroll';
 import { ErrorState, Icon, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';

@@ -1,8 +1,10 @@
 // Employee documents: types, an employee's file, the HR queue, upload and open (docs/HRMS.md §7).
-import { collection, collectionGroup, getDocs, limit, orderBy, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
+import { collection, collectionGroup, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { callAction, command, toApiError } from './api';
-import { services } from './services';
+import { command } from './api';
+import { openFile, toBase64 } from './files';
+import { addDays, todayIST } from '../shared/dates';
+import { db, toDate } from './common';
 
 export const DOCUMENT_CATEGORIES = ['IDENTITY', 'ADDRESS', 'STATUTORY', 'CONTRACT', 'EDUCATION', 'EMPLOYMENT', 'OTHER'] as const;
 export type DocumentCategory = (typeof DOCUMENT_CATEGORIES)[number];
@@ -65,9 +67,8 @@ export const DEFAULT_DOCUMENT_TYPES: DocumentType[] = [
   { id: 'police-verification', name: 'Police verification', category: 'OTHER', required: false, hasExpiry: true, reminderDays: 45, selfUpload: false, checklistKey: null, status: 'ACTIVE' },
 ];
 
-const db = () => services().db;
 const toDoc = (id: string, data: Record<string, unknown>) =>
-  ({ ...data, id, uploadedAt: data.uploadedAt instanceof Timestamp ? data.uploadedAt.toDate() : null }) as EmployeeDocument;
+  ({ ...data, id, uploadedAt: toDate(data.uploadedAt) }) as EmployeeDocument;
 
 /** The org's document types: defaults, overridden or extended by its own. */
 export async function listDocumentTypes(orgId: string): Promise<DocumentType[]> {
@@ -85,8 +86,7 @@ export async function employeeDocuments(orgId: string, employeeId: string, ownUi
   return snap.docs.map((d) => toDoc(d.id, d.data())).sort((a, b) => (b.uploadedAt?.getTime() ?? 0) - (a.uploadedAt?.getTime() ?? 0));
 }
 
-const today = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
-const inDays = (n: number) => new Date(Date.now() + 330 * 60_000 + n * 86_400_000).toISOString().slice(0, 10);
+const inDays = (n: number) => addDays(todayIST(), n);
 
 /**
  * The verification queue across the organization: awaiting verification,
@@ -105,21 +105,10 @@ export async function documentQueue(orgId: string, scope: string[] | 'ALL', type
     run([where('status', '==', 'VERIFIED'), where('expiresOn', '<=', inDays(window)), orderBy('expiresOn', 'asc')]),
     run([where('status', '==', 'EXPIRED'), orderBy('expiresOn', 'desc')]),
   ]);
-  const expiring = soon.filter((d) => d.expiresOn && d.expiresOn >= today() && d.expiresOn <= inDays(reminder.get(d.typeId) ?? 30));
+  const expiring = soon.filter((d) => d.expiresOn && d.expiresOn >= todayIST() && d.expiresOn <= inDays(reminder.get(d.typeId) ?? 30));
   // Expired but not yet swept (the daily job runs after midnight).
-  const lapsed = soon.filter((d) => d.expiresOn && d.expiresOn < today());
+  const lapsed = soon.filter((d) => d.expiresOn && d.expiresOn < todayIST());
   return { pending, expiring, expired: [...lapsed, ...expired] };
-}
-
-export const daysUntil = (iso: string) => Math.round((Date.parse(`${iso}T00:00:00+05:30`) - Date.parse(`${today()}T00:00:00+05:30`)) / 86_400_000);
-
-function toBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
 }
 
 export async function uploadDocument(input: { orgId: string; employeeId: string; typeId: string; file: File; number: string; issuedOn: string; expiresOn: string }) {
@@ -128,18 +117,4 @@ export async function uploadDocument(input: { orgId: string; employeeId: string;
 }
 
 /** Fetches a document (the server records the opening) and shows it in a new tab. */
-export async function openDocument(orgId: string, employeeId: string, documentId: string) {
-  // Open the tab first so the browser treats it as a response to the click.
-  const tab = window.open('', '_blank');
-  try {
-    const res = await callAction<{ fileName: string; contentType: string; content: string }>(services().fns, 'documents-open', { orgId, employeeId, documentId });
-    const bytes = Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: res.contentType }));
-    if (tab) tab.location.href = url;
-    else window.location.assign(url);
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (e) {
-    tab?.close();
-    throw toApiError(e);
-  }
-}
+export const openDocument = (orgId: string, employeeId: string, documentId: string) => openFile('documents-open', { orgId, employeeId, documentId });

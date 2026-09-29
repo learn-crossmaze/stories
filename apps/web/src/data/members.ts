@@ -14,8 +14,7 @@ import {
   where,
 } from 'firebase/firestore';
 
-import { services } from './services';
-import { callAction } from './api';
+import { call } from './api';
 import { AgeGroup, db, Page, page, queryToken, withId } from './common';
 
 export interface Member {
@@ -113,7 +112,7 @@ export async function memberCounts(orgId: string, branchId: string): Promise<Rec
 
 /** Fills plan and renewal date on members registered before the member list had them (once per branch). */
 export async function indexMemberList(orgId: string, branchId: string): Promise<void> {
-  await callAction(services().fns, 'members-indexList', { orgId, branchId });
+  await call('members-indexList', { orgId, branchId });
 }
 
 export async function getMember(orgId: string, memberId: string): Promise<Member | null> {

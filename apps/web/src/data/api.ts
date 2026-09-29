@@ -66,9 +66,13 @@ export async function callAction<R = unknown>(fns: Functions, action: string, da
  * call safe to retry: the server returns the stored result instead of
  * repeating the change.
  */
-export async function command<R = unknown>(name: string, data: Record<string, unknown>, requestId = crypto.randomUUID()): Promise<R> {
+export const command = <R = unknown>(name: string, data: Record<string, unknown>, requestId = crypto.randomUUID()): Promise<R> =>
+  call<R>(name, { ...data, requestId });
+
+/** Calls an action once (reads, and jobs that are safe to repeat); failures arrive as ApiError. */
+export async function call<R = unknown>(action: string, data: Record<string, unknown>): Promise<R> {
   try {
-    return await callAction<R>(services().fns, name, { ...data, requestId });
+    return await callAction<R>(services().fns, action, data);
   } catch (e) {
     throw toApiError(e);
   }

@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
-import { todayIST } from '../../data/attendance';
+import { todayIST } from '../../shared/dates';
 import type { Employee } from '../../data/hr';
 import { daysLabel, employeeRequests, leaveBalance, ledgerFor, listLeaveTypes, type LeaveRequest } from '../../data/leave';
 import { ErrorState, SkeletonRows } from '../../shared/ui';

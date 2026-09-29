@@ -500,8 +500,6 @@ export const ht = {
   openPage: (name: string) => `Open ${name}`,
   myDetails: 'Job details',
   myDocuments: 'My documents',
-  myTasks: 'My tasks',
-  myTasksPlaceholder: 'Tasks and checklists assigned to you will appear here when the Tasks module arrives.',
 
   // People overview (dashboard)
   navOverview: 'Overview',

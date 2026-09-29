@@ -3,8 +3,8 @@ import { useRef, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import type { Employee } from '../../data/hr';
+import { daysUntil } from '../../shared/dates';
 import {
-  daysUntil,
   DOCUMENT_ACCEPT,
   type DocumentType,
   type EmployeeDocument,
@@ -16,7 +16,7 @@ import {
 } from '../../data/hrDocuments';
 import { command } from '../../data/api';
 import { day } from '../../shared/format';
-import { ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -228,7 +228,7 @@ export function EmployeeDocumentsPanel({
         {!shown.length ? (
           <p className="muted">{ht.noDocuments}</p>
         ) : (
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table">
               <thead>
                 <tr>
@@ -287,7 +287,7 @@ export function EmployeeDocumentsPanel({
                 })}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
       </section>
 

@@ -1,6 +1,7 @@
 // In-app notifications (docs/HRMS.md §11): users/{uid}/notifications, written by functions; the owner marks them read.
-import { collection, doc, limit, onSnapshot, orderBy, query, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, writeBatch } from 'firebase/firestore';
 
+import { toDate } from './common';
 import { services } from './services';
 
 export interface AppNotification {
@@ -21,7 +22,7 @@ export function watchNotifications(uid: string, onChange: (list: AppNotification
   const q = query(collection(services().db, `users/${uid}/notifications`), orderBy('at', 'desc'), limit(LATEST));
   return onSnapshot(
     q,
-    (snap) => onChange(snap.docs.map((d) => ({ ...(d.data() as Omit<AppNotification, 'id' | 'at'>), id: d.id, at: d.get('at') instanceof Timestamp ? (d.get('at') as Timestamp).toDate() : null }))),
+    (snap) => onChange(snap.docs.map((d) => ({ ...(d.data() as Omit<AppNotification, 'id' | 'at'>), id: d.id, at: toDate(d.get('at')) }))),
     onError,
   );
 }

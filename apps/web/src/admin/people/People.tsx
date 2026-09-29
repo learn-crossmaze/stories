@@ -6,10 +6,11 @@ import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { type Employee, EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, type EmploymentType, listDesignations, listEmployees } from '../../data/hr';
 import { listDepartments, listStaff, type Org } from '../../data/org';
+import { todayIST } from '../../shared/dates';
 import { useAsync } from '../../shared/useAsync';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
@@ -64,7 +65,7 @@ export function EmployeeDialog({
   const [managerId, setManagerId] = useState(employee?.managerId ?? '');
   const [employmentType, setEmploymentType] = useState<EmploymentType>(employee?.employmentType ?? 'FULL_TIME');
   const [joiningDate, setJoiningDate] = useState(employee?.joiningDate ?? '');
-  const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
+  const [effectiveDate, setEffectiveDate] = useState(todayIST);
   const [note, setNote] = useState('');
   const [touched, setTouched] = useState(false);
 
@@ -232,7 +233,7 @@ export function PeoplePage() {
     return !s || p.fullName.toLowerCase().includes(s) || p.code.toLowerCase().includes(s) || (p.email ?? '').includes(s);
   });
 
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   const branchOptions = branches.filter((b) => scope === 'ALL' || scope.includes(b.id));
 
   return (
@@ -299,7 +300,7 @@ export function PeoplePage() {
       ) : !shown.length ? (
         <EmptyState icon="people" title={people.data?.length ? ht.noEmployees : ht.noEmployeesYet} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -332,7 +333,7 @@ export function PeoplePage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {adding && (
         <EmployeeDialog

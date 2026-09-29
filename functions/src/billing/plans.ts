@@ -6,6 +6,7 @@ import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { dateKeyIST } from '../core/time.js';
 import { id, reason } from '../core/schemas.js';
 
 export const DURATIONS = { MONTHLY: 1, QUARTERLY: 3, HALF_YEARLY: 6, ANNUAL: 12 } as const;
@@ -73,8 +74,6 @@ export function planOptions(plan: Pick<Plan, 'options' | 'duration' | 'priceMino
   return [...list].sort((a, b) => DURATIONS[a.duration] - DURATIONS[b.duration]);
 }
 
-const todayIST = (now: Date) => new Date(now.getTime() + 330 * 60_000).toISOString().slice(0, 10);
-
 export interface Price {
   duration: Duration;
   months: number;
@@ -90,7 +89,7 @@ export function priceFor(plan: Pick<Plan, 'options' | 'duration' | 'priceMinor' 
   const opt = planOptions(plan).find((o) => o.duration === duration);
   if (!opt) throw errors.invalid('This plan has no such billing option.');
   const list = opt.priceMinor;
-  const today = todayIST(now);
+  const today = dateKeyIST(now);
   let off = 0;
   let label: string | null = null;
   const d = plan.discount;

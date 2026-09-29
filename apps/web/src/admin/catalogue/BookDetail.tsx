@@ -3,16 +3,15 @@ import { Link, useNavigate, useParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { callAction, command, toApiError } from '../../data/api';
+import { call, command, toApiError } from '../../data/api';
 import { type Book, getBook } from '../../data/catalogue';
 import { CONDITIONS, type Condition, label, LANGUAGES } from '../../data/common';
 import { copiesOfBook, listLocations } from '../../data/inventory';
-import { services } from '../../data/services';
 import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../components/Dialog';
 import { CoverEditor } from './CoverEditor';
 import { Notice } from '../components/kit';
@@ -75,7 +74,7 @@ export function BookDetailPage() {
   const canAdd = useCanAddBooks();
   const book = useAsync(() => getBook(bookId), [bookId]);
   const availability = useAsync(
-    async () => (org ? await callAction<Availability>(services().fns, 'copies-availability', { orgId: org.id, bookId }) : { branches: [] }),
+    async () => (org ? await call<Availability>('copies-availability', { orgId: org.id, bookId }) : { branches: [] }),
     [org?.id, bookId],
   );
   const copies = useAsync(() => (org && branch ? copiesOfBook(org.id, branch.id, bookId) : Promise.resolve([])), [org?.id, branch?.id, bookId]);
@@ -87,7 +86,7 @@ export function BookDetailPage() {
   // For an archived title, what in any library still refers to it (then it can't be deleted).
   const archived = book.data?.status === 'ARCHIVED';
   const usage = useAsync(
-    () => (archived && canDelete ? callAction<{ summary: string | null }>(services().fns, 'books-usage', { bookId }) : Promise.resolve(null)),
+    () => (archived && canDelete ? call<{ summary: string | null }>('books-usage', { bookId }) : Promise.resolve(null)),
     [bookId, archived, canDelete],
   );
   const inUse = !!usage.data?.summary;
@@ -95,7 +94,7 @@ export function BookDetailPage() {
   if (book.loading) return <SkeletonRows rows={4} />;
   if (book.error) return <ErrorState message={book.error} onRetry={book.reload} />;
   const b = book.data;
-  if (!b) return <EmptyState icon="book" title={t.notFoundTitle} message="" />;
+  if (!b) return <EmptyState page icon="book" title={t.notFoundTitle} message="" />;
   const canAcquire = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id) && b.status === 'ACTIVE';
 
   return (
@@ -236,7 +235,7 @@ export function BookDetailPage() {
           ) : !copies.data?.length ? (
             <p className="muted">{lt.copiesEmpty}</p>
           ) : (
-            <div className="table-wrap">
+            <TableWrap>
               <table className="table">
                 <thead>
                   <tr>
@@ -263,7 +262,7 @@ export function BookDetailPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </section>
       )}

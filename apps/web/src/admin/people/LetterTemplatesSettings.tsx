@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ApiError } from '../../data/api';
 import { archiveTemplate, type LetterTemplate, listTemplates, previewTemplate, publishTemplate, saveTemplate, type TemplateDefaults, templateDefaults, type TemplateText, usedPlaceholders } from '../../data/letterTemplates';
 import type { LetterKind } from '../../data/offers';
-import { ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -166,7 +166,7 @@ export function LetterTemplatesSection({ orgId }: { orgId: string }) {
               <div className="muted small">{hasOrgWide(k) ? ht.tplBuiltInReplaced : ht.tplBuiltInInUse}</div>
             </span>
             <span className="cell-actions">
-              <button type="button" className="btn btn-text" onClick={() => void previewTemplate(orgId, { ...d.builtIn[k], branchId: null }).catch(() => undefined)}>
+              <button type="button" className="btn btn-text" onClick={() => void previewTemplate(orgId, { ...d.builtIn[k], branchId: null }).catch((err) => setError(err instanceof ApiError ? err.message : t.errorGeneric))}>
                 {ht.offerPreview}
               </button>
               <button type="button" className="btn btn-text" onClick={() => setEditing({ draft: copy(d.builtIn[k], null), published: false })} aria-label={`${ht.tplCustomize} ${d.builtIn[k].name}`}>
@@ -181,7 +181,7 @@ export function LetterTemplatesSection({ orgId }: { orgId: string }) {
       {!shown.length ? (
         <p className="muted">{ht.tplNone}</p>
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -230,7 +230,7 @@ export function LetterTemplatesSection({ orgId }: { orgId: string }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {templates.some((x) => x.status === 'ARCHIVED') && (
         <label className="check">

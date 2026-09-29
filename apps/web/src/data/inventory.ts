@@ -1,8 +1,7 @@
 // Physical copies, their events and shelf locations.
 import { collection, doc, type DocumentSnapshot, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { services } from './services';
-import { callAction, toApiError } from './api';
+import { call, toApiError } from './api';
 import { Condition, CopyStatus, db, page, withId } from './common';
 
 export interface Copy {
@@ -80,7 +79,7 @@ export interface BranchStock {
 /** Which branches hold each title (counts only, so staff see every branch). */
 export async function stockByBranch(orgId: string, bookIds: string[]): Promise<Record<string, BranchStock[]>> {
   if (!bookIds.length) return {};
-  const res = await callAction<{ books: Record<string, BranchStock[]> }>(services().fns, 'copies-availabilityMany', { orgId, bookIds });
+  const res = await call<{ books: Record<string, BranchStock[]> }>('copies-availabilityMany', { orgId, bookIds });
   return res.books;
 }
 
@@ -100,7 +99,7 @@ export interface CopyWhereabouts {
 
 export async function locateCopy(orgId: string, scanned: string): Promise<CopyWhereabouts | null> {
   try {
-    return await callAction<CopyWhereabouts>(services().fns, 'copies-locate', { orgId, code: scanned.trim() });
+    return call<CopyWhereabouts>('copies-locate', { orgId, code: scanned.trim() });
   } catch (e) {
     if (toApiError(e).reason === 'NOT_FOUND') return null;
     throw e;

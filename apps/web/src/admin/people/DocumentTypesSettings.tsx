@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { command } from '../../data/api';
 import type { ChecklistTemplateItem } from '../../data/hr';
 import { DOCUMENT_CATEGORIES, type DocumentCategory, type DocumentType, listDocumentTypes } from '../../data/hrDocuments';
-import { ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -106,7 +106,7 @@ export function DocumentTypesSection({ orgId, checklist }: { orgId: string; chec
       ) : types.error ? (
         <ErrorState message={types.error} onRetry={types.reload} />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -149,7 +149,7 @@ export function DocumentTypesSection({ orgId, checklist }: { orgId: string; chec
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {editing && (
         <TypeDialog orgId={orgId} type={editing === 'new' ? undefined : editing} checklist={checklist} onClose={() => setEditing(null)} onSaved={types.reload} />

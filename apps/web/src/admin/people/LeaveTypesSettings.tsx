@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { command } from '../../data/api';
 import { type LeaveType, listLeaveTypes } from '../../data/leave';
-import { ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -100,7 +100,7 @@ export function LeaveTypesSection({ orgId }: { orgId: string }) {
       ) : types.error ? (
         <ErrorState message={types.error} onRetry={types.reload} />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -137,7 +137,7 @@ export function LeaveTypesSection({ orgId }: { orgId: string }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {editing && <LeaveTypeDialog orgId={orgId} type={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={types.reload} />}
       {archiving && (

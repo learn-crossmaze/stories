@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
 import type { Employee } from '../../data/hr';
-import { employeePayslips, money, salaryHistory } from '../../data/payroll';
+import { employeePayslips, salaryHistory } from '../../data/payroll';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
+import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -44,7 +45,7 @@ export function EmployeeSalaryPanel({ orgId, employee, canView, canEdit, canSeeP
           salaries.map((s, i) => (
             <div key={s.id} className={i === 0 ? 'card' : 'card muted'}>
               <h3 className="row">
-                {ht.salaryVersionFrom(s.effectiveFrom)} · {ht.monthlyGross(money(s.monthlyGross))}
+                {ht.salaryVersionFrom(s.effectiveFrom)} · {ht.monthlyGross(rupees(s.monthlyGross))}
               </h3>
               <dl className="facts">
                 {s.earnings.map((c) => (
@@ -52,7 +53,7 @@ export function EmployeeSalaryPanel({ orgId, employee, canView, canEdit, canSeeP
                     <dt>
                       {c.name} ({c.code})
                     </dt>
-                    <dd>{money(c.amount)}</dd>
+                    <dd>{rupees(c.amount)}</dd>
                   </div>
                 ))}
               </dl>

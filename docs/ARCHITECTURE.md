@@ -152,16 +152,16 @@ stories/
 │     ├─ auth/                      # Firebase Auth context, claims, repository
 │     ├─ config/                    # environment and Firebase bootstrap
 │     ├─ data/                      # Firestore reads and server calls, one file per domain
-│     │    api.ts (routers)  services.ts  common.ts (vocabularies, query helpers)
+│     │    api.ts (routers; command/call)  files.ts (PDFs and uploads)  services.ts  common.ts (vocabularies, query helpers)
 │     │    catalogue.ts  inventory.ts  members.ts  billing.ts  circulation.ts  org.ts  hr.ts  me.ts
-│     ├─ shared/                    # UI used by both apps: ui.tsx, format.ts, useAsync, useDebounced,
+│     ├─ shared/                    # UI used by both apps: ui.tsx, format.ts, dates.ts (IST), useAsync, useDebounced,
 │     │                             # appearance, BookCover, QrCode, IdCard
 │     ├─ strings/                   # user-facing text: index.ts (t), library.ts (lt), hr.ts (ht)
 │     ├─ public/                    # SignIn, Setup
 │     ├─ member/                    # member app: MemberShell, memberData, one file per page, common.tsx
-│     ├─ admin/                     # staff console (lazy-loaded chunk)
+│     ├─ admin/                     # staff console (lazy-loaded chunk; each page its own chunk)
 │     │  ├─ AdminApp.tsx AdminShell.tsx Workspace.tsx nav.ts guards.tsx grants.ts
-│     │  ├─ components/             # Dialog, kit, CameraScanner, barcode (+ worker)
+│     │  ├─ components/             # Dialog, kit, CameraScanner, scan.ts, barcode (+ worker)
 │     │  ├─ dashboard/  catalogue/  inventory/  circulation/  members/  organization/  people/
 │     ├─ generated/rbac.ts          # generated from permissions.json (never edit)
 │     └─ test/
@@ -219,11 +219,23 @@ stories/
   - **Emptied groups:** a group with nothing visible to you is removed.
   - **Account menu:** personal actions (my profile, appearance, member view, sign out).
   - **Small screens:** under 900px the menu, switcher included, is a drawer behind a Menu button.
-- **Accessibility:** every page has one `<h1>`; `shared/useRouteFocus.ts` names the browser tab after it and moves
-  focus to it after navigation. Both shells have a "Skip to content" link. Dialogs keep focus inside and return
+- **Accessibility:** every page has one `<h1>` (a page that is only an empty state uses `EmptyState page`, whose
+  title becomes the heading); `shared/useRouteFocus.ts` names the browser tab after it and moves focus to it after
+  navigation. Both shells have a "Skip to content" link. Dialogs keep focus inside and return
   it on close. Every interactive element shows a focus outline, and text meets WCAG AA contrast (checked with axe).
 - Web pages live with their feature; anything used by two features moves to `shared/` (UI), `admin/components/`
   (console-only UI) or `data/` (reads and calls).
+- **Shared helpers:** server calls go through `command` (replay-safe writes) or `call` (reads and jobs) in
+  `data/api.ts`, which turn failures into user-facing `ApiError`s. PDFs are opened or downloaded with
+  `openFile`/`downloadFile` (`data/files.ts`). Business dates in India come from `shared/dates.ts` (`todayIST`,
+  `monthIST`, `addDays`, `daysUntil`). Money: `money` (paise) and `rupees` (whole rupees, payroll) in
+  `shared/format.ts`. On the server, `core/time.ts` has the dates and `core/pdfText.ts` makes text safe for the
+  standard PDF fonts.
+- **Loading:** every page is loaded on first visit (`lazyPage` in `AdminApp.tsx`, `lazy` in `routes.tsx`); the
+  shells show a skeleton meanwhile. Firebase and React are built into their own files (`vite.config.ts`) so they
+  stay cached across deploys. The barcode decoder (ZXing) loads only inside its Web Worker.
+- **Dashboards** never say "all clear" while loading, and say so when part of them could not be loaded (with a
+  retry) instead of hiding the items that failed.
 
 ---
 

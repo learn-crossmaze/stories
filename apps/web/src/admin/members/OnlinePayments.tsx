@@ -2,7 +2,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
-import { callAction, command, toApiError } from '../../data/api';
+import { call, command, toApiError } from '../../data/api';
 import type { Branch } from '../../data/org';
 import { services } from '../../data/services';
 import { money, when } from '../../shared/format';
@@ -59,7 +59,7 @@ export function PaymentGatewayDialog({ orgId, branch, onClose, onSaved }: { orgI
   const runTest = async () => {
     setTest(null);
     try {
-      const r = await callAction<{ mode: string }>(services().fns, 'branches-testPaymentGateway', { orgId, branchId: branch.id });
+      const r = await call<{ mode: string }>('branches-testPaymentGateway', { orgId, branchId: branch.id });
       setTest({ tone: 'ok', text: lt.pgTestOk(r.mode) });
     } catch (e) {
       setTest({ tone: 'error', text: toApiError(e).message || lt.pgTestFailed });
@@ -211,13 +211,13 @@ export function CollectOnlineDialog({
   };
   const create = (channel: 'LINK' | 'QR') =>
     run(channel, async () => {
-      const r = await callAction<PaymentRequest>(services().fns, 'payments-createRequest', { orgId, subscriptionId, channel, requestId: crypto.randomUUID() });
+      const r = await call<PaymentRequest>('payments-createRequest', { orgId, subscriptionId, channel, requestId: crypto.randomUUID() });
       setReq(r);
       setStatus(r.status);
     });
   const check = () =>
     run('check', async () => {
-      const r = await callAction<{ status: string }>(services().fns, 'payments-checkRequest', { orgId, paymentRequestId: req!.requestId });
+      const r = await call<{ status: string }>('payments-checkRequest', { orgId, paymentRequestId: req!.requestId });
       setStatus(r.status);
       if (r.status === 'OPEN') setError(lt.olNotYet);
     });

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { GUIDE, type Decoded, type Mode } from './barcode';
+import { GUIDE, type Decoded, type Mode } from './scan';
 import { lt } from '../../strings/library';
 
 /** Pause between frames sent to the decoder (it runs in a Web Worker, one frame at a time). */

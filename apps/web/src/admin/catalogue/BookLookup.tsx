@@ -1,9 +1,8 @@
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router';
 
-import { callAction, toApiError } from '../../data/api';
+import { call, toApiError } from '../../data/api';
 import { label } from '../../data/common';
-import { services } from '../../data/services';
 import { paths } from '../../paths';
 import { Icon } from '../../shared/ui';
 import { CameraScanner } from '../components/CameraScanner';
@@ -41,7 +40,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
     setBusy(true);
     setError(null);
     try {
-      const res = await callAction<{ candidates: Candidate[] }>(services().fns, 'books-lookup', { q: term.trim() });
+      const res = await call<{ candidates: Candidate[] }>('books-lookup', { q: term.trim() });
       setResults(res.candidates);
     } catch (err) {
       setError(toApiError(err).message || lt.lookupFailed);

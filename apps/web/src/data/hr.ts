@@ -1,6 +1,6 @@
-import { collection, doc, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { services } from './services';
+import { db, toDate } from './common';
 
 /** Employee lifecycle (docs/HRMS.md §2). */
 export const EMPLOYEE_STATUSES = ['DRAFT', 'ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING', 'OFFBOARDED'] as const;
@@ -98,7 +98,6 @@ export interface ChecklistTemplateItem {
   required: boolean;
 }
 
-const db = () => services().db;
 
 /**
  * The directory. Branch-scoped viewers must filter to their own branches (the
@@ -130,7 +129,7 @@ export async function listHistory(orgId: string, employeeId: string): Promise<Hi
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/employees/${employeeId}/history`), orderBy('at', 'desc'), limit(200)));
   return snap.docs.map((d) => {
     const data = d.data();
-    return { ...data, id: d.id, at: data.at instanceof Timestamp ? data.at.toDate() : null } as HistoryEntry;
+    return { ...data, id: d.id, at: toDate(data.at) } as HistoryEntry;
   });
 }
 

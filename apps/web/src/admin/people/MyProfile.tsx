@@ -2,18 +2,20 @@
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import { employeeMonth, monthIST, todayIST } from '../../data/attendance';
+import { employeeMonth } from '../../data/attendance';
+import { monthIST, todayIST } from '../../shared/dates';
 import { myEmployee } from '../../data/hr';
 import { available, employeeRequests, leaveBalance, listLeaveTypes } from '../../data/leave';
-import { employeePayslips, money, monthName } from '../../data/payroll';
+import { employeePayslips, monthName } from '../../data/payroll';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
-import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { useWorkspace } from '../Workspace';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { CheckInCard } from './MyAttendance';
+import { Checklist } from './employeePanels';
 import { PayslipButton } from './payrollKit';
 
 const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
@@ -46,12 +48,14 @@ export function MyProfilePage() {
     };
   }, [org?.id, me.data?.id]);
 
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   if (me.loading && !me.data) return <SkeletonRows rows={5} />;
   if (me.error) return <ErrorState message={me.error} onRetry={me.reload} />;
   const e = me.data;
-  if (!e) return <EmptyState icon="person" title={ht.noEmployeeRecord} message="" />;
+  if (!e) return <EmptyState page icon="person" title={ht.navMyProfile} message={ht.noEmployeeRecord} />;
   const s = summary.data;
+  // While joining or leaving, the open checklist shows what is still to do.
+  const checklist = e.status === 'ONBOARDING' && e.onboarding?.length ? 'onboarding' : e.status === 'OFFBOARDING' && e.offboarding?.length ? 'offboarding' : null;
   const facts: [string, string][] = [
     [ht.designation, e.designationName ?? '—'],
     [ht.department, e.departmentName ?? '—'],
@@ -96,7 +100,7 @@ export function MyProfilePage() {
           {s?.latest ? (
             <>
               <span className="hub-value">
-                {monthName(s.latest.month)} · {money(s.latest.net)}
+                {monthName(s.latest.month)} · {rupees(s.latest.net)}
               </span>
               <PayslipButton orgId={org.id} slip={s.latest} />
             </>
@@ -126,12 +130,11 @@ export function MyProfilePage() {
         <EmployeeDocumentsPanel orgId={org.id} employee={e} canManage={false} canVerify={false} onChanged={me.reload} />
       </section>
 
-      <section className="section" aria-labelledby="hub-tasks">
-        <h2 id="hub-tasks">{ht.myTasks}</h2>
-        <p className="muted">
-          <Icon name="check" /> {ht.myTasksPlaceholder}
-        </p>
-      </section>
+      {checklist && (
+        <div className="section">
+          <Checklist orgId={org.id} employee={e} list={checklist} editable={false} onChanged={me.reload} />
+        </div>
+      )}
     </>
   );
 }

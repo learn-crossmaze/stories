@@ -5,7 +5,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
 import { type AuditEntry, listAudit } from '../../data/org';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useWorkspace } from '../Workspace';
 
 const when = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
@@ -60,7 +60,7 @@ export function AuditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [org?.id, scopeKey, attempt]);
 
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   return (
     <>
       <header className="page-header">
@@ -74,7 +74,7 @@ export function AuditPage() {
         <EmptyState icon="history" title={t.auditEmpty} message="" />
       ) : (
         <>
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table">
               <thead>
                 <tr>
@@ -103,7 +103,7 @@ export function AuditPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
           {error && <p className="form-error">{error}</p>}
           {cursor && (
             <button type="button" className="btn btn-outlined load-more" disabled={loading} onClick={() => load(cursor)}>

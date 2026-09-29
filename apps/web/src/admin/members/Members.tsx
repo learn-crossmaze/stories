@@ -1,6 +1,6 @@
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
@@ -12,7 +12,7 @@ import { useDebounced } from '../../shared/useDebounced';
 import { day, relativeDays } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { NeedBranch } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -121,6 +121,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
   );
 }
 
+const RENEWAL_FILTERS: RenewalFilter[] = ['ACTIVE', 'DUE', 'EXPIRED', 'NONE'];
 const RENEWAL_TONE: Record<Exclude<RenewalFilter, ''>, string> = { ACTIVE: 'ok', DUE: 'warn', EXPIRED: 'danger', NONE: 'muted' };
 
 /** Plan and renewal date, with how soon it is (text, never colour alone). */
@@ -143,7 +144,9 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
   const { branch } = useWorkspace();
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
-  const [filters, setFilters] = useState<MemberFilters>({ status: '', audience: '', renewal: '' });
+  // The dashboard links here with ?renewal=DUE (etc.).
+  const [params] = useSearchParams();
+  const [filters, setFilters] = useState<MemberFilters>(() => ({ status: '', audience: '', renewal: RENEWAL_FILTERS.find((r) => r === params.get('renewal')) ?? '' }));
   const [registering, setRegistering] = useState(false);
   const [rows, setRows] = useState<Member[]>([]);
   const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
@@ -264,7 +267,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
         <EmptyState icon="person" title={filtered ? lt.membersEmpty : lt.membersNone} message="" />
       ) : (
         <>
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table">
               <thead>
                 <tr>
@@ -301,7 +304,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
           {cursor && (
             <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
               {state.loading ? t.loading : t.loadMore}

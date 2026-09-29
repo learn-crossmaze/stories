@@ -10,7 +10,7 @@ import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { ROLES, type Role } from '../../generated/rbac';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { canManageMember, grantableRoles, isOrgWide } from '../grants';
 import { lt } from '../../strings/library';
@@ -134,7 +134,7 @@ export function StaffPage() {
   );
   const [editing, setEditing] = useState<StaffMembership | null>(null);
   const [revoking, setRevoking] = useState<StaffMembership | null>(null);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   const manage = can(claims, 'staff.manageRoles', org.id) && grantableRoles(claims, org.id, org.type).length > 0;
 
   return (
@@ -155,7 +155,7 @@ export function StaffPage() {
       ) : !staff.data?.length ? (
         <EmptyState icon="people" title={t.staffEmpty} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -214,7 +214,7 @@ export function StaffPage() {
               })}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {editing && <RolesDialog org={org} member={editing} onClose={() => setEditing(null)} onSaved={staff.reload} />}
       {revoking && (

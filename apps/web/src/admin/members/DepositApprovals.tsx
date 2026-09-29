@@ -9,7 +9,7 @@ import { label } from '../../data/common';
 import { useAsync } from '../../shared/useAsync';
 import { day, money } from '../../shared/format';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, FormError } from '../components/Dialog';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
@@ -36,7 +36,7 @@ export function DepositApprovalsPage() {
       ) : !list.data?.length ? (
         <EmptyState icon="check" title={lt.approvalsEmpty} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -77,7 +77,7 @@ export function DepositApprovalsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {deciding && (
         <ConfirmWithReason

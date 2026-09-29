@@ -105,24 +105,28 @@ const rows = (s: FirebaseFirestore.QuerySnapshot) => s.docs.map((d) => plain({ i
 export const overview = query('me-overview', z.strictObject({}), async ({ actor }) => {
   const linked = await linkByEmail(actor);
   const members = await myMembers(actor);
-  const orgNames = new Map<string, string>();
+  // A family shares its organization, branch and plans: each is read once per call.
+  const reads = new Map<string, Promise<unknown>>();
+  const once = <T>(key: string, load: () => Promise<T>) => {
+    if (!reads.has(key)) reads.set(key, load());
+    return reads.get(key) as Promise<T>;
+  };
   const result = await Promise.all(
     members.map(async (m) => {
       const orgId = m.ref.parent.parent!.id;
       const member = m.data() as Member & { address: unknown };
       const o = (path: string) => db.collection(`orgs/${orgId}/${path}`);
       const [org, branch, subs, payments, loans, reservations, deposit, ledger, plans] = await Promise.all([
-        orgNames.has(orgId) ? null : db.doc(`orgs/${orgId}`).get(),
-        db.doc(`orgs/${orgId}/branches/${member.homeBranchId}`).get(),
+        once(`orgs/${orgId}`, () => db.doc(`orgs/${orgId}`).get()),
+        once(`branches/${orgId}/${member.homeBranchId}`, () => db.doc(`orgs/${orgId}/branches/${member.homeBranchId}`).get()),
         o('subscriptions').where('memberId', '==', m.id).orderBy('createdAt', 'desc').limit(12).get(),
         o('payments').where('memberId', '==', m.id).orderBy('at', 'desc').limit(30).get(),
         o('loans').where('memberId', '==', m.id).orderBy('issuedAt', 'desc').limit(50).get(),
         o('reservations').where('memberId', '==', m.id).orderBy('queuedAt', 'desc').limit(30).get(),
         db.doc(`orgs/${orgId}/depositAccounts/${m.id}`).get(),
         db.collection(`orgs/${orgId}/depositAccounts/${m.id}/transactions`).orderBy('at', 'desc').limit(30).get(),
-        o('plans').where('status', '==', 'ACTIVE').get(),
+        once(`plans/${orgId}`, () => o('plans').where('status', '==', 'ACTIVE').get()),
       ]);
-      if (org) orgNames.set(orgId, (org.get('name') as string) ?? '');
       const pending = subs.docs.find((s) => s.get('status') === 'PENDING_PAYMENT');
       const requests = pending
         ? await o('paymentRequests').where('subscriptionId', '==', pending.id).where('status', '==', 'OPEN').get()
@@ -130,7 +134,7 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
       const razorpay = branch.get('payments.razorpay') as { enabled?: boolean } | undefined;
       return {
         orgId,
-        orgName: orgNames.get(orgId) ?? '',
+        orgName: (org.get('name') as string) ?? '',
         memberId: m.id,
         self: member.accountHolderUid === actor.uid,
         member: plain({

@@ -1,17 +1,12 @@
 // "Add by ISBN": look each ISBN up in public catalogues, then add the good ones in one go (functions/src/catalogue/books.ts bulkCreate).
 import type { Candidate } from '../admin/catalogue/BookLookup';
-import { callAction, command, toApiError } from './api';
+import { call, command } from './api';
 import type { AgeGroup, Genre, READING_LEVELS } from './common';
-import { services } from './services';
 
 /** The public-catalogue match for an ISBN (the edition with that ISBN when there is one), or null. */
 export async function lookupIsbn(isbn: string): Promise<Candidate | null> {
-  try {
-    const res = await callAction<{ candidates: Candidate[] }>(services().fns, 'books-lookup', { q: isbn });
-    return res.candidates.find((c) => c.isbn === isbn) ?? res.candidates[0] ?? null;
-  } catch (e) {
-    throw toApiError(e);
-  }
+  const res = await call<{ candidates: Candidate[] }>('books-lookup', { q: isbn });
+  return res.candidates.find((c) => c.isbn === isbn) ?? res.candidates[0] ?? null;
 }
 
 export interface BulkItem {

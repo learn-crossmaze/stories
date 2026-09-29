@@ -2,11 +2,10 @@ import type { DocumentSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 
 import { BookCover } from '../shared/BookCover';
-import { callAction, toApiError } from '../data/api';
+import { call, toApiError } from '../data/api';
 import { type Book, searchBooks } from '../data/catalogue';
 import { label } from '../data/common';
 import { type Membership, reserveBook } from '../data/me';
-import { services } from '../data/services';
 import { useDebounced } from '../shared/useDebounced';
 import { t } from '../strings';
 import { EmptyState, ErrorState, SkeletonRows } from '../shared/ui';
@@ -96,7 +95,7 @@ function BookPanel({ m, book, onReserved }: { m: Membership; book: Book; onReser
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   useEffect(() => {
-    callAction<Availability>(services().fns, 'copies-availability', { orgId: m.orgId, bookId: book.id })
+    call<Availability>('copies-availability', { orgId: m.orgId, bookId: book.id })
       .then(setAvail)
       .catch(() => setAvail({ branches: [] }));
   }, [m.orgId, book.id]);

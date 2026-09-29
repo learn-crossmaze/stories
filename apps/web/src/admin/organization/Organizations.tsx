@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { command } from '../../data/api';
 import type { Org, OrgType } from '../../data/org';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { useWorkspace } from '../Workspace';
 
@@ -72,7 +72,7 @@ export function OrganizationsPage() {
       ) : orgs.length === 0 ? (
         <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -105,7 +105,7 @@ export function OrganizationsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {editing && <OrgDialog org={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={reloadOrgs} />}
     </>

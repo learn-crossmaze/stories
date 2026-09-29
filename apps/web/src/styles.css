@@ -387,7 +387,7 @@ main h1[tabindex='-1']:focus { outline: none; }
 .cover { flex: none; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid; border-radius: 4px 8px 8px 4px; position: relative; overflow: hidden; box-shadow: 2px 2px 0 rgb(0 0 0 / .08); }
 .cover-band { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; }
 .cover-title { font: 600 13px/1.2 var(--font-display); padding: 8px 8px 0 12px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
-.cover-author { font-size: 11px; padding: 0 8px 8px 12px; opacity: .85; }
+.cover-author { font-size: 11px; padding: 0 8px 8px 12px; }
 .cover-sm { width: 40px; height: 58px; }
 .cover-sm .cover-title { font-size: 7px; padding: 4px 3px 0 9px; -webkit-line-clamp: 5; }
 .cover-md { width: 96px; height: 140px; }

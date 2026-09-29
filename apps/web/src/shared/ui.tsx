@@ -1,3 +1,5 @@
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+
 import { t } from '../strings';
 
 // Small shared UI pieces. Icons are inline SVG paths (Material Symbols, Apache-2.0).
@@ -58,17 +60,22 @@ export function Icon({ name }: { name: IconName }) {
   );
 }
 
-export function EmptyState({ icon, title, message }: { icon: IconName; title: string; message: string }) {
+/** Nothing to show. `page` when it stands in for a whole page: its title becomes the page heading. */
+export function EmptyState({ icon, title, message, page = false }: { icon: IconName; title: string; message: string; page?: boolean }) {
+  const Heading = page ? 'h1' : 'h2';
   return (
     <div className="empty-state">
       <span className="empty-icon">
         <Icon name={icon} />
       </span>
-      <h2>{title}</h2>
+      <Heading>{title}</Heading>
       <p>{message}</p>
     </div>
   );
 }
+
+/** A staff page opened before an organization is chosen. */
+export const NoOrgState = () => <EmptyState page icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
@@ -82,6 +89,30 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
           {t.retry}
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * A table that scrolls sideways on narrow screens. While it does, it can take
+ * keyboard focus, so it can be scrolled with the arrow keys.
+ */
+export function TableWrap({ label, children }: { label?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const check = () => setScrolls(el.scrollWidth > el.clientWidth);
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    check();
+    return () => observer.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="table-wrap" {...(scrolls && { tabIndex: 0, role: 'region', 'aria-label': label ?? t.scrollingTable })}>
+      {children}
     </div>
   );
 }

@@ -119,6 +119,22 @@ after expiry), written when a payment activates a subscription. Branches created
 
 See [CIRCULATION.md §Transfers](CIRCULATION.md#transfers).
 
+## Staff dashboard
+
+The home page of the Admin and Operations views (`admin/dashboard/Dashboard.tsx`) answers "what do I need to do
+now?". Each part shows only when the person may see it:
+
+- **Needs attention:** inspections, incoming transfers, deposit approvals, memberships to renew in the next 15 days,
+  and the HR items (documents, corrections, leave, payroll runs, last month's attendance). Each links to its page.
+- **Today at the branch:** issued, exchanges, holds ready, members waiting, awaiting inspection, incoming transfers.
+- **Members at the branch:** active, renewal due, expired and all. Each opens the member list with that filter
+  (`/ops/members?renewal=DUE`).
+- **Catalogue** (catalogue owners): titles, and titles added this month.
+- **Organization:** branches, and staff with access.
+
+Figures are count queries (one read per 1,000 documents). "Nothing needs your attention" appears only once
+everything has loaded; if a part fails, a note says the list may be incomplete, with a retry.
+
 ## Member app (self-service)
 
 Members sign in with the email the branch recorded on their membership (verified: Google sign-in, or the

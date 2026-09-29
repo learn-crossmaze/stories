@@ -1,8 +1,9 @@
 // Payroll: statutory settings, salary structures, monthly inputs, runs and payslips (docs/HRMS.md §10).
-import { collection, doc, getDoc, getDocs, limit, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { callAction, command, toApiError } from './api';
-import { services } from './services';
+import { call, command } from './api';
+import { downloadFile } from './files';
+import { db, toDate } from './common';
 
 export interface Component {
   code: string;
@@ -96,8 +97,6 @@ export interface Payslip {
   published: boolean;
 }
 
-const db = () => services().db;
-const ts = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
 const branchFilter = (scope: string[] | 'ALL'): QueryConstraint[] => (scope === 'ALL' ? [] : [where('branchId', 'in', scope.slice(0, 30))]);
 export const runId = (month: string, branchId: string | null) => `${month}_${branchId ?? 'HO'}`;
 
@@ -122,13 +121,13 @@ export async function getRun(orgId: string, month: string, branchId: string | nu
   const snap = await getDoc(doc(db(), `orgs/${orgId}/payrollRuns/${runId(month, branchId)}`));
   if (!snap.exists()) return null;
   const d = snap.data();
-  return { ...(d as Omit<PayrollRun, 'id'>), id: snap.id, preparedAt: ts(d.preparedAt) };
+  return { ...(d as Omit<PayrollRun, 'id'>), id: snap.id, preparedAt: toDate(d.preparedAt) };
 }
 
 /** Runs waiting for approval in the viewer's branches. */
 export async function submittedRuns(orgId: string, scope: string[] | 'ALL'): Promise<PayrollRun[]> {
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/payrollRuns`), where('status', '==', 'SUBMITTED'), ...branchFilter(scope), limit(100)));
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<PayrollRun, 'id'>), id: d.id, preparedAt: ts(d.get('preparedAt')) }));
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<PayrollRun, 'id'>), id: d.id, preparedAt: toDate(d.get('preparedAt')) }));
 }
 
 /** A run's payslips (for those who see all payslips). */
@@ -148,40 +147,19 @@ export async function employeePayslips(orgId: string, employeeId: string, opts: 
 
 /** Preparing writes a payslip per employee; it is not a replayed command. */
 export async function prepareRun(orgId: string, month: string, branchId: string | null) {
-  try {
-    return await callAction<{ runId: string; employees: number; problems: number }>(services().fns, 'payroll-prepare', { orgId, month, branchId });
-  } catch (e) {
-    throw toApiError(e);
-  }
+  return call<{ runId: string; employees: number; problems: number }>('payroll-prepare', { orgId, month, branchId });
 }
 
 export const submitRun = (orgId: string, month: string, branchId: string | null) => command('payroll-submit', { orgId, month, branchId });
 
 /** Downloads a payslip PDF (opening someone else's is audited). */
-export async function downloadPayslip(orgId: string, employeeId: string, month: string) {
-  try {
-    const res = await callAction<{ fileName: string; contentType: string; content: string }>(services().fns, 'payslips-download', { orgId, employeeId, month });
-    const bytes = Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: res.contentType }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = res.fileName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (e) {
-    throw toApiError(e);
-  }
-}
+export const downloadPayslip = (orgId: string, employeeId: string, month: string) => downloadFile('payslips-download', { orgId, employeeId, month });
 
-const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
-export const money = (n: number) => inr.format(n);
 /** 'September 2026'. */
 export const monthName = (m: string) => new Date(`${m}-01T12:00:00Z`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 /** Approved runs in the viewer's branches (newest months first). */
 export async function approvedRuns(orgId: string, scope: string[] | 'ALL'): Promise<PayrollRun[]> {
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/payrollRuns`), where('status', '==', 'APPROVED'), ...branchFilter(scope), limit(200)));
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<PayrollRun, 'id'>), id: d.id, preparedAt: ts(d.get('preparedAt')) })).sort((a, b) => b.month.localeCompare(a.month));
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<PayrollRun, 'id'>), id: d.id, preparedAt: toDate(d.get('preparedAt')) })).sort((a, b) => b.month.localeCompare(a.month));
 }

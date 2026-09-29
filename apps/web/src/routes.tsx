@@ -4,11 +4,6 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from './auth/AuthContext';
 import { homeViewFor, isStaff, type ViewId } from './auth/claims';
 import { MemberShell } from './member/MemberShell';
-import { ExplorePage } from './member/ExplorePage';
-import { HomePage } from './member/HomePage';
-import { MembershipPage } from './member/MembershipPage';
-import { MyBooksPage } from './member/MyBooksPage';
-import { ProfilePage } from './member/ProfilePage';
 import { SetupPage } from './public/Setup';
 import { SignInPage } from './public/SignIn';
 import { authRedirect, paths, viewHome } from './paths';
@@ -16,6 +11,12 @@ import { t } from './strings';
 
 // Staff code loads only for staff (keeps the member bundle small).
 const AdminApp = lazy(() => import('./admin/AdminApp'));
+// Member pages load on first visit.
+const HomePage = lazy(() => import('./member/HomePage').then((m) => ({ default: m.HomePage })));
+const ExplorePage = lazy(() => import('./member/ExplorePage').then((m) => ({ default: m.ExplorePage })));
+const MyBooksPage = lazy(() => import('./member/MyBooksPage').then((m) => ({ default: m.MyBooksPage })));
+const MembershipPage = lazy(() => import('./member/MembershipPage').then((m) => ({ default: m.MembershipPage })));
+const ProfilePage = lazy(() => import('./member/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
 function AuthGate() {
   const { user, claims } = useAuth();

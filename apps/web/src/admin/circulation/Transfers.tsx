@@ -9,7 +9,7 @@ import { type Copy, findCopy } from '../../data/inventory';
 import { useAsync } from '../../shared/useAsync';
 import { day } from '../../shared/format';
 import { t } from '../../strings';
-import { EmptyState, Icon, SkeletonRows } from '../../shared/ui';
+import { EmptyState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice, ScanInput, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -142,7 +142,7 @@ function BranchTransfers({ orgId, branchId }: { orgId: string; branchId: string 
       ) : !list.data?.length ? (
         <EmptyState icon="truck" title={lt.transfersEmpty} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -199,7 +199,7 @@ function BranchTransfers({ orgId, branchId }: { orgId: string; branchId: string 
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {creating && <NewTransferDialog orgId={orgId} fromBranchId={branchId} onClose={() => setCreating(false)} onSaved={() => { setDir('out'); list.reload(); }} />}
       {receiving && <ReceiveDialog orgId={orgId} transfer={receiving} onClose={() => setReceiving(null)} onSaved={list.reload} />}

@@ -1,11 +1,11 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
 import { rolesIn, type ViewId } from '../auth/claims';
 import { ROLES } from '../generated/rbac';
 import { paths, viewHome } from '../paths';
-import { Icon } from '../shared/ui';
+import { Icon, SkeletonRows } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
@@ -305,7 +305,9 @@ function Shell({ view }: { view: ViewId }) {
             <AccountMenu />
           </header>
           <main className="admin-main" id={MAIN_ID} tabIndex={-1}>
-            <Outlet />
+            <Suspense fallback={<SkeletonRows />}>
+              <Outlet />
+            </Suspense>
           </main>
         </div>
       </div>

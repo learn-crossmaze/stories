@@ -4,12 +4,12 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
-import { monthIST, todayIST } from '../../data/attendance';
+import { monthIST, todayIST } from '../../shared/dates';
 import { type Employee, listEmployees } from '../../data/hr';
 import { accrueLeave, approvedLeaveIn, available, balancesFor, daysLabel, listLeaveTypes, type LeaveRequest, type LeaveType, pendingLeave } from '../../data/leave';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -176,7 +176,7 @@ function BalancesView({ orgId, scope }: { orgId: string; scope: Scope }) {
       ) : (
         <>
           {data.data.balances.size === 0 && <p className="muted">{ht.noBalances(year)}</p>}
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table compact">
               <thead>
                 <tr>
@@ -223,7 +223,7 @@ function BalancesView({ orgId, scope }: { orgId: string; scope: Scope }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </>
       )}
       {accruing && <AccrualDialog orgId={orgId} onClose={() => setAccruing(false)} onDone={(m) => (setNotice(m), data.reload())} />}
@@ -253,7 +253,7 @@ export function LeavePage() {
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const [tab, setTab] = useState<Tab>('requests');
   const counts = useAsync(() => (org ? pendingLeave(org.id, scope) : Promise.resolve([])), [org?.id, JSON.stringify(scope)]);
-  if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  if (!org) return <NoOrgState />;
   return (
     <>
       <header className="page-header">

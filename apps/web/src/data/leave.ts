@@ -1,8 +1,8 @@
 // Leave: types, balances, the ledger and requests (docs/HRMS.md §9).
-import { collection, doc, getDoc, getDocs, limit, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { callAction, command, toApiError } from './api';
-import { services } from './services';
+import { call, command } from './api';
+import { db, toDate } from './common';
 
 export interface LeaveType {
   id: string;
@@ -79,8 +79,6 @@ export interface LedgerEntry {
   at: Date | null;
 }
 
-const db = () => services().db;
-const ts = (v: unknown) => (v instanceof Timestamp ? v.toDate() : null);
 const branchFilter = (scope: string[] | 'ALL'): QueryConstraint[] => (scope === 'ALL' ? [] : [where('branchId', 'in', scope.slice(0, 30))]);
 const toRequest = (id: string, d: Record<string, unknown>) => ({ ...d, id }) as LeaveRequest;
 
@@ -130,7 +128,7 @@ export async function approvedLeaveIn(orgId: string, month: string, scope: strin
 export async function ledgerFor(orgId: string, employeeId: string, year: string, opts: { ownUid?: string; scope?: string[] | 'ALL' }): Promise<LedgerEntry[]> {
   const filters: QueryConstraint[] = opts.ownUid ? [where('employeeUid', '==', opts.ownUid)] : [where('employeeId', '==', employeeId), ...branchFilter(opts.scope ?? 'ALL')];
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/leaveLedger`), ...filters, where('year', '==', year), limit(500)));
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<LedgerEntry, 'id' | 'at'>), id: d.id, at: ts(d.get('at')) })).sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<LedgerEntry, 'id' | 'at'>), id: d.id, at: toDate(d.get('at')) })).sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
 }
 
 export const applyLeave = (input: { orgId: string; employeeId?: string; typeId: string; from: string; to: string; halfDay: HalfDay; reason: string }) =>
@@ -138,11 +136,7 @@ export const applyLeave = (input: { orgId: string; employeeId?: string; typeId: 
 
 /** Accrual writes many documents; it is not a replayed command. */
 export async function accrueLeave(orgId: string, month: string) {
-  try {
-    return await callAction<{ employees: number; days: number }>(services().fns, 'leave-accrue', { orgId, month });
-  } catch (e) {
-    throw toApiError(e);
-  }
+  return call<{ employees: number; days: number }>('leave-accrue', { orgId, month });
 }
 
 /** '2 days', '½ day', '1.25 days'. */
