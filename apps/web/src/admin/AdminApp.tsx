@@ -26,6 +26,8 @@ import { DocumentsPage } from './people/Documents';
 import { LeavePage } from './people/Leave';
 import { MyAttendancePage } from './people/MyAttendance';
 import { MyLeavePage } from './people/MyLeave';
+import { MyPayslipsPage } from './people/MyPayslips';
+import { PayrollPage } from './people/Payroll';
 import { EmployeeProfilePage } from './people/EmployeeProfile';
 import { HrSettingsPage } from './people/HrSettings';
 import { PeoplePage } from './people/People';
@@ -59,6 +61,8 @@ export default function AdminApp() {
         <Route path={sub(paths.adminMyAttendance)} element={<MyAttendancePage />} />
         <Route path={sub(paths.adminLeave)} element={guard(paths.adminLeave, <LeavePage />)} />
         <Route path={sub(paths.adminMyLeave)} element={<MyLeavePage />} />
+        <Route path={sub(paths.adminPayroll)} element={guard(paths.adminPayroll, <PayrollPage />)} />
+        <Route path={sub(paths.adminMyPayslips)} element={<MyPayslipsPage />} />
         <Route path={sub(paths.adminDocuments)} element={guard(paths.adminDocuments, <DocumentsPage />)} />
         <Route path={sub(paths.adminHrSettings)} element={guard(paths.adminHrSettings, <HrSettingsPage />)} />
         <Route path={sub(paths.adminAudit)} element={guard(paths.adminAudit, <AuditPage />)} />

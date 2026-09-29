@@ -589,6 +589,13 @@ main h1[tabindex='-1']:focus { outline: none; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .warn-text { color: var(--danger); font-weight: 500; }
 .weekday-picks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.line-row { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; align-items: end; }
+.line-row-code { grid-template-columns: 110px 1fr 140px auto; }
+.line-row > * { min-width: 0; }
+@media (max-width: 600px) { .line-row, .line-row-code { grid-template-columns: 1fr; } }
+.run-summary { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: baseline; }
+.run-summary dt { font-size: 13px; color: var(--on-surface-muted); }
+.run-summary dd { margin: 0; font-weight: 600; font-size: 18px; }
 .balance-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .balance-card { display: flex; flex-direction: column; gap: 4px; }
 .balance-value { font-size: 20px; }

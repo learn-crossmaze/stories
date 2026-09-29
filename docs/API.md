@@ -84,13 +84,19 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `attendance-assignShift`, `attendance-adjust` (reason; never your own day) | `attendance.manage` at the employee's branch |
 | | `attendance-punch` (`punch: IN\|OUT`; own, or for someone else at the desk) | the employee; `attendance.manage` for others |
 | | `attendance-requestCorrection` / `attendance-decideCorrection` | the employee / `corrections.approve` (never your own) |
-| | `attendance-finalize` (query; writes the month; refused while corrections or leave wait), `attendance-reopen` | `attendance.finalize` for the branch (org-wide for head office) |
+| | `attendance-finalize` (query; writes the month; refused while corrections or leave wait), `attendance-reopen` (refused while that month's payroll is submitted or approved) | `attendance.finalize` for the branch (org-wide for head office) |
 | Leave | `leaveTypes-save/archive` | `hr.config` |
 | | `leave-apply` (`typeId`, `from`, `to`, `halfDay: NONE\|FIRST\|SECOND`, reason; own, or `employeeId` for someone else) | the employee; `leave.approve` at the branch for others |
 | | `leave-decide` (`APPROVE` / `REJECT` with note; never your own) | `leave.approve` at the employee's branch |
 | | `leave-cancel` (note required for someone else's) | the employee (waiting, or approved and not started); `leave.adjust` for any |
 | | `leave-adjust` (`typeId`, `year`, `days` ±, reason; never your own) | `leave.adjust` at the employee's branch |
 | | `leave-accrue` (query; credits a month, safe to repeat) | `leave.adjust` org-wide |
+| Payroll | `payrollSettings-save` (a version from a month) | `salary.edit` org-wide |
+| | `salary-save` (a version from a month; reason; never your own) | `salary.edit` at the employee's branch |
+| | `payroll-setInputs` (TDS, other earnings and deductions for a month; never your own) | `payroll.run` at the employee's branch |
+| | `payroll-prepare` (query; writes the run and payslips), `payroll-submit` | `payroll.run` for the branch (org-wide for head office) |
+| | `payroll-decide` (`APPROVE` publishes payslips / `REJECT` with note; never the preparer or submitter) | `payroll.approve` for the branch |
+| | `payslips-download` (query; PDF, base64; audited unless your own) | the employee (published) or `payslips.viewAll` |
 
 No action may take an input named `action`: the router uses that field for the action name (`test/unit/routers.test.ts` checks it).
 

@@ -33,6 +33,8 @@ export const paths = {
   adminMyAttendance: '/admin/my-attendance',
   adminLeave: '/admin/leave',
   adminMyLeave: '/admin/my-leave',
+  adminPayroll: '/admin/payroll',
+  adminMyPayslips: '/admin/my-payslips',
 } as const;
 
 /** Pure redirect rule, kept separate so it can be unit tested. */

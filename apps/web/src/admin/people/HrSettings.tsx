@@ -8,9 +8,12 @@ import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../s
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
+import { useAuth } from '../../auth/AuthContext';
+import { branchScope, can } from '../../auth/claims';
 import { useWorkspace } from '../Workspace';
 import { DocumentTypesSection } from './DocumentTypesSettings';
 import { LeaveTypesSection } from './LeaveTypesSettings';
+import { PayrollSettingsSection } from './PayrollSettings';
 import { HolidaysSection, ShiftsSection } from './ScheduleSettings';
 
 function DesignationDialog({ orgId, designation, onClose, onSaved }: { orgId: string; designation?: Designation; onClose: () => void; onSaved: () => void }) {
@@ -88,6 +91,7 @@ function ChecklistEditor({ title, items, onChange }: { title: string; items: Che
 
 export function HrSettingsPage() {
   const { org } = useWorkspace();
+  const { claims } = useAuth();
   const designations = useAsync(() => (org ? listDesignations(org.id) : Promise.resolve([])), [org?.id]);
   const templates = useAsync(() => (org ? getChecklistTemplates(org.id) : Promise.resolve(null)), [org?.id]);
   const [editing, setEditing] = useState<Designation | 'new' | null>(null);
@@ -109,6 +113,7 @@ export function HrSettingsPage() {
     setSaved(true);
   });
   if (!org) return <EmptyState icon="building" title={t.noOrgTitle} message={t.noOrgMessage} />;
+  const canEditPayroll = can(claims, 'salary.edit', org.id) && branchScope(claims, org.id) === 'ALL';
 
   return (
     <>
@@ -174,6 +179,8 @@ export function HrSettingsPage() {
       <HolidaysSection orgId={org.id} />
 
       <LeaveTypesSection orgId={org.id} />
+
+      {canEditPayroll && <PayrollSettingsSection orgId={org.id} />}
 
       <DocumentTypesSection orgId={org.id} checklist={onboarding} />
 

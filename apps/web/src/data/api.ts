@@ -46,6 +46,7 @@ const ROUTERS: Record<string, string> = {
   plans: 'billing', subscriptions: 'billing', payments: 'billing', deposits: 'billing',
   circulation: 'circulation', reservations: 'circulation', transfers: 'circulation',
   employees: 'hr', designations: 'hr', hr: 'hr', documents: 'hr', documentTypes: 'hr', shifts: 'hr', holidays: 'hr', attendance: 'hr', leave: 'hr', leaveTypes: 'hr',
+  payroll: 'hr', payrollSettings: 'hr', salary: 'hr', payslips: 'hr',
 };
 
 export function routerFor(action: string): string {

@@ -10,7 +10,7 @@ it is tested and documented.
 | 2. Documents | Document types, private uploads, verification, expiry reminders, required-document tracking | **Done** |
 | 3. Attendance & shifts | Shifts, weekly offs, holidays, check-in and check-out, corrections, month finalization with payable days | **Done** |
 | 4. Leave | Leave types and policies, a balance ledger with accrual, applications and approvals, leave on attendance | **Done** |
-| 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | Planned |
+| 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | **Done** |
 | 6. Self-service & dashboards | My profile, attendance, leave and payslips; HR dashboards; in-app notifications | Planned |
 
 Decisions for later phases (approved): the Tasks module is deferred, so "My tasks" is a placeholder. Notifications
@@ -81,6 +81,7 @@ DRAFT ──start onboarding──▶ ONBOARDING ──mark as joined──▶ A
 | attendance.view / attendance.finalize | HO, HR, FO, BM, FIN / HR, FO (Phase 3) |
 | leave.adjust / leave.approve | HR, FO / HR, FO, BM (Phase 4) |
 | salary.view / salary.edit / payslips.viewAll | HR, FIN, FO / HR, FO / HR, FIN, FO (Phase 5) |
+| payroll.run / payroll.approve | HR, FO / FIN, FO (Phase 5) |
 
 Records without a branch (head office staff) need the permission across all branches.
 
@@ -276,4 +277,67 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - There is no encashment, compensatory off or negative balance; loss of pay is its own unlimited type.
 - One approval step. Leave does not go to a reporting manager first.
 - Changing a type applies to future credits and requests only; balances already credited stay.
+
+## 10. Payroll (Phase 5)
+
+| Path | Contents | Who reads it |
+|---|---|---|
+| `orgs/{o}/payrollSettings/{YYYY-MM}` | a version of the statutory settings from that month: `pf` (`enabled`, `employeeRate`, `employerRate`, `epsRate`, `wageCeiling`, `capAtCeiling`), `esi` (`enabled`, `employeeRate`, `employerRate`, `grossLimit`), `pt` (`enabled`, `slabs` of `{from, amount}`, `februaryAmount`). Without any version the standard rates in code apply (PF 12% + 12% on wages up to ₹15,000, EPS 8.33%; ESI 0.75% + 3.25% up to ₹21,000 gross; PT ₹200 from ₹25,000) | anyone in the org |
+| `orgs/{o}/salaries/{employeeId}_{YYYY-MM}` | a salary version from that month: `earnings` (`code`, `name`, monthly `amount`; BASIC required), `pf`, `esi`, `pt` (whether each applies), `monthlyGross`, `reason` | salary viewers at the branch; the employee |
+| `orgs/{o}/payrollInputs/{employeeId}_{month}` | `tds`, `otherEarnings`, `otherDeductions` for the month | salary viewers at the branch |
+| `orgs/{o}/payrollRuns/{month}_{branchId or HO}` | `status` (DRAFT, SUBMITTED, APPROVED), `stale`, `employees`, `totals`, `problems`, `settingsFrom`, who prepared, submitted and approved, `rejectNote` | salary viewers at the branch |
+| `orgs/{o}/payslips/{employeeId}_{month}` | employee details (designation, PAN, UAN, masked bank), `days`, earned `earnings`, other earnings and deductions, PF, ESI, PT, TDS, `gross`, `deductions`, `net`, employer PF and ESI, `published` | payslip viewers at the branch; the employee once published |
+
+**Rules** (`functions/src/hr/payrollRules.ts`, unit tested; whole rupees):
+
+- A version (settings or salary) applies from its month until a later version.
+- **Earnings** are paid for payable days out of the days in the month (from the finalized attendance summary,
+  including paid leave), each component rounded to the rupee. Other earnings are paid as entered.
+- **PF** is on earned BASIC plus DA, up to the wage ceiling when capped. The employer share splits into pension
+  (EPS, on wages up to the ceiling) and EPF.
+- **ESI** covers employees whose salary gross is within the limit. It is worked out on the earned gross and rounded
+  up.
+- **PT** comes from the slab the month's gross reaches; some states set a different February amount.
+- **TDS** is entered each month. Payroll does not work out income tax.
+- **Net pay** is gross minus PF, ESI, PT, TDS and other deductions. A negative net pay is a problem that stops
+  the run.
+
+**Flow**
+
+- **Salary** (`salary-save`, `salary.edit`, reason required, never your own): a new version from a month. The audit
+  log records the gross, not the breakup.
+- **Settings** (`payrollSettings-save`, `salary.edit` org-wide): a new version from a month.
+- **TDS and extras** (`payroll-setInputs`, `payroll.run`, never your own): per employee per month. A prepared draft
+  becomes stale and must be prepared again.
+- **Prepare** (`payroll-prepare`, `payroll.run`):
+  - Runs per branch and month, or for head office staff, and only once attendance for that month is finalized.
+  - Writes one payslip per employee in the attendance summaries. A missing salary is listed as a problem.
+  - Safe to repeat while the run is a draft.
+- **Submit** (`payroll-submit`, `payroll.run`): only a draft that is up to date and has no problems.
+- **Decide** (`payroll-decide`, `payroll.approve`):
+  - Only someone who neither prepared nor submitted the run can decide.
+  - Approving publishes every payslip in one transaction, so a run covers at most 450 people.
+  - Sending back needs a reason and returns the run to draft.
+- **Locked months:** while a run is submitted or approved, its month's attendance cannot be reopened and inputs
+  cannot change. Reopening attendance under a draft marks the draft stale.
+- **Payslip PDF** (`payslips-download`): the employee's own once published, or anyone with `payslips.viewAll` at
+  the branch, including drafts marked DRAFT. Opening someone else's is audited.
+
+**Screens**
+
+- People → **Payroll**: month and branch, prepare, submit, approve or send back, totals, problems, a payslip per
+  person with **TDS and extras** and **Payslip PDF**.
+- The employee profile's **Salary** tab: salary versions, **New salary**, and payslips.
+- **My payslips** (account menu).
+- **HR settings → Payroll settings**.
+- The dashboard reminds approvers of runs to approve.
+
+**Known limits:**
+
+- An approved run is final. Corrections go into a later month as other earnings or deductions (arrears,
+  recoveries).
+- There is no income tax computation, Form 16, PF/ESI challan files, or bank transfer file yet.
+- Salary components are fixed monthly amounts. There are no formulas (such as HRA as 40% of basic), no overtime,
+  and no loans.
+- PT slabs are one set per organization, not per state.
 

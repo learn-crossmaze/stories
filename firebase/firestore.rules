@@ -389,6 +389,30 @@ service cloud.firestore {
         allow read: if inOrg(o);
         allow write: if false;
       }
+      // Payroll (docs/HRMS.md §10). Salaries, monthly inputs and runs are for
+      // salary viewers at the employee's branch (employees see their own
+      // salary); payslips for those who see all payslips, and for the employee
+      // once published (their queries filter on employeeUid and published).
+      match /payrollSettings/{v} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+      match /salaries/{s} {
+        allow read: if canAt(o, resource.data.branchId, 'salary.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /payrollInputs/{i} {
+        allow read: if canAt(o, resource.data.branchId, 'salary.view');
+        allow write: if false;
+      }
+      match /payrollRuns/{run} {
+        allow read: if canAt(o, resource.data.branchId, 'salary.view');
+        allow write: if false;
+      }
+      match /payslips/{p} {
+        allow read: if canAt(o, resource.data.branchId, 'payslips.viewAll') || (signedIn() && resource.data.employeeUid == request.auth.uid && resource.data.published == true);
+        allow write: if false;
+      }
       match /attendanceLocks/{l} {
         allow read: if inOrg(o);
         allow write: if false;

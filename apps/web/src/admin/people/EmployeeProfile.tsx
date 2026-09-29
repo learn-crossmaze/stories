@@ -16,12 +16,13 @@ import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 import { EmployeeAttendancePanel } from './EmployeeAttendance';
 import { EmployeeLeavePanel } from './EmployeeLeave';
+import { EmployeeSalaryPanel } from './EmployeeSalary';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { EmployeeDialog, EmployeeStatusBadge } from './People';
 import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
 
-type Tab = 'overview' | 'personal' | 'documents' | 'attendance' | 'leave' | 'bank' | 'lifecycle' | 'history' | 'access';
+type Tab = 'overview' | 'personal' | 'documents' | 'attendance' | 'leave' | 'salary' | 'bank' | 'lifecycle' | 'history' | 'access';
 
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : (ht.status[String(v)] ?? ht.employmentType[String(v)] ?? String(v)));
 
@@ -98,6 +99,7 @@ export function EmployeeProfilePage() {
           ...(canManageDocs || self ? [{ value: 'documents' as const, label: ht.tabDocuments }] : []),
           ...(canViewAttendance || self ? [{ value: 'attendance' as const, label: ht.tabAttendance }] : []),
           ...(canViewAttendance || self ? [{ value: 'leave' as const, label: ht.tabLeave }] : []),
+          ...(perm('salary.view') || self ? [{ value: 'salary' as const, label: ht.tabSalary }] : []),
           ...(canBank ? [{ value: 'bank' as const, label: ht.tabBank }] : []),
           { value: 'lifecycle' as const, label: ht.tabLifecycle },
           { value: 'history' as const, label: ht.tabHistory, count: history.data?.length },
@@ -169,6 +171,10 @@ export function EmployeeProfilePage() {
       {tab === 'attendance' && <EmployeeAttendancePanel orgId={orgId} employee={e} canManage={canManageAttendance} onChanged={employee.reload} />}
 
       {tab === 'leave' && <EmployeeLeavePanel orgId={orgId} employee={e} canApprove={perm('leave.approve')} canAdjust={perm('leave.adjust')} />}
+
+      {tab === 'salary' && (
+        <EmployeeSalaryPanel orgId={orgId} employee={e} canView={perm('salary.view')} canEdit={perm('salary.edit')} canSeePayslips={perm('payslips.viewAll')} />
+      )}
 
       {tab === 'bank' && canBank && <BankPanel orgId={orgId} employee={e} profile={p} canEdit={e.status !== 'OFFBOARDED'} onSaved={refresh} />}
 

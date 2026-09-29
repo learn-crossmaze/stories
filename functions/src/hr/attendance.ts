@@ -437,6 +437,10 @@ export const reopen = command(
     const lock = await tx.get(ref);
     if (!lock.exists || lock.get('status') !== 'FINALIZED') throw errors.conflict('NOT_FINALIZED', 'This month is not finalized.');
     const summaries = await tx.get(db.collection(`orgs/${input.orgId}/attendanceSummaries`).where('month', '==', input.month).where('branchId', '==', input.branchId));
+    // Payroll is worked out from this month: an approved or submitted run fixes it; a draft must be prepared again.
+    const run = await tx.get(db.doc(`orgs/${input.orgId}/payrollRuns/${ref.id}`));
+    if (run.exists && ['SUBMITTED', 'APPROVED'].includes(run.get('status'))) throw errors.conflict('PAYROLL_LOCKED', `Payroll for ${input.month} is ${run.get('status') === 'APPROVED' ? 'approved' : 'waiting for approval'}, so attendance can no longer change.`);
+    if (run.exists) tx.update(run.ref, { stale: true });
     tx.update(ref, { status: 'REOPENED', reopenedBy: actor.uid, reopenReason: input.reason, reopenedAt: FieldValue.serverTimestamp() });
     for (const s of summaries.docs) tx.update(s.ref, { stale: true });
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
