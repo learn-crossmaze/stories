@@ -8,7 +8,7 @@ it is tested and documented.
 |---|---|---|
 | 1. Foundation | Employee records, private and bank details, designations, directory, profile tabs, effective-dated history, lifecycle, account linking, backfill of existing staff, onboarding and offboarding checklists, new permissions, `hr` router | **Done** |
 | 2. Documents | Document types, private uploads, verification, expiry reminders, required-document tracking | **Done** |
-| 3. Attendance & shifts | Shifts and rosters, check-in and check-out, corrections, month finalization | Planned |
+| 3. Attendance & shifts | Shifts, weekly offs, holidays, check-in and check-out, corrections, month finalization with payable days | **Done** |
 | 4. Leave | Leave types and policies, a balance ledger, applications and approvals, holidays | Planned |
 | 5. Payroll | Salary structures (effective-dated), PF, ESI and PT settings, TDS entered per month, payroll runs (maker-checker), PDF payslips | Planned |
 | 6. Self-service & dashboards | My profile, attendance, leave and payslips; HR dashboards; in-app notifications | Planned |
@@ -147,3 +147,69 @@ expiry dates. HR changes or adds types under **HR settings → Document types**.
 
 **Known limits:** employees' own screens to upload and view their documents arrive with Phase 6 (self-service).
 The server already supports them. Files are capped at 5 MB, the size a callable request can carry.
+
+## 8. Attendance (Phase 3)
+
+| Path | Contents | Who reads it |
+|---|---|---|
+| `orgs/{o}/shifts/{id}` | `name`, `start`, `end` (HH:MM, India time; an end earlier than the start is overnight), `breakMinutes`, `graceMinutes`, `halfDayMinutes`, `fullDayMinutes`, `status` | anyone in the org |
+| `orgs/{o}/holidays/{date}` | `name`, `branchIds` (empty = every branch), `year` | anyone in the org |
+| employee record | `shiftId`, `shiftName`, `weeklyOffs` (null = the branch's days off) | as the record |
+| `orgs/{o}/attendance/{employeeId}_{date}` | `checkIn`, `checkOut` (server times), `status` (PRESENT, HALF_DAY, ABSENT, WEEKLY_OFF, HOLIDAY; IN_PROGRESS until check-out), `workedMinutes`, `lateMinutes`, `late`, `earlyExit`, `missedCheckout`, `source` (SELF, DESK, ADJUSTED, CORRECTION, FINALIZE), `finalized`, plus copies of the employee's name, code, uid and branch | attendance viewers at the branch; the employee |
+| `orgs/{o}/attendanceCorrections/{employeeId}_{date}` | requested times, reason, `status` (PENDING, APPROVED, REJECTED), decision | as above |
+| `orgs/{o}/attendanceSummaries/{employeeId}_{month}` | present, half days, absent, weekly offs, holidays, late days, missed check-outs, worked minutes, **payableDays**, `stale` | as above |
+| `orgs/{o}/attendanceLocks/{month}_{branchId or HO}` | `status` (FINALIZED, REOPENED), who and when | anyone in the org |
+
+**Rules** (`functions/src/hr/attendanceRules.ts`, unit tested):
+
+- **Worked time and lateness:**
+  - Worked minutes are check-out minus check-in, less the shift's break.
+  - An employee is late when they check in more than the grace minutes after the shift start.
+  - They left early when they checked out before the shift end.
+- **Day status:**
+  - Full-day minutes or more count as present; half-day minutes or more count as a half day; less counts as absent.
+  - Without punches, a day is a holiday, a weekly off, or absent. Working on a day off counts as present.
+- **Payable days** are present days, plus half days divided by two, plus weekly offs, plus holidays. Paid leave is
+  added in Phase 4.
+- **Default rules:** without a shift, an employee is never late, and 8 hours counts as a full day (4 hours for a
+  half day).
+
+**Flow**
+
+- **Check in and out** (`attendance-punch`, with `punch: IN | OUT`): staff use the Today card on the dashboard or
+  My attendance. The server sets the time.
+  - A manager (`attendance.manage`) can record a check-in or check-out for someone at the desk.
+  - A check-out after midnight closes an overnight shift that started the day before.
+- **Adjust** (`attendance-adjust`): a manager sets a day's times with a reason. It is audited, and nobody can adjust
+  their own day.
+- **Corrections:**
+  - An employee asks with `attendance-requestCorrection`. A manager or HR decides with
+    `attendance-decideCorrection`; approving applies the times.
+  - Nobody decides their own correction, and rejecting one needs a reason.
+- **Finalize** (`attendance-finalize`, `attendance.finalize`) runs per branch and month, or for head office staff.
+  It only works on a month that is over, and never while corrections are waiting.
+  - Every employed day gets a final record: days without a record become absent, weekly off or holiday, and a
+    missing check-out counts as a half day.
+  - Each employee gets a summary with payable days, and the month is locked. Punches, adjustments and corrections
+    are then refused.
+- **Reopen** (`attendance-reopen`): unlocks the month with a reason and marks the summaries out of date until the
+  month is finalized again.
+
+**Screens**
+
+- People → **Attendance**:
+  - **Day**: who is in, check in or out at the desk, adjust, change a shift.
+  - **Month**: summaries, finalize and reopen.
+  - **Corrections**: approve or reject.
+- **Today** card on the dashboard, and **My attendance** (account menu): check in and out, see the month, request a
+  correction.
+- The employee profile's **Attendance** tab: shift, weekly offs, and the month with adjust.
+- **HR settings → Shifts** and **Holidays**.
+- **Dashboard reminders:** corrections to decide, and last month not yet finalized.
+
+**Known limits:**
+
+- Check-in has no location or device check.
+- Each employee has one shift; day-by-day rosters and shift swaps are not built yet.
+- Finalizing writes one record per employee per day and suits branches of up to a few hundred staff.
+- All times are India time (IST).

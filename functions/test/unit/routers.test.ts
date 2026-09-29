@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -21,6 +21,13 @@ describe('routers', () => {
         owner.set(prefix, router);
       }
     }
+  });
+
+  it('no action takes an input named `action` (the router uses it for the action name)', () => {
+    const offenders = readdirSync(new URL('../../src', import.meta.url), { recursive: true })
+      .filter((f) => String(f).endsWith('.ts'))
+      .filter((f) => /strictObject\(\{[^}]*\baction:\s*z\./.test(readFileSync(new URL(`../../src/${f}`, import.meta.url), 'utf8')));
+    expect(offenders).toEqual([]);
   });
 
   it('the web app sends every action to the router that serves it', () => {

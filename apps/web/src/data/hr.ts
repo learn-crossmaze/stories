@@ -53,6 +53,10 @@ export interface Employee {
   onboarding: ChecklistItem[] | null;
   offboarding: ChecklistItem[] | null;
   source: 'HR' | 'ROLES' | 'BACKFILL';
+  /** Attendance: assigned shift and weekly days off (null = the branch's). */
+  shiftId?: string | null;
+  shiftName?: string | null;
+  weeklyOffs?: ('MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN')[] | null;
 }
 
 export interface PrivateProfile {

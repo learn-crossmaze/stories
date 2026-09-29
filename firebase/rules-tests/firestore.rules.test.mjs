@@ -87,6 +87,12 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/employees/e-cen/documents/doc1`, { orgId: CORP, branchId: 'cen', employeeUid: 'alice', status: 'VERIFIED', typeName: 'PAN card' });
     await put(`orgs/${CORP}/employees/e-nth/documents/doc2`, { orgId: CORP, branchId: 'nth', employeeUid: 'bob', status: 'PENDING', typeName: 'Aadhaar card' });
     await put(`orgs/${CORP}/documentTypes/medical`, { name: 'Medical certificate', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/attendance/e-cen_2026-09-01`, { branchId: 'cen', employeeUid: 'alice', date: '2026-09-01', month: '2026-09', status: 'PRESENT' });
+    await put(`orgs/${CORP}/attendance/e-nth_2026-09-01`, { branchId: 'nth', employeeUid: 'bob', date: '2026-09-01', month: '2026-09', status: 'ABSENT' });
+    await put(`orgs/${CORP}/attendanceCorrections/e-nth_2026-09-01`, { branchId: 'nth', employeeUid: 'bob', status: 'PENDING' });
+    await put(`orgs/${CORP}/attendanceSummaries/e-cen_2026-09`, { branchId: 'cen', employeeUid: 'alice', month: '2026-09', payableDays: 30 });
+    await put(`orgs/${CORP}/shifts/morning`, { name: 'Morning', status: 'ACTIVE' });
+    await put(`orgs/${CORP}/holidays/2026-10-02`, { name: 'Gandhi Jayanti', branchIds: [] });
   });
 });
 
@@ -337,6 +343,30 @@ describe('HRMS employee records', () => {
   it('designations are readable in the org only', async () => {
     await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/designations/d1`)));
     await assertFails(getDoc(doc(as('fred', claims({ [FRAN]: { r: ['FO'], b: ['*'] } })), `orgs/${CORP}/designations/d1`)));
+  });
+});
+
+describe('HRMS attendance', () => {
+  const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
+
+  it('viewers see their branches; employees see only their own days', async () => {
+    await assertSucceeds(getDocs(query(collection(hrAdmin(), `orgs/${CORP}/attendance`), where('date', '==', '2026-09-01'))));
+    await assertSucceeds(getDocs(query(collection(bmCen(), `orgs/${CORP}/attendance`), where('date', '==', '2026-09-01'), where('branchId', 'in', ['cen']))));
+    await assertFails(getDocs(query(collection(bmCen(), `orgs/${CORP}/attendance`), where('date', '==', '2026-09-01'))));
+    await assertSucceeds(getDocs(query(collection(alice(), `orgs/${CORP}/attendance`), where('employeeUid', '==', 'alice'), where('month', '==', '2026-09'))));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/attendance/e-nth_2026-09-01`)));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/attendanceSummaries/e-cen_2026-09`)));
+    await assertFails(getDoc(doc(bmCen(), `orgs/${CORP}/attendanceCorrections/e-nth_2026-09-01`)));
+    await assertSucceeds(getDoc(doc(hrAdmin(), `orgs/${CORP}/attendanceCorrections/e-nth_2026-09-01`)));
+  });
+
+  it('shifts and holidays are readable in the org; nobody writes attendance from a client', async () => {
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/shifts/morning`)));
+    await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/holidays/2026-10-02`)));
+    await assertFails(setDoc(doc(alice(), `orgs/${CORP}/attendance/e-cen_2026-09-02`), { employeeUid: 'alice', status: 'PRESENT', branchId: 'cen' }));
+    await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/attendanceSummaries/e-cen_2026-09`), { payableDays: 31 }));
   });
 });
 

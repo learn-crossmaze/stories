@@ -356,6 +356,34 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Attendance (docs/HRMS.md §8). Records, corrections and monthly summaries
+      // are visible to attendance viewers at the employee's branch and to the
+      // employee; queries filter on branchId (branch staff) or employeeUid (self).
+      match /attendance/{r} {
+        allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /attendanceCorrections/{c} {
+        allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /attendanceSummaries/{s} {
+        allow read: if canAt(o, resource.data.branchId, 'attendance.view') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow write: if false;
+      }
+      match /attendanceLocks/{l} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+      match /shifts/{sh} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+      match /holidays/{h} {
+        allow read: if inOrg(o);
+        allow write: if false;
+      }
+
       // Document types (defaults live in code; these override or add to them).
       match /documentTypes/{t} {
         allow read: if inOrg(o);

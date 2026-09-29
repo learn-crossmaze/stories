@@ -332,6 +332,42 @@ async function seedHr() {
     });
   }
 
+  // Attendance: two shifts, holidays, last month's register for Central (not yet finalized) and a correction to decide.
+  const schedule = await import('../hr/schedule.js');
+  const att = await import('../hr/attendance.js');
+  const rules = await import('../hr/attendanceRules.js');
+  const morning = (await call<{ shiftId: string }>(schedule.saveShift, { orgId: CORP, name: 'Morning', start: '09:30', end: '18:00', breakMinutes: 30, graceMinutes: 10 })).shiftId;
+  await call(schedule.saveShift, { orgId: CORP, name: 'Evening', start: '13:00', end: '21:30', breakMinutes: 30, graceMinutes: 10 });
+  const year = new Date().getFullYear();
+  for (const [date, name] of [[`${year}-01-26`, 'Republic Day'], [`${year}-08-15`, 'Independence Day'], [`${year}-10-02`, 'Gandhi Jayanti'], [`${year}-11-08`, 'Diwali']]) {
+    await call(schedule.saveHoliday, { orgId: CORP, date, name });
+  }
+  const today = rules.businessDate(Date.now());
+  const [ty, tm] = today.slice(0, 7).split('-').map(Number);
+  const lastMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, '0')}`;
+  const workdays = rules.datesOfMonth(lastMonth).filter((d) => rules.weekdayOf(d) !== 'MON');
+  for (const email of ['manager@stories.test', 'librarian@stories.test', 'delivery@stories.test', 'employee@stories.test']) {
+    const e = await byEmail(email);
+    if (!e) continue;
+    await call(schedule.assignShift, { orgId: CORP, employeeId: e.id, shiftId: morning, weeklyOffs: null });
+    for (const [i, day] of workdays.slice(0, 12).entries()) {
+      // Mostly on time, a late start every fifth day, one short day.
+      const checkIn = i % 5 === 4 ? '09:52' : '09:2' + (i % 10);
+      const checkOut = i === 7 ? '14:10' : '18:0' + (i % 10);
+      await call(att.adjust, { orgId: CORP, employeeId: e.id, date: day, checkIn, checkOut, reason: 'Opening register (demo data)' });
+    }
+  }
+  const lata = await byEmail('librarian@stories.test');
+  const lataUid = lata?.get('uid') as string | undefined;
+  if (lataUid) {
+    await (att.requestCorrection as unknown as Callable).run({
+      data: { orgId: CORP, date: workdays[13], checkIn: '09:30', checkOut: '18:00', reason: 'Forgot to check in', requestId: randomUUID() },
+      auth: { uid: lataUid, token: { email: 'librarian@stories.test', email_verified: true } },
+      rawRequest: {},
+      acceptsStreaming: false,
+    });
+  }
+
   await db.doc('seed/hr').set({ at: FieldValue.serverTimestamp() });
-  console.log(`Seeded ${created} employee records, ${Object.keys(titles).length} designations, one hire in onboarding and employee documents.`);
+  console.log(`Seeded ${created} employee records, ${Object.keys(titles).length} designations, one hire in onboarding, employee documents, shifts, holidays and last month's attendance.`);
 }

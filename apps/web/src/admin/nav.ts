@@ -37,6 +37,7 @@ export const NAV: NavItem[] = [
   { to: paths.adminDeposits, label: t.navDepositApprovals, icon: 'wallet', section: t.sectionMembers, requires: 'deposits.approve' },
 
   { to: paths.adminPeople, label: ht.navEmployees, icon: 'badge', section: ht.sectionPeople, requires: 'employees.view' },
+  { to: paths.adminAttendance, label: ht.navAttendance, icon: 'clock', section: ht.sectionPeople, requires: 'attendance.view' },
   { to: paths.adminDocuments, label: ht.navDocuments, icon: 'folder', section: ht.sectionPeople, requires: 'documents.verify' },
   { to: paths.adminStaff, label: t.navStaff, icon: 'key', section: ht.sectionPeople, requires: 'staff.view' },
   { to: paths.adminHrSettings, label: ht.navHrSettings, icon: 'tune', section: ht.sectionPeople, requires: 'hr.config' },

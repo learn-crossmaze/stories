@@ -80,6 +80,13 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Documents | `documents-upload` (base64 PDF/JPEG/PNG, 5 MB), `documents-remove` | `documents.verify` or `employees.edit` at the employee's branch; the employee for self-upload types (and to withdraw a pending upload) |
 | | `documents-review` (`VERIFY` / `REJECT` with reason; never your own upload) | `documents.verify` |
 | | `documents-open` (query, audited) | as upload, or the employee |
+| Attendance | `shifts-save/archive`, `holidays-save/remove` | `hr.config` |
+| | `attendance-assignShift`, `attendance-adjust` (reason; never your own day) | `attendance.manage` at the employee's branch |
+| | `attendance-punch` (`punch: IN\|OUT`; own, or for someone else at the desk) | the employee; `attendance.manage` for others |
+| | `attendance-requestCorrection` / `attendance-decideCorrection` | the employee / `corrections.approve` (never your own) |
+| | `attendance-finalize` (query; writes the month), `attendance-reopen` | `attendance.finalize` for the branch (org-wide for head office) |
+
+No action may take an input named `action`: the router uses that field for the action name (`test/unit/routers.test.ts` checks it).
 
 `staff-setRoles` (admin router) links or creates the person's employee record, so nobody has two.
 

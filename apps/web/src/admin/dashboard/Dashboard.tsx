@@ -3,7 +3,9 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { branchCounts } from '../../data/circulation';
+import { monthIST, monthLock, pendingCorrections, previousMonth } from '../../data/attendance';
 import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
+import { CheckInCard } from '../people/MyAttendance';
 import { listStaff } from '../../data/org';
 import { ht } from '../../strings/hr';
 import { useAsync } from '../../shared/useAsync';
@@ -13,6 +15,8 @@ import { Icon, SkeletonRows } from '../../shared/ui';
 import { Stat } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+
+const approverOk = <T,>(ok: boolean, load: () => Promise<T>) => (ok ? load() : Promise.resolve(null));
 
 const today = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
@@ -44,6 +48,18 @@ export function DashboardPage() {
     return documentQueue(org.id, branchScope(claims, org.id), await listDocumentTypes(org.id));
   }, [org?.id, verifier]);
 
+  const correctionsApprover = !!org && can(claims, 'corrections.approve', org.id);
+  const finalizer = !!org && !!branch && can(claims, 'attendance.finalize', org.id, branch.id);
+  const att = useAsync(async () => {
+    if (!org) return null;
+    const scope = branchScope(claims, org.id);
+    const [corrections, lock] = await Promise.all([
+      approverOk(correctionsApprover, () => pendingCorrections(org.id, scope)),
+      finalizer && branch ? monthLock(org.id, previousMonth(monthIST()), branch.id) : Promise.resolve(undefined),
+    ]);
+    return { corrections: corrections?.filter((c) => c.employeeUid !== user?.uid).length ?? 0, unfinalized: lock !== undefined && lock?.status !== 'FINALIZED' };
+  }, [org?.id, branch?.id, correctionsApprover, finalizer]);
+
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   const activeBranches = branches.filter((b) => b.status === 'ACTIVE');
@@ -66,6 +82,8 @@ export function DashboardPage() {
   if (d?.pending.length) todos.push({ label: ht.todoDocsPending(d.pending.length), to: paths.adminDocuments });
   if (d?.expired.length) todos.push({ label: ht.todoDocsExpired(d.expired.length), to: paths.adminDocuments });
   if (d?.expiring.length) todos.push({ label: ht.todoDocsExpiring(d.expiring.length), to: paths.adminDocuments });
+  if (att.data?.corrections) todos.push({ label: ht.todoCorrections(att.data.corrections), to: paths.adminAttendance });
+  if (att.data?.unfinalized) todos.push({ label: ht.todoFinalize(previousMonth(monthIST())), to: paths.adminAttendance });
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
 
   const firstName = (user?.displayName ?? '').split(' ')[0];
@@ -81,6 +99,8 @@ export function DashboardPage() {
           {firstName ? `${greeting}, ${firstName}` : greeting} · {today.format(new Date())}
         </p>
       </header>
+
+      <CheckInCard compact />
 
       <section className="section" aria-labelledby="dash-attention">
         <h2 id="dash-attention">{t.dashboardAttention}</h2>

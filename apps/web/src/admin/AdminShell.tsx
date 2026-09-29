@@ -8,6 +8,7 @@ import { paths } from '../paths';
 import { Icon } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
+import { ht } from '../strings/hr';
 import { navSections, visibleNav } from './nav';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 
@@ -117,6 +118,9 @@ function AccountMenu() {
       </button>
       {open && (
         <div className="account-menu" id={menuId}>
+          <Link to={paths.adminMyAttendance} onClick={() => setOpen(false)}>
+            <Icon name="clock" /> {ht.navMyAttendance}
+          </Link>
           <Link to={paths.adminAppearance} onClick={() => setOpen(false)}>
             <Icon name="palette" /> {t.navAppearance}
           </Link>
