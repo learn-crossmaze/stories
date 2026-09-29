@@ -19,6 +19,21 @@ export function parseClaims(raw: Record<string, unknown>): StoriesClaims {
 
 export const isStaff = (c: StoriesClaims) => c.sa || Object.keys(c.o).length > 0;
 
+/** The staff console's views (docs/ARCHITECTURE.md): setup and back office, daily running, and self-service. */
+export type ViewId = 'admin' | 'ops' | 'staff';
+
+const ADMIN_ROLES = ['HO', 'HR', 'FIN', 'FO'];
+const OPS_ROLES = ['BM', 'LIB', 'DEL', 'CM'];
+
+/** The view a staff member lands on: back-office roles in Admin, branch roles in Operations, everyone else in Staff. */
+export function homeViewFor(c: StoriesClaims): ViewId {
+  if (c.sa) return 'admin';
+  const codes = Object.values(c.o).flatMap((m) => m.r);
+  if (codes.some((r) => ADMIN_ROLES.includes(r))) return 'admin';
+  if (codes.some((r) => OPS_ROLES.includes(r))) return 'ops';
+  return 'staff';
+}
+
 /**
  * UI-only permission check: decides what to show. The server (rules and
  * functions) makes the real decision; hiding a button is never security.

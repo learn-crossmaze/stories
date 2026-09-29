@@ -6,43 +6,57 @@ export const paths = {
   myBooks: '/my-books',
   membership: '/membership',
   profile: '/profile',
+  // Staff console views: Admin (setup, back office), Operations (daily running), Staff (self-service).
   admin: '/admin',
+  ops: '/ops',
+  staff: '/me',
+  opsAttendance: '/ops/attendance',
+  opsLeave: '/ops/leave',
   adminOrgs: '/admin/organizations',
   adminBranches: '/admin/branches',
   adminDepartments: '/admin/departments',
   adminStaff: '/admin/staff',
   adminAudit: '/admin/audit',
-  adminDesk: '/admin/desk',
-  adminBooks: '/admin/books',
-  adminBook: (id: string) => `/admin/books/${id}`,
-  adminInventory: '/admin/inventory',
-  adminCopy: (id: string) => `/admin/inventory/${id}`,
-  adminLabels: '/admin/labels',
-  adminReservations: '/admin/reservations',
-  adminTransfers: '/admin/transfers',
-  adminMembers: '/admin/members',
-  adminMember: (id: string) => `/admin/members/${id}`,
-  adminPlans: '/admin/plans',
-  adminDeposits: '/admin/deposits',
-  adminAppearance: '/admin/appearance',
+  adminDesk: '/ops/desk',
+  adminBooks: '/ops/books',
+  adminBook: (id: string) => `/ops/books/${id}`,
+  adminInventory: '/ops/inventory',
+  adminCopy: (id: string) => `/ops/inventory/${id}`,
+  adminLabels: '/ops/labels',
+  adminReservations: '/ops/reservations',
+  adminTransfers: '/ops/transfers',
+  adminMembers: '/ops/members',
+  adminMember: (id: string) => `/ops/members/${id}`,
+  adminPlans: '/ops/plans',
+  adminDeposits: '/ops/deposits',
+  adminAppearance: '/me/appearance',
   adminPeople: '/admin/people',
   adminPeopleOverview: '/admin/people-overview',
-  adminMe: '/admin/me',
+  adminMe: '/me',
   adminEmployee: (id: string) => `/admin/people/${id}`,
-  adminHrSettings: '/admin/hr-settings',
+  adminHrSettings: '/admin/settings/jobs',
+  adminSettingsSchedule: '/admin/settings/schedule',
+  adminSettingsLeave: '/admin/settings/leave',
+  adminSettingsDocuments: '/admin/settings/documents',
+  adminSettingsPayroll: '/admin/settings/payroll',
   adminDocuments: '/admin/documents',
   adminAttendance: '/admin/attendance',
-  adminMyAttendance: '/admin/my-attendance',
+  adminMyAttendance: '/me/attendance',
   adminLeave: '/admin/leave',
-  adminMyLeave: '/admin/my-leave',
+  adminMyLeave: '/me/leave',
   adminPayroll: '/admin/payroll',
-  adminMyPayslips: '/admin/my-payslips',
+  adminMyPayslips: '/me/payslips',
 } as const;
 
-/** Pure redirect rule, kept separate so it can be unit tested. */
-export function authRedirect(signedIn: boolean, location: string, staff = false): string | null {
+export const viewHome = { admin: paths.admin, ops: paths.ops, staff: paths.staff } as const;
+
+/**
+ * Pure redirect rule, kept separate so it can be unit tested. `staffHome` is
+ * where a staff member lands after signing in (null for members).
+ */
+export function authRedirect(signedIn: boolean, location: string, staffHome: string | null = null): string | null {
   const onSignIn = location === paths.signIn;
   if (!signedIn) return onSignIn ? null : paths.signIn;
-  if (onSignIn) return staff ? paths.admin : paths.home;
+  if (onSignIn) return staffHome ?? paths.home;
   return null;
 }

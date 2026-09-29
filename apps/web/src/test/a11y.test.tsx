@@ -4,7 +4,7 @@ import { createMemoryRouter, Link, Outlet, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { Dialog } from '../admin/components/Dialog';
-import { navItemFor, navSections, NAV } from '../admin/nav';
+import { isGroup, MENUS, movedTo, navItemFor, VIEW_ORDER } from '../admin/nav';
 import { useRouteFocus } from '../shared/useRouteFocus';
 
 describe('dialog', () => {
@@ -69,19 +69,27 @@ describe('route focus', () => {
 });
 
 describe('menu', () => {
-  it('groups items by section without repeating a section', () => {
-    const sections = navSections(NAV).map((s) => s.section);
-    expect(new Set(sections).size).toBe(sections.length);
+  it('gives every entry in a view its own icon, and nests one level at most', () => {
+    for (const view of VIEW_ORDER) {
+      const icons = MENUS[view].map((e) => e.icon);
+      expect(new Set(icons).size, view).toBe(icons.length);
+      for (const e of MENUS[view]) if (isGroup(e)) expect(e.items.every((i) => !isGroup(i as never))).toBe(true);
+    }
   });
 
-  it('gives every menu item its own icon', () => {
-    const icons = NAV.map((i) => i.icon);
-    expect(new Set(icons).size).toBe(icons.length);
-  });
-
-  it('finds the menu item for detail pages', () => {
-    expect(navItemFor('/admin/members/abc')?.label).toBe('Members');
+  it('finds the menu item for detail pages and view homes', () => {
+    expect(navItemFor('/ops/members/abc')?.label).toBe('Members');
     expect(navItemFor('/admin/people/x1')?.label).toBe('Employees');
     expect(navItemFor('/admin')?.label).toBe('Dashboard');
+    expect(navItemFor('/ops')?.label).toBe('Today');
+    expect(navItemFor('/me')?.label).toBe('Home');
+    expect(navItemFor('/admin/settings/leave')?.label).toBe('Leave types');
+  });
+
+  it('sends old addresses to where the page lives now', () => {
+    expect(movedTo('/admin/books/b1', '?tab=copies')).toBe('/ops/books/b1?tab=copies');
+    expect(movedTo('/admin/my-leave')).toBe('/me/leave');
+    expect(movedTo('/admin/hr-settings')).toBe('/admin/settings/jobs');
+    expect(movedTo('/admin/people')).toBeNull();
   });
 });

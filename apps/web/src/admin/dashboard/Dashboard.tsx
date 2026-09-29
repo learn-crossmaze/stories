@@ -17,6 +17,7 @@ import { Icon, SkeletonRows } from '../../shared/ui';
 import { Stat } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+import { useTeamPaths } from '../view';
 
 const approverOk = <T,>(ok: boolean, load: () => Promise<T>) => (ok ? load() : Promise.resolve(null));
 
@@ -32,6 +33,7 @@ interface Todo {
  * Module dashboards (circulation, tasks, HR…) add their own items later.
  */
 export function DashboardPage() {
+  const team = useTeamPaths();
   const { claims, user } = useAuth();
   const { org, orgs, orgsLoading, branches, branchesLoading, branch, myBranches } = useWorkspace();
   const staffVisible = !!org && can(claims, 'staff.view', org.id);
@@ -93,10 +95,10 @@ export function DashboardPage() {
   if (d?.pending.length) todos.push({ label: ht.todoDocsPending(d.pending.length), to: paths.adminDocuments });
   if (d?.expired.length) todos.push({ label: ht.todoDocsExpired(d.expired.length), to: paths.adminDocuments });
   if (d?.expiring.length) todos.push({ label: ht.todoDocsExpiring(d.expiring.length), to: paths.adminDocuments });
-  if (att.data?.corrections) todos.push({ label: ht.todoCorrections(att.data.corrections), to: paths.adminAttendance });
+  if (att.data?.corrections) todos.push({ label: ht.todoCorrections(att.data.corrections), to: team.attendance });
   if (att.data?.payroll) todos.push({ label: ht.todoPayroll(att.data.payroll), to: paths.adminPayroll });
-  if (att.data?.leave) todos.push({ label: ht.todoLeave(att.data.leave), to: paths.adminLeave });
-  if (att.data?.unfinalized) todos.push({ label: ht.todoFinalize(previousMonth(monthIST())), to: paths.adminAttendance });
+  if (att.data?.leave) todos.push({ label: ht.todoLeave(att.data.leave), to: team.leave });
+  if (att.data?.unfinalized) todos.push({ label: ht.todoFinalize(previousMonth(monthIST())), to: team.attendance });
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
 
   const firstName = (user?.displayName ?? '').split(' ')[0];

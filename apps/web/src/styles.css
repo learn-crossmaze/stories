@@ -222,6 +222,21 @@ h2 { font-size: 22px; line-height: 1.25; }
 .admin-nav-group { display: flex; flex-direction: column; gap: 2px; }
 .admin-brand { display: flex; align-items: center; gap: 10px; padding: 4px 12px 16px; color: var(--primary); font: 700 22px/1 var(--font-display); text-decoration: none; }
 .admin-brand-compact, .admin-menu-button, .admin-menu-close, .admin-scrim { display: none; }
+/* A row whose heading is visually hidden keeps its action on the right. */
+.page-header-row > .sr-only:first-child + * { margin-left: auto; }
+.admin-nav-list, .nav-sub { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.nav-group-toggle { width: 100%; border: 0; background: none; font: inherit; cursor: pointer; text-align: left; }
+.nav-group-toggle .nav-caret { margin-left: auto; display: inline-flex; transition: transform .15s; }
+.nav-group-toggle[aria-expanded='true'] .nav-caret { transform: rotate(180deg); }
+.nav-group-toggle.has-active { color: var(--on-surface); font-weight: 600; }
+.nav-sub { margin: 2px 0 6px 22px; padding-left: 12px; border-left: 1px solid var(--outline); }
+.nav-sub[hidden] { display: none; }
+.nav-sub-item { min-height: 40px; font-size: 14.5px; }
+.admin-nav .view-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 14px; }
+.view-pill { display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 1px solid var(--outline); border-radius: 999px; color: var(--on-surface-muted); text-decoration: none; font-size: 13px; font-weight: 600; }
+.view-pill:hover { background: var(--surface-raised); color: var(--on-surface); }
+.view-pill.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.view-pill svg { width: 16px; height: 16px; flex: none; }
 .admin-nav-item { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: var(--radius-md); color: var(--on-surface-muted); text-decoration: none; font-weight: 500; font-size: 15px; }
 .admin-nav-item:hover { background: var(--surface-raised); color: var(--on-surface); }
 .admin-nav-item.active { background: var(--primary-container); color: var(--on-primary-container); font-weight: 600; }

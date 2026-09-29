@@ -89,7 +89,7 @@ export function LeaveTypesSection({ orgId }: { orgId: string }) {
   return (
     <section className="section" aria-labelledby="leave-types">
       <div className="page-header-row">
-        <h2 id="leave-types">{ht.leaveTypes}</h2>
+        <h2 className="sr-only" id="leave-types">{ht.leaveTypes}</h2>
         <button type="button" className="btn btn-outlined" onClick={() => setEditing('new')}>
           <Icon name="plus" /> {ht.leaveTypeNew}
         </button>

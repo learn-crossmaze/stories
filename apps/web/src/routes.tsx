@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from './auth/AuthContext';
-import { isStaff } from './auth/claims';
+import { homeViewFor, isStaff, type ViewId } from './auth/claims';
 import { MemberShell } from './member/MemberShell';
 import { ExplorePage } from './member/ExplorePage';
 import { HomePage } from './member/HomePage';
@@ -11,7 +11,7 @@ import { MyBooksPage } from './member/MyBooksPage';
 import { ProfilePage } from './member/ProfilePage';
 import { SetupPage } from './public/Setup';
 import { SignInPage } from './public/SignIn';
-import { authRedirect, paths } from './paths';
+import { authRedirect, paths, viewHome } from './paths';
 import { t } from './strings';
 
 // Staff code loads only for staff (keeps the member bundle small).
@@ -22,17 +22,17 @@ function AuthGate() {
   const { pathname } = useLocation();
   // Wait for the first auth event (and its claims) before deciding.
   if (user === undefined) return <p className="loading">{t.loading}</p>;
-  const target = authRedirect(user !== null, pathname, isStaff(claims));
+  const target = authRedirect(user !== null, pathname, isStaff(claims) ? viewHome[homeViewFor(claims)] : null);
   return target ? <Navigate to={target} replace /> : <Outlet />;
 }
 
-/** Only staff reach the console; members are sent home. The server enforces the real boundary. */
-function StaffGate() {
+/** Only staff reach the console views; members are sent home. The server enforces the real boundary. */
+function StaffGate({ view }: { view: ViewId }) {
   const { claims } = useAuth();
   if (!isStaff(claims)) return <Navigate to={paths.home} replace />;
   return (
     <Suspense fallback={<p className="loading">{t.loading}</p>}>
-      <AdminApp />
+      <AdminApp view={view} />
     </Suspense>
   );
 }
@@ -43,7 +43,9 @@ export const routes = [
     children: [
       { path: paths.signIn, element: <SignInPage /> },
       { path: paths.setup, element: <SetupPage /> },
-      { path: `${paths.admin}/*`, element: <StaffGate /> },
+      { path: `${paths.admin}/*`, element: <StaffGate view="admin" /> },
+      { path: `${paths.ops}/*`, element: <StaffGate view="ops" /> },
+      { path: `${paths.staff}/*`, element: <StaffGate view="staff" /> },
       {
         element: <MemberShell />,
         children: [

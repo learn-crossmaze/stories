@@ -87,7 +87,7 @@ Records without a branch (head office staff) need the permission across all bran
 
 ## 5. Screens (staff console → People)
 
-- **Employees** (`/admin/people`): status chips with counts, search by name, ID or email, a branch filter, "Add
+- **Employees** (Admin → People, `/admin/people`): status chips with counts, search by name, ID or email, a branch filter, "Add
   employee", and the backfill notice.
 - **Employee profile** (`/admin/people/:id`) has six tabs:
   - Overview: job and contact details.
@@ -97,7 +97,7 @@ Records without a branch (head office staff) need the permission across all bran
   - History: effective-dated changes.
   - Access: link a Stories account, see and manage roles.
 - **Staff & roles**: unchanged, and now under People.
-- **HR settings** (`/admin/hr-settings`): designations, and the onboarding and offboarding checklist templates.
+- **Settings → Job titles & checklists** (`/admin/settings/jobs`): designations, and the onboarding and offboarding checklist templates.
 
 ## 6. Known limits (Phase 1)
 
@@ -117,7 +117,7 @@ Records without a branch (head office staff) need the permission across all bran
 
 **Default types:** Aadhaar card, PAN card, bank proof, and signed offer letter are required. Address proof, photograph,
 education certificate and previous employment letter are optional. Driving licence and police verification have
-expiry dates. HR changes or adds types under **HR settings → Document types**.
+expiry dates. HR changes or adds types under **Settings → Document types**.
 
 **Flow**
 
@@ -140,10 +140,10 @@ expiry dates. HR changes or adds types under **HR settings → Document types**.
 
 **Screens**
 
-- People → **Documents**: a queue with Awaiting verification, Expiring soon and Expired.
+- Admin → People → **Documents**: a queue with Awaiting verification, Expiring soon and Expired.
 - The employee profile's **Documents** tab: required documents (verified, awaiting verification, missing…) and the
   documents on file, with upload, open, verify, reject and remove.
-- **HR settings → Document types.**
+- **Settings → Document types.**
 - **Dashboard**: HR sees counts of documents to verify, expiring and expired.
 
 **Known limits:** employees' own screens to upload and view their documents arrive with Phase 6 (self-service).
@@ -198,14 +198,14 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 
 **Screens**
 
-- People → **Attendance**:
+- **Attendance** (Operations → My team for branch managers; Admin → Time & leave for HR):
   - **Day**: who is in, check in or out at the desk, adjust, change a shift.
   - **Month**: summaries, finalize and reopen.
   - **Corrections**: approve or reject.
-- **Today** card on the dashboard, and **My attendance** (account menu): check in and out, see the month, request a
+- **Today** card on the dashboard, and **Attendance** in the Staff view (`/me/attendance`): check in and out, see the month, request a
   correction.
 - The employee profile's **Attendance** tab: shift, weekly offs, and the month with adjust.
-- **HR settings → Shifts** and **Holidays**.
+- **Settings → Shifts & holidays**.
 - **Dashboard reminders:** corrections to decide, and last month not yet finalized.
 
 **Known limits:**
@@ -262,13 +262,13 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 
 **Screens**
 
-- People → **Leave**:
+- **Leave** (Operations → My team → Leave requests; Admin → Time & leave → Leave):
   - **Requests**: approve or reject.
   - **Away**: approved leave in a month, and who is on leave today.
   - **Balances**: everyone's days left for a year, record leave, adjust, and **Credit leave**.
-- **My leave** (account menu): balances, apply, cancel, and the ledger history.
+- **Leave** in the Staff view (`/me/leave`): balances, apply, cancel, and the ledger history.
 - The employee profile's **Leave** tab: balances, requests with decisions, the ledger, record and adjust.
-- **HR settings → Leave types**.
+- **Settings → Leave types**.
 - The attendance board shows **On leave**. The dashboard reminds approvers of leave to decide.
 
 **Known limits:**
@@ -325,11 +325,11 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 
 **Screens**
 
-- People → **Payroll**: month and branch, prepare, submit, approve or send back, totals, problems, a payslip per
+- Admin → **Payroll**: month and branch, prepare, submit, approve or send back, totals, problems, a payslip per
   person with **TDS and extras** and **Payslip PDF**.
 - The employee profile's **Salary** tab: salary versions, **New salary**, and payslips.
-- **My payslips** (account menu).
-- **HR settings → Payroll settings**.
+- **My payslips** in the Staff view (`/me/payslips`).
+- **Settings → Payroll settings**.
 - The dashboard reminds approvers of runs to approve.
 
 **Known limits:**
@@ -359,7 +359,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - **Screen:** the header **bell** shows the unread count and the latest 30 notifications. Opening one marks it
   read; **Mark all read** clears the count.
 
-**My profile** (account menu, `/admin/me`), for any staff member with an employee record:
+**My profile** (Staff view home, `/me`; also in the account menu), for any staff member with an employee record:
 
 - Their job details and today's check-in.
 - This month's attendance, leave left this year, and the latest payslip (with its PDF), each linking to its page.
@@ -367,7 +367,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - **My tasks**: a placeholder until the Tasks module is built.
 - My attendance, My leave and My payslips stay as pages, reached from here.
 
-**People → Overview** (`employees.view`; everything is limited to the viewer's branches):
+**Admin → People → Overview** (`employees.view`; everything is limited to the viewer's branches):
 
 - **Headcount:** active, joining, leaving, joined this month, left this month.
 - **Today:** checked in, on leave, not in yet.

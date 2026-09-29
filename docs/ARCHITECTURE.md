@@ -196,10 +196,29 @@ stories/
 - Cross-domain calls go through exported functions (for example, member self-service calls the billing and
   circulation cores with an ownership check); a domain never writes another domain's collections except inside
   those shared cores.
-- **Menus and page access:** the staff menu is defined once in `apps/web/src/admin/nav.ts` (section, icon, who
-  sees it, who may open the page); routes in `AdminApp.tsx` take their guard from it. Personal actions
-  (appearance, member view, sign out) are in the account menu, not the main menu. On screens under 900px the menu
-  is a drawer behind a Menu button.
+- **Views:** the staff console has three views, plus the member app as the fourth.
+  - **Admin** (`/admin`): setup and back office. Organization, People, Time & leave, Payroll, Settings, Audit log.
+  - **Operations** (`/ops`): daily running of branches. Circulation, Collection, Members, and My team (attendance
+    board, leave requests).
+  - **Staff** (`/me`): self-service. Home, attendance, leave, payslips.
+  - **Member** (`/`): the member app.
+
+  **Landing:** after sign-in, head office, HR, finance, franchise owners and Super Admins land in Admin. Branch
+  managers, librarians, delivery staff and catalogue managers land in Operations. Everyone else lands in Staff
+  (`homeViewFor` in `auth/claims.ts`).
+
+  **Switcher:** the switcher at the top of the menu lists only the views that hold something for you. Old
+  `/admin/...` addresses of pages that moved redirect to them.
+
+  Views only arrange screens; the rules and functions still check every read and write.
+- **Menus and page access:** each view's menu is defined once in `apps/web/src/admin/nav.ts`: pages and groups of
+  pages, at most one level deep, with icon, who sees each item and who may open the page. Routes in `AdminApp.tsx`
+  take their guard from it.
+  - **Groups** open and close. The group holding the current page opens on arrival, and open groups are
+    remembered on the device.
+  - **Emptied groups:** a group with nothing visible to you is removed.
+  - **Account menu:** personal actions (my profile, appearance, member view, sign out).
+  - **Small screens:** under 900px the menu, switcher included, is a drawer behind a Menu button.
 - **Accessibility:** every page has one `<h1>`; `shared/useRouteFocus.ts` names the browser tab after it and moves
   focus to it after navigation. Both shells have a "Skip to content" link. Dialogs keep focus inside and return
   it on close. Every interactive element shows a focus outline, and text meets WCAG AA contrast (checked with axe).
