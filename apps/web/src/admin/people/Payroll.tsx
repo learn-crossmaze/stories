@@ -10,7 +10,7 @@ import { monthIST } from '../../shared/dates';
 import { monthName, type Payslip, prepareRun, getRun, runPayslips, submitRun } from '../../data/payroll';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
-import { ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
@@ -178,7 +178,7 @@ export function PayrollPage() {
             )}
           </section>
           {data.data.slips.length > 0 && (
-            <div className="table-wrap">
+            <TableWrap>
               <table className="table compact">
                 <thead>
                   <tr>
@@ -228,7 +228,7 @@ export function PayrollPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </>
       )}

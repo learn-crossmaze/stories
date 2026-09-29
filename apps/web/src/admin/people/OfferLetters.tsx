@@ -25,7 +25,7 @@ import {
 import { paths } from '../../paths';
 import { addDays, todayIST } from '../../shared/dates';
 import { day } from '../../shared/format';
-import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -501,7 +501,7 @@ export function OfferLettersPage() {
       ) : !offers.data?.length ? (
         <EmptyState icon="folder" title={ht.offersNone} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -541,7 +541,7 @@ export function OfferLettersPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {releasing && (
         <OfferDialog

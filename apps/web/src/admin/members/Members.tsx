@@ -12,7 +12,7 @@ import { useDebounced } from '../../shared/useDebounced';
 import { day, relativeDays } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { NeedBranch } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -267,7 +267,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
         <EmptyState icon="person" title={filtered ? lt.membersEmpty : lt.membersNone} message="" />
       ) : (
         <>
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table">
               <thead>
                 <tr>
@@ -304,7 +304,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
           {cursor && (
             <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
               {state.loading ? t.loading : t.loadMore}

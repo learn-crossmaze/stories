@@ -13,6 +13,7 @@ import {
   subscribeToPlan,
 } from '../data/me';
 import { day, money } from '../shared/format';
+import { TableWrap } from '../shared/ui';
 import { t } from '../strings';
 import { AddChild } from './JoinMembership';
 import { useMemberData } from './memberData';
@@ -182,7 +183,7 @@ function MembershipBody({ m }: { m: Membership }) {
         {!m.payments.length ? (
           <p className="muted">{t.meNoPayments}</p>
         ) : (
-          <div className="table-wrap" tabIndex={0} role="region" aria-label={t.mePayments}>
+          <TableWrap label={t.mePayments}>
             <table className="table">
               <thead>
                 <tr>
@@ -206,7 +207,7 @@ function MembershipBody({ m }: { m: Membership }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
       </section>
 

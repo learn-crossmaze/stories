@@ -11,7 +11,7 @@ import { useAsync } from '../../shared/useAsync';
 import { money, when } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice, QrTag, ScanInput } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -125,7 +125,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
         <EmptyState icon="shelves" title={lt.copiesEmpty} message="" />
       ) : (
         <>
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table">
               <thead>
                 <tr>
@@ -156,7 +156,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
           {cursor && (
             <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
               {state.loading ? t.loading : t.loadMore}

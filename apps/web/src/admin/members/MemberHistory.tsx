@@ -5,7 +5,7 @@ import { label, planWithOption } from '../../data/common';
 import { useAsync } from '../../shared/useAsync';
 import { day, money, when } from '../../shared/format';
 import { t } from '../../strings';
-import { ErrorState, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { ErrorState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { lt } from '../../strings/library';
 
 type Scope = string[] | 'ALL';
@@ -16,7 +16,7 @@ export function SubscriptionHistory({ subs, loading, error, onRetry }: { subs: S
   if (error) return <ErrorState message={error} onRetry={onRetry} />;
   if (!subs.length) return <p className="muted">{lt.noSubscriptions}</p>;
   return (
-    <div className="table-wrap">
+    <TableWrap>
       <table className="table compact">
         <thead>
           <tr>
@@ -42,7 +42,7 @@ export function SubscriptionHistory({ subs, loading, error, onRetry }: { subs: S
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 
@@ -53,7 +53,7 @@ export function PaymentHistory({ orgId, memberId, scope, reloadKey }: { orgId: s
   if (payments.error) return <ErrorState message={payments.error} onRetry={payments.reload} />;
   if (!payments.data?.length) return <p className="muted">{lt.noPayments}</p>;
   return (
-    <div className="table-wrap">
+    <TableWrap>
       <table className="table compact">
         <thead>
           <tr>
@@ -77,7 +77,7 @@ export function PaymentHistory({ orgId, memberId, scope, reloadKey }: { orgId: s
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

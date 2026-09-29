@@ -7,7 +7,7 @@ import { bulkCreateBooks, type BulkItem, importCover, lookupIsbn } from '../../d
 import { AGE_GROUPS, type AgeGroup, GENRES, type Genre, label, LANGUAGES, READING_LEVELS } from '../../data/common';
 import { paths } from '../../paths';
 import { normalizeIsbn, splitIsbns } from '../../shared/isbn';
-import { EmptyState, Icon } from '../../shared/ui';
+import { EmptyState, Icon, TableWrap } from '../../shared/ui';
 import { t } from '../../strings';
 import { lt } from '../../strings/library';
 import { FormError } from '../components/Dialog';
@@ -271,7 +271,7 @@ export function BulkAddBooksPage() {
         </div>
       </fieldset>
 
-      <div className="table-wrap">
+      <TableWrap>
         <table className="table bulk-table">
           <thead>
             <tr>
@@ -393,7 +393,7 @@ export function BulkAddBooksPage() {
             })}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
 
       <div className="bulk-footer">
         <div className="row">

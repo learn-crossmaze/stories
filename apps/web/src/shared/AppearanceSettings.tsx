@@ -1,5 +1,6 @@
 import { ACCENTS, type Accent, type Appearance, DEFAULT_APPEARANCE, useAppearance } from './appearance';
 import { t } from '../strings';
+import { TableWrap } from './ui';
 
 type Choice<K extends keyof Appearance> = {
   value: Appearance[K];
@@ -156,7 +157,7 @@ export function AppearanceSettings() {
           <label htmlFor="ap-sample">{t.apSampleField}</label>
           <input id="ap-sample" defaultValue="The Wonderful Wizard of Oz" tabIndex={-1} readOnly />
         </div>
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -179,7 +180,7 @@ export function AppearanceSettings() {
               </tr>
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       </aside>
     </div>
   );

@@ -160,6 +160,7 @@ export const t = {
   errorIndex: 'This list is still being set up on the server (a database index is building). Try again in a few minutes; if it persists, run the backend deploy again.',
   errorForbidden: "You don't have permission to see this.",
   retry: 'Try again',
+  scrollingTable: 'Table (scrolls sideways)',
   cancel: 'Cancel',
   save: 'Save',
   saving: 'Saving…',

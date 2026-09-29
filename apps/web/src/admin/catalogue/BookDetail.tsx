@@ -11,7 +11,7 @@ import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../components/Dialog';
 import { CoverEditor } from './CoverEditor';
 import { Notice } from '../components/kit';
@@ -235,7 +235,7 @@ export function BookDetailPage() {
           ) : !copies.data?.length ? (
             <p className="muted">{lt.copiesEmpty}</p>
           ) : (
-            <div className="table-wrap">
+            <TableWrap>
               <table className="table">
                 <thead>
                   <tr>
@@ -262,7 +262,7 @@ export function BookDetailPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </section>
       )}

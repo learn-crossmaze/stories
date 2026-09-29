@@ -4,7 +4,7 @@ import { command } from '../../data/api';
 import { type ChecklistTemplateItem, type Designation, getChecklistTemplates, listDesignations } from '../../data/hr';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
-import { ErrorState, Icon, NoOrgState, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { ErrorState, Icon, NoOrgState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
@@ -129,7 +129,7 @@ export function JobSettingsPage() {
         ) : !designations.data?.length ? (
           <p className="muted">{ht.designationsEmpty}</p>
         ) : (
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table">
               <thead>
                 <tr>
@@ -163,7 +163,7 @@ export function JobSettingsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         )}
       </section>
 

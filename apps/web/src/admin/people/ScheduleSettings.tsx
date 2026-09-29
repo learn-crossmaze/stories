@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import { command } from '../../data/api';
 import { type Holiday, listHolidays, listShifts, type Shift } from '../../data/attendance';
-import { ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -91,7 +91,7 @@ export function ShiftsSection({ orgId }: { orgId: string }) {
       ) : !shifts.data?.length ? (
         <p className="muted">{ht.shiftsEmpty}</p>
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -132,7 +132,7 @@ export function ShiftsSection({ orgId }: { orgId: string }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {editing && <ShiftDialog orgId={orgId} shift={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} onSaved={shifts.reload} />}
       {archiving && (

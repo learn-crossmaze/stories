@@ -9,7 +9,7 @@ import { type Employee, listEmployees } from '../../data/hr';
 import { accrueLeave, approvedLeaveIn, available, balancesFor, daysLabel, listLeaveTypes, type LeaveRequest, type LeaveType, pendingLeave } from '../../data/leave';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -176,7 +176,7 @@ function BalancesView({ orgId, scope }: { orgId: string; scope: Scope }) {
       ) : (
         <>
           {data.data.balances.size === 0 && <p className="muted">{ht.noBalances(year)}</p>}
-          <div className="table-wrap">
+          <TableWrap>
             <table className="table compact">
               <thead>
                 <tr>
@@ -223,7 +223,7 @@ function BalancesView({ orgId, scope }: { orgId: string; scope: Scope }) {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </>
       )}
       {accruing && <AccrualDialog orgId={orgId} onClose={() => setAccruing(false)} onDone={(m) => (setNotice(m), data.reload())} />}

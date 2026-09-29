@@ -10,7 +10,7 @@ import { todayIST } from '../../shared/dates';
 import { useAsync } from '../../shared/useAsync';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
@@ -300,7 +300,7 @@ export function PeoplePage() {
       ) : !shown.length ? (
         <EmptyState icon="people" title={people.data?.length ? ht.noEmployees : ht.noEmployeesYet} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -333,7 +333,7 @@ export function PeoplePage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {adding && (
         <EmployeeDialog

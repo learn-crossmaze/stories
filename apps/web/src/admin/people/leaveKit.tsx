@@ -10,6 +10,7 @@ import { day as dayFmt } from '../../shared/format';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { TableWrap } from '../../shared/ui';
 
 const TONE: Record<string, string> = { PENDING: 'info', APPROVED: 'ok', REJECTED: 'danger', CANCELLED: 'muted' };
 
@@ -181,7 +182,7 @@ export function useLeaveDecision(orgId: string, onDone: () => void) {
 export function RequestTable({ requests, who, actions, empty }: { requests: LeaveRequest[]; who?: (r: LeaveRequest) => string; actions?: (r: LeaveRequest) => ReactNode; empty: string }) {
   if (!requests.length) return <p className="muted">{empty}</p>;
   return (
-    <div className="table-wrap">
+    <TableWrap>
       <table className="table">
         <thead>
           <tr>
@@ -229,7 +230,7 @@ export function RequestTable({ requests, who, actions, empty }: { requests: Leav
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

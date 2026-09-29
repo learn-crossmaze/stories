@@ -11,7 +11,7 @@ import { type Employee, listEmployees } from '../../data/hr';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
 import { day as dayFmt } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -62,7 +62,7 @@ function DayBoard({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' }) 
       ) : !data.data.people.length ? (
         <EmptyState icon="people" title={ht.noEmployeesHere} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -123,7 +123,7 @@ function DayBoard({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' }) 
               })}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {adjusting && <AdjustDialog orgId={orgId} employee={adjusting.e} date={date} record={adjusting.r} onClose={() => setAdjusting(null)} onDone={data.reload} />}
       {shiftFor && data.data && <ShiftDialog orgId={orgId} employee={shiftFor} shifts={data.data.shifts} onClose={() => setShiftFor(null)} onDone={data.reload} />}
@@ -199,7 +199,7 @@ function MonthView({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' })
             {finalized ? ht.monthFinalized(lock?.finalizedByEmail ?? '', lock?.finalizedAt ? dayFmt(lock.finalizedAt) : '') : lock?.status === 'REOPENED' ? ht.monthReopened : ht.monthOpen}
           </p>
           {data.data.summaries.length > 0 && (
-            <div className="table-wrap">
+            <TableWrap>
               <table className="table compact">
                 <thead>
                   <tr>
@@ -227,7 +227,7 @@ function MonthView({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' })
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )}
         </>
       )}
@@ -271,7 +271,7 @@ function CorrectionsView({ orgId, scope, onChanged }: { orgId: string; scope: st
   return (
     <>
       <FormError error={decision.error} />
-      <div className="table-wrap">
+      <TableWrap>
         <table className="table">
           <thead>
             <tr>
@@ -314,7 +314,7 @@ function CorrectionsView({ orgId, scope, onChanged }: { orgId: string; scope: st
             })}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       {decision.dialog}
     </>
   );

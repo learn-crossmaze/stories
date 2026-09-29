@@ -7,7 +7,7 @@ import { branchScope } from '../../auth/claims';
 import { documentQueue, type EmployeeDocument, listDocumentTypes, openDocument } from '../../data/hrDocuments';
 import { paths } from '../../paths';
 import { day } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
@@ -67,7 +67,7 @@ export function DocumentsPage() {
       ) : !rows.length ? (
         <EmptyState icon="check" title={ht.queueEmpty[tab]} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -119,7 +119,7 @@ export function DocumentsPage() {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {review.dialog}
     </>

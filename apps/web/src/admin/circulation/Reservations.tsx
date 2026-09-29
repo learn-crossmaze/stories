@@ -6,7 +6,7 @@ import { branchReservations, type Reservation } from '../../data/circulation';
 import { useAsync } from '../../shared/useAsync';
 import { day, when } from '../../shared/format';
 import { paths } from '../../paths';
-import { EmptyState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason } from '../components/Dialog';
 import { NeedBranch, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -24,7 +24,7 @@ function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
       ) : !list.data?.length ? (
         <EmptyState icon="bookmark" title={lt.noReservations} message="" />
       ) : (
-        <div className="table-wrap">
+        <TableWrap>
           <table className="table">
             <thead>
               <tr>
@@ -56,7 +56,7 @@ function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
       {cancelling && (
         <ConfirmWithReason title={`${lt.cancelReservation}?`} body={`${cancelling.bookTitle} · ${cancelling.memberName}`} confirmLabel={lt.cancelReservation} onClose={() => setCancelling(null)}
