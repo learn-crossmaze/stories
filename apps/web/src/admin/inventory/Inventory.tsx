@@ -7,6 +7,8 @@ import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { CONDITIONS, type Condition, COPY_STATUSES, type CopyStatus, label } from '../../data/common';
 import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle } from '../../data/inventory';
+import { getBook } from '../../data/catalogue';
+import { BookCover } from '../../shared/BookCover';
 import { useDebounced } from '../../shared/useDebounced';
 import { useAsync } from '../../shared/useAsync';
 import { money, when } from '../../shared/format';
@@ -256,6 +258,9 @@ export function CopyDetailPage() {
   const events = useAsync(() => (orgId ? copyEvents(orgId, copyId) : Promise.resolve([])), [orgId, copyId]);
   const c = copy.data;
   const locations = useAsync(() => (orgId && c ? listLocations(orgId, c.currentBranchId) : Promise.resolve([])), [orgId, c?.currentBranchId]);
+  // The title's cover and authors (a generated cover when there is no photo).
+  const book = useAsync(() => (c ? getBook(c.bookId) : Promise.resolve(null)), [c?.bookId]);
+  const authors = book.data?.authorNames?.join(', ') ?? '';
   const [action, setAction] = useState<Action | null>(null);
 
   if (copy.loading) return <SkeletonRows rows={4} />;
@@ -284,35 +289,36 @@ export function CopyDetailPage() {
       <p className="breadcrumb">
         <Link to={paths.adminInventory}>{lt.inventoryTitle}</Link> / <span className="mono">{c.code}</span>
       </p>
-      <header className="page-header page-header-row">
-        <div>
-          <h1 className="mono">{c.code}</h1>
-          <p>
-            <Link to={paths.adminBook(c.bookId)}>{c.bookTitle}</Link>
-          </p>
-        </div>
-      </header>
-      <section className="card">
+      <section className="card copy-card">
         <div className="copy-summary">
-          <dl className="facts">
-            <dt>{lt.status}</dt>
-            <dd>
+          <div className="copy-main">
+            <header className="copy-head">
+              <h1 className="mono">{c.code}</h1>
+              <p className="copy-title">
+                <Link to={paths.adminBook(c.bookId)}>{c.bookTitle}</Link>
+              </p>
+              {authors && <p className="muted">{authors}</p>}
               <CopyStatusBadge status={c.status} />
-            </dd>
-            <dt>{lt.condition}</dt>
-            <dd>{label(c.condition)}</dd>
-            <dt>{lt.currentlyAt}</dt>
-            <dd>
-              {branchName(c.currentBranchId)} · <span className="mono">{locOptions.find((l) => l.value === c.locationId)?.label ?? lt.noLocation}</span>
-            </dd>
-            <dt>{lt.owner}</dt>
-            <dd>{branchName(c.owningBranchId)}</dd>
-            <dt>{lt.cost.replace(' per copy (₹)', '')}</dt>
-            <dd>{money(c.acquisitionCostMinor)}</dd>
-            <dt>{lt.loans}</dt>
-            <dd>{c.lifetimeLoans}</dd>
-          </dl>
-          <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} className="qr-tag-card qr-tag-large" />
+            </header>
+            <dl className="facts">
+              <dt>{lt.condition}</dt>
+              <dd>{label(c.condition)}</dd>
+              <dt>{lt.currentlyAt}</dt>
+              <dd>
+                {branchName(c.currentBranchId)} · <span className="mono">{locOptions.find((l) => l.value === c.locationId)?.label ?? lt.noLocation}</span>
+              </dd>
+              <dt>{lt.owner}</dt>
+              <dd>{branchName(c.owningBranchId)}</dd>
+              <dt>{lt.cost.replace(' per copy (₹)', '')}</dt>
+              <dd>{money(c.acquisitionCostMinor)}</dd>
+              <dt>{lt.loans}</dt>
+              <dd>{c.lifetimeLoans}</dd>
+            </dl>
+          </div>
+          <div className="copy-media">
+            <BookCover title={c.bookTitle} author={authors} seed={c.bookId} url={book.data?.coverUrl} size="lg" />
+            <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} className="qr-tag-card qr-tag-large" />
+          </div>
         </div>
         <div className="row">
           {buttons.filter(([, , show]) => show).map(([a, text]) => (
