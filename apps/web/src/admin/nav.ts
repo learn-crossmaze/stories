@@ -142,6 +142,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
     { to: paths.adminMyAttendance, label: ht.navAttendanceShort, icon: 'clock', requires: null },
     { to: paths.adminMyLeave, label: ht.navLeave, icon: 'calendar', requires: null },
     { to: paths.adminMyPayslips, label: ht.navMyPayslips, icon: 'payments', requires: null },
+    { to: paths.adminMyOnboarding, label: ht.obNav, icon: 'badge', requires: null },
   ],
 };
 

@@ -40,6 +40,7 @@ const MyAttendancePage = lazyPage(() => import('./people/MyAttendance'), 'MyAtte
 const MyLeavePage = lazyPage(() => import('./people/MyLeave'), 'MyLeavePage');
 const MyPayslipsPage = lazyPage(() => import('./people/MyPayslips'), 'MyPayslipsPage');
 const MyProfilePage = lazyPage(() => import('./people/MyProfile'), 'MyProfilePage');
+const MyOnboardingPage = lazyPage(() => import('./people/MyOnboarding'), 'MyOnboardingPage');
 const PayrollPage = lazyPage(() => import('./people/Payroll'), 'PayrollPage');
 const PeopleOverviewPage = lazyPage(() => import('./people/PeopleOverview'), 'PeopleOverviewPage');
 const EmployeeProfilePage = lazyPage(() => import('./people/EmployeeProfile'), 'EmployeeProfilePage');
@@ -91,6 +92,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
     case 'staff':
       return [
         [paths.adminMyAttendance, <MyAttendancePage />],
+        [paths.adminMyOnboarding, <MyOnboardingPage />],
         [paths.adminMyLeave, <MyLeavePage />],
         [paths.adminMyPayslips, <MyPayslipsPage />],
         [

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { command } from '../../data/api';
 import { type ChecklistTemplateItem, type Designation, getChecklistTemplates, listDesignations } from '../../data/hr';
+import { FIELD_LABELS, PROFILE_FIELDS, type ProfileField, requiredFields, saveRequiredFields } from '../../data/selfOnboarding';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ErrorState, Icon, NoOrgState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
@@ -84,6 +85,58 @@ function ChecklistEditor({ title, items, onChange }: { title: string; items: Che
 }
 
 /** Settings → Job titles & checklists. */
+/** Settings → Jobs: which personal details staff must fill in themselves (self-onboarding). */
+function SelfOnboardingSettings({ orgId }: { orgId: string }) {
+  const current = useAsync(() => requiredFields(orgId), [orgId]);
+  const [fields, setFields] = useState<ProfileField[]>([]);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    if (current.data) setFields(current.data);
+  }, [current.data]);
+  const save = useSubmit(async () => {
+    setSaved(false);
+    await saveRequiredFields(orgId, PROFILE_FIELDS.filter((f) => fields.includes(f)));
+    setSaved(true);
+  });
+  return (
+    <section className="section" aria-labelledby="ob-settings">
+      <h2 id="ob-settings">{ht.obSettingsTitle}</h2>
+      <p className="muted">{ht.obSettingsIntro}</p>
+      {current.loading ? (
+        <SkeletonRows rows={2} />
+      ) : current.error ? (
+        <ErrorState message={current.error} onRetry={current.reload} />
+      ) : (
+        <form onSubmit={save.submit} noValidate>
+          <fieldset className="choices ob-fields">
+            <legend className="sr-only">{ht.obSettingsTitle}</legend>
+            {PROFILE_FIELDS.map((f) => (
+              <label key={f} className="check">
+                <input
+                  type="checkbox"
+                  checked={fields.includes(f)}
+                  onChange={(e) => {
+                    setSaved(false);
+                    setFields((x) => (e.target.checked ? [...x, f] : x.filter((y) => y !== f)));
+                  }}
+                />{' '}
+                {FIELD_LABELS[f]}
+              </label>
+            ))}
+          </fieldset>
+          <FormError error={save.error} />
+          {saved && <Notice tone="ok">{ht.saved}</Notice>}
+          <div className="row">
+            <button type="submit" className="btn btn-filled" disabled={save.busy}>
+              {save.busy ? t.loading : ht.obSaveSettings}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 export function JobSettingsPage() {
   const { org } = useWorkspace();
   const designations = useAsync(() => (org ? listDesignations(org.id) : Promise.resolve([])), [org?.id]);
@@ -188,6 +241,8 @@ export function JobSettingsPage() {
           </form>
         )}
       </section>
+
+      <SelfOnboardingSettings orgId={org.id} />
 
       {editing && (
         <DesignationDialog

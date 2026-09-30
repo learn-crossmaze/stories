@@ -713,3 +713,22 @@ main h1[tabindex='-1']:focus { outline: none; }
 .option-choice { display: flex; gap: 8px; flex-wrap: wrap; }
 .join-card { max-width: 720px; }
 .join-card form .btn-filled { margin-top: 8px; }
+
+/* Self-onboarding: progress, the form on its page, and the reminder banner in the staff shell. */
+.ob-progress-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ob-progress-head h2 { margin: 0; }
+.ob-bar { height: 10px; border-radius: 999px; background: var(--surface-dim); overflow: hidden; margin: 10px 0; }
+.ob-bar > span { display: block; height: 100%; background: var(--primary); border-radius: inherit; transition: width .3s; }
+.ob-missing { margin: 6px 0 0; padding-left: 20px; }
+.ob-missing li { margin: 3px 0; }
+.ob-form fieldset { border: 0; padding: 0; margin: 0 0 18px; min-width: 0; }
+.ob-form legend { font-weight: 600; margin-bottom: 8px; }
+.ob-form .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 16px; }
+.ob-form .form-grid > * { min-width: 0; }
+.ob-banner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fdf0d5; color: #4a3500; border-radius: var(--radius-md); padding: 8px 14px; margin-bottom: 16px; font-size: 14px; }
+.ob-banner .btn { margin-left: auto; color: inherit; font-weight: 600; }
+@media (prefers-color-scheme: dark) { .ob-banner { background: #3d3013; color: #f5d98b; } }
+:root[data-scheme='dark'] .ob-banner { background: #3d3013; color: #f5d98b; }
+.ob-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 16px; border: 0; padding: 0; margin: 0 0 12px; }
+.ob-profile-card { margin-bottom: 16px; }
+.ob-profile-card h2 { margin-top: 0; }

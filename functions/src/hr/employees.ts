@@ -339,6 +339,30 @@ export const checkItem = command(
   },
 );
 
+/**
+ * Self-onboarding: people fill in their own personal details and, once, their
+ * salary account (a later change goes through HR, so a taken-over sign-in
+ * can't redirect salary). Otherwise the HR permission is needed. Returns
+ * whether the caller is the employee.
+ */
+async function requireSelfOr(actor: Actor, perm: 'employees.privateData' | 'employees.bank', orgId: string, snap: FirebaseFirestore.DocumentSnapshot, tx: Transaction) {
+  if (snap.get('uid') && snap.get('uid') === actor.uid && snap.get('status') !== 'OFFBOARDED') return true;
+  await requireFor(actor, perm, orgId, snap.get('branchId'), tx);
+  return false;
+}
+
+/** While joining, ticks the checklist items the details now cover (HR can still untick them). */
+function tickFromDetails(tx: Transaction, snap: FirebaseFirestore.DocumentSnapshot, keys: string[], by: string) {
+  if (snap.get('status') !== 'ONBOARDING' || !keys.length) return;
+  const items = (snap.get('onboarding') ?? []) as ChecklistItem[];
+  if (!items.some((i) => keys.includes(i.key) && !i.done)) return;
+  const at = new Date().toISOString();
+  tx.update(snap.ref, {
+    onboarding: items.map((i) => (keys.includes(i.key) && !i.done ? { ...i, done: true, doneBy: by, doneAt: at } : i)),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+}
+
 const pan = z.union([z.literal(''), z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'must be a valid PAN (ABCDE1234F)')]).default('');
 const text = (max: number) => z.string().trim().max(max).default('');
 
@@ -365,11 +389,15 @@ export const setPrivate = command(
   async (ctx, tx) => {
     const { actor, input } = ctx;
     const snap = await loadEmployee(tx, input.orgId, input.employeeId);
-    await requireFor(actor, 'employees.privateData', input.orgId, snap.get('branchId'), tx);
+    const self = await requireSelfOr(actor, 'employees.privateData', input.orgId, snap, tx);
     const { orgId, employeeId, ...profile } = input;
     tx.set(db.doc(`orgs/${orgId}/employees/${employeeId}/private/profile`), { ...profile, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid }, { merge: true });
+    tickFromDetails(tx, snap, [...(profile.pan ? ['pan'] : []), ...(profile.emergencyName && profile.emergencyPhone ? ['emergency-contact'] : [])], actor.email ?? actor.uid);
     // The audit trail records that personal data changed, not the data itself.
-    recordAudit(tx, auditCtx(ctx), orgId, { action: 'employee.setPrivate', entityType: 'employee', entityId: employeeId, branchId: snap.get('branchId'), after: { fields: Object.keys(profile).filter((k) => (profile as Record<string, string>)[k] !== '') } });
+    recordAudit(tx, auditCtx(ctx), orgId, {
+      action: 'employee.setPrivate', entityType: 'employee', entityId: employeeId, branchId: snap.get('branchId'),
+      after: { fields: Object.keys(profile).filter((k) => (profile as Record<string, string>)[k] !== ''), self },
+    });
     return { employeeId };
   },
 );
@@ -393,12 +421,16 @@ export const setBank = command(
   async (ctx, tx) => {
     const { actor, input } = ctx;
     const snap = await loadEmployee(tx, input.orgId, input.employeeId);
-    await requireFor(actor, 'employees.bank', input.orgId, snap.get('branchId'), tx);
+    const self = await requireSelfOr(actor, 'employees.bank', input.orgId, snap, tx);
+    if (self && (await tx.get(bankRef(input.orgId, input.employeeId))).exists) {
+      throw errors.conflict('BANK_ON_FILE', 'Your salary account is already recorded. Ask HR to change it.');
+    }
     const { orgId, employeeId, ...bank } = input;
     const masked = { accountHolder: bank.accountHolder, bankName: bank.bankName, ifsc: bank.ifsc, last4: bank.accountNumber.slice(-4) };
     tx.set(bankRef(orgId, employeeId), { ...bank, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid });
     tx.set(db.doc(`orgs/${orgId}/employees/${employeeId}/private/profile`), { bank: masked, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    recordAudit(tx, auditCtx(ctx), orgId, { action: 'employee.setBank', entityType: 'employee', entityId: employeeId, branchId: snap.get('branchId'), after: masked });
+    tickFromDetails(tx, snap, ['bank'], actor.email ?? actor.uid);
+    recordAudit(tx, auditCtx(ctx), orgId, { action: 'employee.setBank', entityType: 'employee', entityId: employeeId, branchId: snap.get('branchId'), after: { ...masked, self } });
     return { employeeId };
   },
 );

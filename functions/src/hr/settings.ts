@@ -6,7 +6,7 @@ import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, name, reason } from '../core/schemas.js';
-import { hrConfigRef } from './model.js';
+import { DEFAULT_REQUIRED_FIELDS, hrConfigRef, PROFILE_FIELDS } from './model.js';
 
 /** Designations (job titles) are org-wide: orgs/{o}/designations/{d}. */
 export const createDesignation = command(
@@ -98,6 +98,34 @@ export const setChecklists = command(
       entityId: 'hr',
       before: before.exists ? { onboarding: before.get('onboarding') ?? null, offboarding: before.get('offboarding') ?? null } : null,
       after: { onboarding: input.onboarding, offboarding: input.offboarding },
+    });
+    return { ok: true };
+  },
+);
+
+/**
+ * Which personal details staff must fill in themselves (self-onboarding).
+ * Required documents are set per document type.
+ */
+export const setSelfOnboarding = command(
+  'hr-setSelfOnboarding',
+  z.strictObject({
+    orgId: id,
+    requiredFields: z
+      .array(z.enum(PROFILE_FIELDS))
+      .max(PROFILE_FIELDS.length)
+      .refine((v) => new Set(v).size === v.length, 'lists a field twice'),
+  }),
+  async ({ actor, input, requestId }, tx) => {
+    await actor.require('hr.config', input.orgId, undefined, tx);
+    const before = await tx.get(hrConfigRef(input.orgId));
+    tx.set(hrConfigRef(input.orgId), { selfOnboardingFields: input.requiredFields, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid }, { merge: true });
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'hr.setSelfOnboarding',
+      entityType: 'hrConfig',
+      entityId: 'hr',
+      before: { requiredFields: (before.exists ? before.get('selfOnboardingFields') : null) ?? DEFAULT_REQUIRED_FIELDS },
+      after: { requiredFields: input.requiredFields },
     });
     return { ok: true };
   },

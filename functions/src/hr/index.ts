@@ -23,6 +23,7 @@ export const routes = {
   'designations-rename': settings.renameDesignation,
   'designations-archive': settings.archiveDesignation,
   'hr-setChecklists': settings.setChecklists,
+  'hr-setSelfOnboarding': settings.setSelfOnboarding,
   'documents-upload': documents.upload,
   'documents-review': documents.review,
   'documents-remove': documents.remove,

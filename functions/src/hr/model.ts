@@ -65,6 +65,28 @@ export const DEFAULT_CHECKLISTS: Record<ChecklistKind, ChecklistTemplateItem[]> 
   ],
 };
 
+/**
+ * Personal details an employee fills in themselves (self-onboarding). HR
+ * chooses which are mandatory (config/hr.selfOnboardingFields); `emergency`
+ * is the contact's name and phone, `bank` the salary account.
+ */
+export const PROFILE_FIELDS = [
+  'dob',
+  'gender',
+  'bloodGroup',
+  'personalEmail',
+  'personalPhone',
+  'currentAddress',
+  'permanentAddress',
+  'emergency',
+  'pan',
+  'uan',
+  'esiNumber',
+  'bank',
+] as const;
+export type ProfileField = (typeof PROFILE_FIELDS)[number];
+export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'bank'];
+
 export const hrConfigRef = (orgId: string) => db.doc(`orgs/${orgId}/config/hr`);
 export const employeeRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employees/${employeeId}`);
 export const employeesCol = (orgId: string) => db.collection(`orgs/${orgId}/employees`);

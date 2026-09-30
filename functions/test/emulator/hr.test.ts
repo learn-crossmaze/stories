@@ -232,3 +232,43 @@ describe('private and bank details', () => {
     expect(log.docs.map((d) => d.get('actorUid'))).toEqual([hr.uid]);
   });
 });
+
+describe('self-onboarding', () => {
+  const details = { pan: 'abcde1234f', dob: '1994-02-03', gender: 'FEMALE', personalPhone: '9812345678', currentAddress: '12 MG Road, Pune', permanentAddress: '12 MG Road, Pune', emergencyName: 'Suresh Nair', emergencyPhone: '9812345679' };
+  const bank = { accountHolder: 'Divya Nair', accountNumber: '001234567890', ifsc: 'HDFC0001234', bankName: 'HDFC Bank' };
+
+  it('lets a new joiner fill in their own details and bank once, ticking the checklist as they go', async () => {
+    const newcomer = await createUser('divya@stories.test');
+    const { employeeId, linked } = await hire('Divya Nair', { email: newcomer.email });
+    expect(linked).toBe(true);
+    await move(employeeId, 'START_ONBOARDING');
+
+    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details });
+    await call(emp.setBank, newcomer, { orgId: org, employeeId, ...bank });
+    const profile = (await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).data()!;
+    expect(profile).toMatchObject({ pan: 'ABCDE1234F', gender: 'FEMALE', emergencyName: 'Suresh Nair', bank: { last4: '7890' } });
+    const done = ((await employee(employeeId)).onboarding as { key: string; done: boolean; doneBy: string }[]).filter((i) => i.done);
+    expect(done.map((i) => i.key).sort()).toEqual(['bank', 'emergency-contact', 'pan']);
+    expect(done[0].doneBy).toBe(newcomer.email);
+
+    // A second bank change goes through HR; HR can still change it.
+    expect(await failure(call(emp.setBank, newcomer, { orgId: org, employeeId, ...bank, accountNumber: '999999999999' }))).toBe('BANK_ON_FILE');
+    await call(emp.setBank, fin, { orgId: org, employeeId, ...bank, accountNumber: '111122223333' });
+    const audit = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'employee.setBank').get();
+    expect(audit.docs.map((d) => d.get('after.self')).sort()).toEqual([false, true]);
+  });
+
+  it("only lets people edit their own record, and only HR sets the mandatory fields", async () => {
+    const newcomer = await createUser('divya@stories.test');
+    const { employeeId } = await hire('Divya Nair', { email: newcomer.email });
+    const { employeeId: other } = await hire('Someone Else');
+    expect(await failure(call(emp.setPrivate, newcomer, { orgId: org, employeeId: other, ...details }))).toBe('FORBIDDEN');
+    expect(await failure(call(emp.setBank, newcomer, { orgId: org, employeeId: other, ...bank }))).toBe('FORBIDDEN');
+    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details });
+
+    await call(hrSettings.setSelfOnboarding, hr, { orgId: org, requiredFields: ['dob', 'pan', 'bank'] });
+    expect((await db.doc(`orgs/${org}/config/hr`).get()).get('selfOnboardingFields')).toEqual(['dob', 'pan', 'bank']);
+    expect(await failure(call(hrSettings.setSelfOnboarding, hr, { orgId: org, requiredFields: ['shoeSize'] }))).toBe('INVALID_INPUT');
+    expect(await failure(call(hrSettings.setSelfOnboarding, bm, { orgId: org, requiredFields: [] }))).toBe('FORBIDDEN');
+  });
+});

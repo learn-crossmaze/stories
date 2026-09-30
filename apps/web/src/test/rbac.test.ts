@@ -69,7 +69,7 @@ describe('navigation', () => {
     // Branch managers run their branch: its staff and branch lists, but not HR settings.
     expect(labels(bm, 'admin')).toEqual(expect.arrayContaining(['Branches', 'Departments', 'Employees']));
     expect(labels(bm, 'admin')).not.toContain('Job titles & checklists');
-    expect(labels(emp, 'staff')).toEqual(['Home', 'Attendance', 'Leave', 'My payslips']);
+    expect(labels(emp, 'staff')).toEqual(['Home', 'Attendance', 'Leave', 'My payslips', 'Complete my profile']);
   });
 
   it('drops a group when nothing in it is visible', () => {

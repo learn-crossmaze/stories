@@ -476,3 +476,32 @@ used by *Release offer*, not here.
   kind (and template).
 - Open and withdraw work as for offers (`offers-open`, `offers-withdraw`), with `letters.issue` for non-offer letters.
 
+## 14. Self-onboarding
+
+Staff fill in their own HR details and documents instead of HR typing them in.
+
+- **Staff → Complete my profile** (`/me/complete-profile`) shows a progress bar and the list still to do, then:
+  - **My details:** date of birth, gender, blood group, personal phone and email, current and permanent address
+    ("same as current"), emergency contact, PAN, UAN and ESI number. Mandatory ones are marked *(required)*. Saving
+    calls `employees-setPrivate` on their own record.
+  - **Salary bank account:** added once by the employee (`employees-setBank`; the IFSC fills the bank name). After
+    that only HR can change it, so a taken-over sign-in can't redirect salary (`BANK_ON_FILE`). The page shows it
+    masked.
+  - **Documents:** the required documents they may upload (document types marked *required* and *employee can
+    upload*). A document counts once uploaded (awaiting verification or verified); a rejected or expired one must be
+    uploaded again, with HR's reason shown.
+- **Who:** anyone with a Stories sign-in linked to an employee record that is DRAFT, ONBOARDING, ACTIVE or
+  NOTICE_PERIOD. People edit only their own record (`uid` = the caller, not offboarded); HR permissions still apply
+  for everyone else. The audit entry records `self: true`.
+- **Mandatory details:** HR chooses them under **Settings → Jobs → Self-onboarding** (`hr-setSelfOnboarding`,
+  `hr.config`; stored in `config/hr.selfOnboardingFields`). Default: date of birth, gender, personal phone, both
+  addresses, emergency contact (name and phone), PAN and bank account.
+- **Reminders until complete:** in every staff view:
+  - a banner on every page ("Your profile is incomplete: N mandatory items missing · Complete now");
+  - a pop-up listing what is missing, at sign-in and again **every 4 hours** (*Remind me later* snoozes it for 4
+    hours; per person and organization, on that device);
+  - a *Needs attention* item on the dashboard and a card on My profile.
+  All of them disappear as soon as the last item is done.
+- **Checklist:** while joining, saving a PAN ticks *PAN recorded*, an emergency contact ticks *Emergency contact
+  recorded*, and adding the bank account ticks *Bank account recorded*; verifying documents ticks theirs as before.
+  HR can untick them.
