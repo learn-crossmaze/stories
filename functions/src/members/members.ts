@@ -28,7 +28,7 @@ export const profile = {
 
 export const memberRef = (orgId: string, memberId: string) => db.doc(`orgs/${orgId}/members/${memberId}`);
 
-export async function loadMember(tx: Transaction, orgId: string, memberId: string) {
+export async function loadMember(tx: Pick<Transaction, 'get'>, orgId: string, memberId: string) {
   const snap = await tx.get(memberRef(orgId, memberId));
   if (!snap.exists) throw errors.notFound('Member');
   return { snap, member: snap.data() as Member };

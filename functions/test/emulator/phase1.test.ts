@@ -22,6 +22,7 @@ import * as staff from '../../src/organization/staff.js';
 import * as deposits from '../../src/billing/deposits.js';
 import * as plans from '../../src/billing/plans.js';
 import * as subs from '../../src/billing/subscriptions.js';
+import { prorate, quoteValidUntil } from '../../src/billing/upgrade.js';
 import { expireDueSubscriptions } from '../../src/billing/sweep.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
@@ -404,6 +405,123 @@ describe('M1.4 subscriptions, payments, deposits', () => {
     expect(await failure(issue(m, [c2]))).toBe('NO_ACTIVE_SUBSCRIPTION');
     expect(await failure(call(circ.exchange, lib, { orgId: org, branchId: central, memberId: m, returnBarcodes: [c1], issueBarcodes: [c2] }))).toBe('NO_ACTIVE_SUBSCRIPTION');
     await giveBack([c1]); // returns always allowed
+  });
+});
+
+describe('upgrading mid-term (pro-rated)', () => {
+  const DAY = 86_400_000;
+  type Quote = {
+    blocked: string | null;
+    current: { subscriptionId: string; termDays: number; unusedDays: number; creditMinor: number } | null;
+    options: { planId: string; duration: string; priceMinor: number; creditMinor: number; subscriptionMinor: number; depositMinor: number; totalMinor: number }[];
+  };
+  let bigger: string, smaller: string, sameBooks: string;
+  const quote = (memberId: string, by = lib) => call<Quote>(subs.upgradeQuoteForStaff, by, { orgId: org, memberId }, null);
+  const upgrade = (memberId: string, plan: string, duration: string, by = lib) =>
+    call<{ subscriptionId: string; amountDue: { subscriptionMinor: number; depositMinor: number; totalMinor: number } }>(subs.upgrade, by, { orgId: org, memberId, planId: plan, duration });
+  const pay = (subscriptionId: string, amountMinor: number) => call(subs.recordOfflinePayment, lib, { orgId: org, subscriptionId, method: 'OFFLINE_CASH', amountMinor });
+  /** A member on Monthly Two (₹300, 30-day term) with 20 days left. */
+  async function midTerm(name = 'Asha') {
+    const m = await register(name);
+    const s = await subscribe(m);
+    await path(`subscriptions/${s}`).update({ startAt: Timestamp.fromMillis(Date.now() - 10 * DAY), endAt: Timestamp.fromMillis(Date.now() + 20 * DAY + 3_600_000) });
+    return { m, s };
+  }
+  beforeEach(async () => {
+    const mk = async (name: string, options: { duration: string; priceMinor: number }[], depositMinor: number, max: number) =>
+      (await call<{ planId: string }>(plans.create, sa, { orgId: org, name, options, depositMinor, maxSimultaneousBooks: max, audiences: ['CHILDREN', 'TEENS', 'ADULTS'] })).planId;
+    bigger = await mk('Reader Four', [{ duration: 'MONTHLY', priceMinor: 50000 }, { duration: 'ANNUAL', priceMinor: 500000 }], 150000, 4);
+    smaller = await mk('Single', [{ duration: 'MONTHLY', priceMinor: 20000 }], 50000, 1);
+    // Same two books: only the longer period counts as an upgrade.
+    sameBooks = await mk('Two Plus', [{ duration: 'MONTHLY', priceMinor: 35000 }, { duration: 'QUARTERLY', priceMinor: 90000 }], 100000, 2);
+  });
+
+  it('works out the credit from whole days left, rounded down to rupees', () => {
+    const start = new Date('2026-09-01T00:00:00Z');
+    const end = new Date('2026-10-01T00:00:00Z');
+    expect(prorate(30000, start, end, new Date('2026-09-11T06:00:00Z'))).toEqual({ termDays: 30, unusedDays: 19, creditMinor: 19000 });
+    expect(prorate(29900, start, end, new Date('2026-09-21T00:00:00Z'))).toEqual({ termDays: 30, unusedDays: 10, creditMinor: 9900 });
+    expect(prorate(30000, start, end, new Date('2026-09-30T12:00:00Z')).creditMinor).toBe(0);
+    // Valid until the end of the next day in India (18:29:59.999 UTC).
+    expect(quoteValidUntil(new Date('2026-09-30T20:00:00Z')).toISOString()).toBe('2026-10-02T18:29:59.999Z');
+  });
+
+  it('quotes every bigger plan, charges the new price less the unused days, and switches the member today', async () => {
+    const { m, s } = await midTerm();
+    const q = await quote(m);
+    expect(q.blocked).toBeNull();
+    expect(q.current).toMatchObject({ subscriptionId: s, termDays: 30, unusedDays: 20, creditMinor: 20000 });
+    // Fewer books (Single), the same plan and period, and as many books for the same period are not upgrades.
+    expect(q.options.map((o) => [o.planId, o.duration])).toEqual([[sameBooks, 'QUARTERLY'], [bigger, 'MONTHLY'], [bigger, 'ANNUAL']]);
+    expect(q.options[1]).toMatchObject({ priceMinor: 50000, creditMinor: 20000, subscriptionMinor: 30000, depositMinor: 50000, totalMinor: 80000 });
+
+    const up = await upgrade(m, bigger, 'MONTHLY');
+    expect(up.amountDue).toEqual({ subscriptionMinor: 30000, depositMinor: 50000, totalMinor: 80000 });
+    expect(await get(`subscriptions/${up.subscriptionId}`)).toMatchObject({
+      kind: 'UPGRADE', status: 'PENDING_PAYMENT', previousSubscriptionId: s,
+      upgrade: { fromSubscriptionId: s, fromPlanName: 'Monthly Two', termDays: 30, unusedDays: 20, creditMinor: 20000, newPriceMinor: 50000 },
+    });
+    // Until it is paid, the current plan stays in force.
+    expect((await get(`subscriptions/${s}`)).status).toBe('ACTIVE');
+
+    await pay(up.subscriptionId, 80000);
+    const old = await get(`subscriptions/${s}`);
+    expect(old).toMatchObject({ status: 'UPGRADED', upgradedToSubscriptionId: up.subscriptionId });
+    const now = await get(`subscriptions/${up.subscriptionId}`);
+    expect(now.status).toBe('ACTIVE');
+    expect(Math.abs(now.startAt.toMillis() - Date.now())).toBeLessThan(60_000);
+    expect(Math.round((now.endAt.toMillis() - now.startAt.toMillis()) / DAY)).toBeGreaterThanOrEqual(28);
+    expect(await get(`members/${m}`)).toMatchObject({ activeSubscriptionId: up.subscriptionId, planName: 'Reader Four' });
+    expect((await get(`members/${m}`)).subscriptionEndsAt.toMillis()).toBe(now.endAt.toMillis());
+    expect((await get(`depositAccounts/${m}`)).balanceMinor).toBe(150000);
+    const payment = await get(`payments/${now.paymentId}`);
+    expect(payment).toMatchObject({ amountMinor: 80000, upgrade: { fromSubscriptionId: s, creditMinor: 20000, unusedDays: 20 } });
+
+    // The new allowance applies at once: four books.
+    const codes = await acquire(bookId, 4);
+    await issue(m, codes);
+    expect((await get(`members/${m}`)).activeLoanCount).toBe(4);
+  });
+
+  it('refuses what is not an upgrade, and upgrades that are blocked or have lapsed', async () => {
+    const fresh = await register('No plan yet');
+    expect((await quote(fresh)).blocked).toMatch(/no active plan/);
+    expect(await failure(upgrade(fresh, bigger, 'MONTHLY'))).toBe('UPGRADE_NOT_POSSIBLE');
+
+    const { m, s } = await midTerm();
+    expect(await failure(upgrade(m, smaller, 'MONTHLY'))).toBe('NOT_AN_UPGRADE');
+    expect(await failure(upgrade(m, planId, 'MONTHLY'))).toBe('NOT_AN_UPGRADE');
+    const first = await upgrade(m, bigger, 'MONTHLY');
+    // One unpaid plan at a time.
+    expect((await quote(m)).blocked).toMatch(/waiting for payment/);
+    expect(await failure(upgrade(m, bigger, 'ANNUAL'))).toBe('UPGRADE_NOT_POSSIBLE');
+
+    // A lapsed price can't be paid; a fresh quote replaces it.
+    await path(`subscriptions/${first.subscriptionId}`).update({ 'upgrade.validUntil': Timestamp.fromMillis(Date.now() - 1000) });
+    expect(await failure(pay(first.subscriptionId, first.amountDue.totalMinor))).toBe('UPGRADE_STALE');
+    const second = await upgrade(m, bigger, 'ANNUAL');
+    expect((await get(`subscriptions/${first.subscriptionId}`)).status).toBe('CANCELLED');
+    expect(second.amountDue.subscriptionMinor).toBe(500000 - 20000);
+
+    // If the plan it replaces is no longer current, the upgrade can't be paid either.
+    await path(`subscriptions/${s}`).update({ endAt: Timestamp.fromMillis(Date.now() - 1000) });
+    expect(await failure(pay(second.subscriptionId, second.amountDue.totalMinor))).toBe('UPGRADE_STALE');
+
+    // Only staff who manage subscriptions at the branch, or the member's own account.
+    const stranger = await createUser('stranger@stories.test');
+    expect(await failure(quote(m, stranger))).toBe('FORBIDDEN');
+    expect(await failure(call(me.upgrade, stranger, { orgId: org, memberId: m, planId: bigger, duration: 'MONTHLY' }))).toBe('FORBIDDEN');
+  });
+
+  it('lets a linked member see the quote and upgrade their own plan', async () => {
+    const { m } = await midTerm('Meera Rao');
+    await path(`members/${m}`).update({ email: 'meera@stories.test', emailLower: 'meera@stories.test' });
+    const meera = await createUser('meera@stories.test');
+    await call(me.overview, meera, {}, null);
+    const q = await call<Quote>(me.upgradeQuoteForMember, meera, { orgId: org, memberId: m }, null);
+    expect(q.current?.creditMinor).toBe(20000);
+    const up = await call<{ amountDue: { totalMinor: number } }>(me.upgrade, meera, { orgId: org, memberId: m, planId: bigger, duration: 'MONTHLY' });
+    expect(up.amountDue.totalMinor).toBe(80000);
   });
 });
 

@@ -8,10 +8,14 @@ import {
   currentTerm,
   type Membership,
   type MyPlan,
+  myUpgradeQuote,
   pendingSubscription,
   startOnlinePayment,
   subscribeToPlan,
+  upgradeMyPlan,
 } from '../data/me';
+import { useAsync } from '../shared/useAsync';
+import { PendingUpgrade, UpgradeChooser } from '../shared/Upgrade';
 import { day, money } from '../shared/format';
 import { TableWrap } from '../shared/ui';
 import { t } from '../strings';
@@ -28,6 +32,20 @@ const METHOD_LABELS: Record<string, string> = {
   ONLINE_LINK: 'Online (payment link)',
   ONLINE_UPI_QR: 'Online (UPI QR)',
 };
+
+/** Upgrade mid-term: the credit for the days left and the price of each bigger plan today. */
+function UpgradeSection({ m, busy, onUpgrade }: { m: Membership; busy: boolean; onUpgrade: Parameters<typeof UpgradeChooser>[0]['onUpgrade'] }) {
+  const quote = useAsync(() => myUpgradeQuote(m), [m.orgId, m.memberId, m.subscriptions.length]);
+  // Nothing to offer (already on the biggest plan, or the term is about to end): stay out of the way.
+  if (quote.loading || quote.error || !quote.data || !quote.data.options.length) return null;
+  return (
+    <section className="card upgrade-card" aria-labelledby="upgrade-title">
+      <h2 id="upgrade-title">{t.upTitle}</h2>
+      <p className="muted">{t.upIntro}</p>
+      <UpgradeChooser quote={quote.data} busy={busy} onUpgrade={onUpgrade} />
+    </section>
+  );
+}
 
 export function MembershipPage() {
   return (
@@ -120,20 +138,24 @@ function MembershipBody({ m }: { m: Membership }) {
         <section className="card pay-card">
           <h2>{t.meCompletePayment}</h2>
           <p>{t.mePendingFor(planWithOption(pending.planSnapshot))}</p>
-          <dl className="facts">
-            <dt>{t.meFee}</dt>
-            <dd>{money(pending.amountDue.subscriptionMinor)}</dd>
-            {pending.amountDue.depositMinor > 0 && (
-              <>
-                <dt>{t.meDepositTopUp}</dt>
-                <dd>{money(pending.amountDue.depositMinor)}</dd>
-              </>
-            )}
-            <dt>{t.meTotal}</dt>
-            <dd>
-              <strong>{money(pending.amountDue.totalMinor)}</strong>
-            </dd>
-          </dl>
+          {pending.kind === 'UPGRADE' && pending.upgrade ? (
+            <PendingUpgrade upgrade={pending.upgrade} planName={planWithOption(pending.planSnapshot)} amountDue={pending.amountDue} />
+          ) : (
+            <dl className="facts">
+              <dt>{t.meFee}</dt>
+              <dd>{money(pending.amountDue.subscriptionMinor)}</dd>
+              {pending.amountDue.depositMinor > 0 && (
+                <>
+                  <dt>{t.meDepositTopUp}</dt>
+                  <dd>{money(pending.amountDue.depositMinor)}</dd>
+                </>
+              )}
+              <dt>{t.meTotal}</dt>
+              <dd>
+                <strong>{money(pending.amountDue.totalMinor)}</strong>
+              </dd>
+            </dl>
+          )}
           <div className="row">
             {m.branch.onlinePayments ? (
               <>
@@ -154,6 +176,10 @@ function MembershipBody({ m }: { m: Membership }) {
             </button>
           </div>
         </section>
+      )}
+
+      {!pending && term && m.member.status === 'ACTIVE' && (
+        <UpgradeSection m={m} busy={busy === 'upgrade'} onUpgrade={(o) => void act('upgrade', () => upgradeMyPlan(m, o), t.upCreated)} />
       )}
 
       {!pending && (
@@ -224,7 +250,7 @@ function MembershipBody({ m }: { m: Membership }) {
                 </span>
                 <span className="muted small">
                   {label(s.status === 'PENDING_PAYMENT' ? 'AWAITING_PAYMENT' : s.status)}
-                  {s.startAt && s.endAt ? ` · ${day(s.startAt)} – ${day(s.endAt)}` : ''}
+                  {s.startAt && s.endAt ? ` · ${day(s.startAt)} – ${day(s.status === 'UPGRADED' && s.endedAt ? s.endedAt : s.endAt)}` : ''}
                 </span>
               </li>
             ))}

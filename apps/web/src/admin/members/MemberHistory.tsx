@@ -35,9 +35,12 @@ export function SubscriptionHistory({ subs, loading, error, onRetry }: { subs: S
             <tr key={s.id}>
               <td>
                 {planWithOption(s.planSnapshot)}
-                <div className="muted small">{s.kind === 'RENEWAL' ? lt.renewal : lt.newSubscription}</div>
+                <div className="muted small">{s.kind === 'RENEWAL' ? lt.renewal : s.kind === 'UPGRADE' ? lt.upgradeKind : lt.newSubscription}</div>
               </td>
-              <td className="nowrap">{s.startAt ? `${day(s.startAt)} → ${day(s.endAt)}` : '—'}</td>
+              <td className="nowrap">
+                {s.startAt ? `${day(s.startAt)} → ${day(s.endAt)}` : '—'}
+                {s.status === 'UPGRADED' && s.endedAt ? <div className="muted small">{lt.upgradedOn(day(s.endedAt))}</div> : null}
+              </td>
               <td className="nowrap">{money(s.amountDue.totalMinor)}</td>
               <td>
                 <StatusBadge status={s.status} />

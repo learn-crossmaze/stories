@@ -61,6 +61,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `members-indexList` (query) — one-time fill of plan/renewal date for a branch's older members | `members.view` at the branch |
 | Plans | `plans-create/update/archive` (`options[]`: 1–4 of `{duration, priceMinor}`; `discount`: `{type AMOUNT|PERCENT, value, from, to, durations[], label}` or null; see SUBSCRIPTIONS.md) | `plans.manage` |
 | Subscriptions | `subscriptions-create/cancelPending` (`duration`: the billing option; optional when the plan has one) | `subscriptions.manage` |
+| | `subscriptions-upgradeQuote` (query: `memberId`; returns `current` with `termDays`, `unusedDays`, `creditMinor`, and `options` with fee, deposit, total and new dates, or `blocked`), `subscriptions-upgrade` (`memberId, planId, duration`) — pro-rated mid-term upgrade; members: `me-upgradeQuote`, `me-upgrade` | `subscriptions.manage` at the member's branch; members for their own or their wards' memberships |
 | Payments | `payments-recordOffline` | `payments.recordOffline` |
 | | `payments-createRequest` (`subscriptionId, channel: LINK\|QR, requestId`), `payments-cancelRequest` | `payments.recordOffline` at the subscription's branch |
 | | `payments-checkRequest` (query) | `payments.view` |

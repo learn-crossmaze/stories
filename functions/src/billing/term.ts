@@ -24,7 +24,7 @@ const live = (s: DocumentSnapshot | null, now: number) =>
  * pre-paid renewal has started, that renewal is used and `rollover` says how
  * to update the member. Returns null when there is no active term.
  */
-export async function currentTerm(tx: Transaction, orgId: string, member: Member): Promise<Term | null> {
+export async function currentTerm(tx: Pick<Transaction, 'get'>, orgId: string, member: Member): Promise<Term | null> {
   const now = Date.now();
   const read = (id: string | null) => (id ? tx.get(db.doc(`orgs/${orgId}/subscriptions/${id}`)) : Promise.resolve(null));
   const [current, next] = await Promise.all([read(member.activeSubscriptionId), read(member.nextSubscriptionId)]);
