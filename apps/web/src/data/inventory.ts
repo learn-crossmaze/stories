@@ -2,6 +2,7 @@
 import { collection, doc, type DocumentSnapshot, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
 import { call, toApiError } from './api';
+import { searchBooks } from './catalogue';
 import { Condition, CopyStatus, db, page, withId } from './common';
 
 export interface Copy {
@@ -56,6 +57,23 @@ export async function copiesOfBook(orgId: string, branchId: string, bookId: stri
     query(collection(db(), `orgs/${orgId}/copies`), where('currentBranchId', '==', branchId), where('bookId', '==', bookId), orderBy('code'), limit(200)),
   );
   return snap.docs.map((d) => withId<Copy>(d));
+}
+
+/**
+ * Copies at the branch whose title matches a word typed (the catalogue's title
+ * search), ordered by title then copy code.
+ */
+export async function searchCopiesByTitle(orgId: string, branchId: string, q: string): Promise<Copy[]> {
+  const books = (await searchBooks(q, '')).items;
+  const ids = books.map((b) => b.id);
+  const found: Copy[] = [];
+  for (let i = 0; i < ids.length; i += 30) {
+    const snap = await getDocs(
+      query(collection(db(), `orgs/${orgId}/copies`), where('currentBranchId', '==', branchId), where('bookId', 'in', ids.slice(i, i + 30)), limit(300)),
+    );
+    found.push(...snap.docs.map((d) => withId<Copy>(d)));
+  }
+  return found.sort((a, b) => a.bookTitle.localeCompare(b.bookTitle) || a.code.localeCompare(b.code));
 }
 
 /** Finds a scanned copy at the branch (barcode or code). */

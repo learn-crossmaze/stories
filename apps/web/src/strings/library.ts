@@ -73,6 +73,8 @@ export const lt = {
   inventoryTitle: 'Inventory',
   allStatuses: 'All statuses',
   findCopy: 'Find a copy',
+  searchCopiesByTitle: 'Search by title',
+  noCopiesMatch: (q: string) => `No copies here match “${q}”.`,
   copyNotFound: 'No copy with that code in this organization.',
   copiesEmpty: 'No copies here yet. Add copies from a book in the catalogue.',
   locations: 'Shelf locations',
