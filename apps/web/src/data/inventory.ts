@@ -1,7 +1,7 @@
 // Physical copies, their events and shelf locations.
-import { collection, doc, type DocumentSnapshot, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
+import { collection, doc, type DocumentSnapshot, getCountFromServer, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { call, toApiError } from './api';
+import { call, command, toApiError } from './api';
 import { searchBooks } from './catalogue';
 import { Condition, CopyStatus, db, page, withId } from './common';
 
@@ -74,6 +74,37 @@ export async function searchCopiesByTitle(orgId: string, branchId: string, q: st
     found.push(...snap.docs.map((d) => withId<Copy>(d)));
   }
   return found.sort((a, b) => a.bookTitle.localeCompare(b.bookTitle) || a.code.localeCompare(b.code));
+}
+
+/**
+ * Copies on the floor but not on a shelf: new stock received without a shelf,
+ * and returned books that passed inspection (functions/src/inventory/shelve.ts).
+ */
+const unshelvedAt = (orgId: string, branchId: string) =>
+  query(collection(db(), `orgs/${orgId}/copies`), where('currentBranchId', '==', branchId), where('status', '==', 'AVAILABLE'), where('locationId', '==', null));
+
+export const UNSHELVED_PAGE = 300;
+
+export async function unshelvedCopies(orgId: string, branchId: string): Promise<Copy[]> {
+  const snap = await getDocs(query(unshelvedAt(orgId, branchId), orderBy('code'), limit(UNSHELVED_PAGE)));
+  return snap.docs.map((d) => withId<Copy>(d));
+}
+
+export async function unshelvedCount(orgId: string, branchId: string): Promise<number> {
+  return (await getCountFromServer(unshelvedAt(orgId, branchId))).data().count;
+}
+
+/** Copies per call to copies-shelve. */
+export const SHELVE_BATCH = 100;
+
+/** Puts copies on one shelf, a batch at a time; returns how many moved. */
+export async function shelveCopies(orgId: string, branchId: string, locationId: string, copyIds: string[]): Promise<number> {
+  let shelved = 0;
+  for (let i = 0; i < copyIds.length; i += SHELVE_BATCH) {
+    const res = await command<{ shelved: number }>('copies-shelve', { orgId, branchId, locationId, copyIds: copyIds.slice(i, i + SHELVE_BATCH) });
+    shelved += res.shelved;
+  }
+  return shelved;
 }
 
 /** Finds a scanned copy at the branch (barcode or code). */

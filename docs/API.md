@@ -52,6 +52,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Catalogue | `books-create/update/archive/restore/delete/setNumbering/setCover`, `books-bulkCreate` (`items`: 1–25 looked-up titles; returns `created` and `skipped`) (`bookId, image` base64 or `null`, or `imageUrl` from a lookup), `books-lookup` (query: `q` title or ISBN), `authors-`, `publishers-`, `categories-` `create/rename/archive` | `books.create` (HO, BM, LIB, CM) for `books-create`, `books-bulkCreate`, `books-lookup`, `*-create` and a first cover; `books.edit` (HO) for the rest; in a corporate org (or Super Admin) |
 | Inventory | `copies-acquire/relocate/recordCondition/inspect/repair/found`, `locations-create/archive` | `copies.manage` at the copy's branch |
 | | `copies-receive` (`branchId, locationId, condition, items`: 1–25 of `{bookId}` or `{book}` (a looked-up or typed title) with `quantity`, `acquisitionCostMinor`; ≤ 100 copies) | `copies.manage` at the branch; `books.create` too when a title is new |
+| | `copies-shelve` (`branchId, locationId, copyIds`: 1–100; returns `shelved`, `unchanged`) — puts copies at the branch on one shelf | `copies.manage` at the branch |
 | | `copies-markLost/retire` | `copies.writeOff` |
 | | `copies-availability` (query) | any signed-in user |
 | | `copies-availabilityMany` (query) — per-branch counts for up to 60 titles (catalogue search) | any signed-in user |

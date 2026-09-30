@@ -11,6 +11,7 @@ import { pendingLeave } from '../../data/leave';
 import { submittedRuns } from '../../data/payroll';
 import { CheckInCard } from '../people/MyAttendance';
 import { memberCounts, RENEWAL_DUE_DAYS, type RenewalFilter } from '../../data/members';
+import { unshelvedCount } from '../../data/inventory';
 import { listStaff } from '../../data/org';
 import { ht } from '../../strings/hr';
 import { useAsync } from '../../shared/useAsync';
@@ -53,6 +54,9 @@ export function DashboardPage() {
   const cataloguer = !!org && can(claims, 'books.edit', org.id);
   const catalogue = useAsync(() => (cataloguer ? catalogueCounts(monthIST()) : Promise.resolve(null)), [cataloguer]);
   const members = useAsync(() => (org && branch && desk ? memberCounts(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, desk]);
+  // New and returned books that are back on the floor but not on a shelf yet.
+  const shelver = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
+  const unshelved = useAsync(() => (org && branch && shelver ? unshelvedCount(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, shelver]);
 
   const verifier = !!org && can(claims, 'documents.verify', org.id);
   const docs = useAsync(async () => {
@@ -84,7 +88,7 @@ export function DashboardPage() {
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   // "All clear" only once everything has loaded; a part that fails says so instead of hiding its items.
-  const parts = [staff, counts, members, catalogue, docs, att];
+  const parts = [staff, counts, members, unshelved, catalogue, docs, att];
   const loading = parts.some((p) => p.loading);
   const failed = parts.some((p) => p.error);
   const retry = () => parts.filter((p) => p.error).forEach((p) => p.reload());
@@ -104,6 +108,7 @@ export function DashboardPage() {
   }
   const c = counts.data;
   if (c?.inspection) todos.push({ label: `${c.inspection} ${lt.awaitingInspection.toLowerCase()}`, to: paths.adminDesk });
+  if (unshelved.data) todos.push({ label: lt.todoUnshelved(unshelved.data), to: paths.adminShelve });
   if (c?.incoming) todos.push({ label: `${c.incoming} ${lt.incomingTransfers.toLowerCase()}`, to: paths.adminTransfers });
   const d = docs.data;
   if (d?.pending.length) todos.push({ label: ht.todoDocsPending(d.pending.length), to: paths.adminDocuments });
@@ -173,7 +178,8 @@ export function DashboardPage() {
             <Stat value={c.exchangesToday} label={lt.exchangesToday} to={paths.adminDesk} />
             <Stat value={c.holds} label={lt.holdsReady} to={paths.adminReservations} />
             <Stat value={c.waiting} label={lt.waitingReservations} to={paths.adminReservations} />
-            <Stat value={c.inspection} label={lt.awaitingInspection} to={paths.adminInventory} />
+            <Stat value={c.inspection} label={lt.awaitingInspection} to={paths.adminDesk} />
+            {unshelved.data != null && <Stat value={unshelved.data} label={lt.unshelved} to={paths.adminShelve} />}
             <Stat value={c.incoming} label={lt.incomingTransfers} to={paths.adminTransfers} />
           </div>
         </section>

@@ -22,6 +22,7 @@ const DeskPage = lazyPage(() => import('./circulation/Desk'), 'DeskPage');
 const CopyDetailPage = lazyPage(() => import('./inventory/Inventory'), 'CopyDetailPage');
 const InventoryPage = lazyPage(() => import('./inventory/Inventory'), 'InventoryPage');
 const LabelsPage = lazyPage(() => import('./inventory/Inventory'), 'LabelsPage');
+const ShelvePage = lazyPage(() => import('./inventory/Shelve'), 'ShelvePage');
 const MemberDetailPage = lazyPage(() => import('./members/MemberDetail'), 'MemberDetailPage');
 const MembersPage = lazyPage(() => import('./members/Members'), 'MembersPage');
 const PaymentsPage = lazyPage(() => import('./members/Payments'), 'PaymentsPage');
@@ -73,6 +74,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminBooksBulk, guard(paths.adminBooksBulk, <BulkAddBooksPage />)],
         [paths.adminBook(':bookId'), guard(paths.adminBooks, <BookDetailPage />)],
         [paths.adminInventory, guard(paths.adminInventory, <InventoryPage />)],
+        [paths.adminShelve, guard(paths.adminShelve, <ShelvePage />)],
         [paths.adminCopy(':copyId'), guard(paths.adminInventory, <CopyDetailPage />)],
         [paths.adminLabels, guard(paths.adminInventory, <LabelsPage />)],
         [paths.adminReservations, guard(paths.adminReservations, <ReservationsPage />)],

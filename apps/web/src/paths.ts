@@ -25,6 +25,7 @@ export const paths = {
   adminInventory: '/ops/inventory',
   adminCopy: (id: string) => `/ops/inventory/${id}`,
   adminLabels: '/ops/labels',
+  adminShelve: '/ops/inventory/shelve',
   adminReservations: '/ops/reservations',
   adminTransfers: '/ops/transfers',
   adminMembers: '/ops/members',
