@@ -18,12 +18,13 @@ export const PROFILE_FIELDS = [
   'permanentAddress',
   'emergency',
   'pan',
+  'aadhaar',
   'uan',
   'esiNumber',
   'bank',
 ] as const;
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
-export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'bank'];
+export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'aadhaar', 'bank'];
 
 export const FIELD_LABELS: Record<ProfileField, string> = {
   dob: 'Date of birth',
@@ -35,6 +36,7 @@ export const FIELD_LABELS: Record<ProfileField, string> = {
   permanentAddress: 'Permanent address',
   emergency: 'Emergency contact',
   pan: 'PAN',
+  aadhaar: 'Aadhaar number',
   uan: 'UAN (PF)',
   esiNumber: 'ESI number',
   bank: 'Salary bank account',
@@ -54,7 +56,7 @@ export async function requiredFields(orgId: string): Promise<ProfileField[]> {
 export const saveRequiredFields = (orgId: string, fields: ProfileField[]) => command('hr-setSelfOnboarding', { orgId, requiredFields: fields });
 
 export const hasField = (p: PrivateProfile, f: ProfileField) =>
-  f === 'emergency' ? !!(p.emergencyName && p.emergencyPhone) : f === 'bank' ? !!p.bank?.last4 : !!(p as Record<string, unknown>)[f];
+  f === 'emergency' ? !!(p.emergencyName && p.emergencyPhone) : f === 'bank' ? !!p.bank?.last4 : f === 'aadhaar' ? !!p.aadhaarLast4 : !!(p as Record<string, unknown>)[f];
 
 export interface OnboardingItem {
   key: string;

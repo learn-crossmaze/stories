@@ -71,6 +71,8 @@ export interface PrivateProfile {
   emergencyRelation?: string;
   emergencyPhone?: string;
   pan?: string;
+  /** Last four digits; the full Aadhaar number is only on the server (employees-revealAadhaar). */
+  aadhaarLast4?: string;
   uan?: string;
   esiNumber?: string;
   bank?: { accountHolder: string; bankName: string; ifsc: string; last4: string };

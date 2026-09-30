@@ -81,6 +81,7 @@ export const ht = {
   personalTitle: 'Personal and statutory details',
   editPersonal: 'Edit personal details',
   dob: 'Date of birth',
+  aadhaar: 'Aadhaar number',
   gender: 'Gender',
   genders: { '': 'Not given', FEMALE: 'Female', MALE: 'Male', OTHER: 'Other' } as Record<string, string>,
   bloodGroup: 'Blood group',

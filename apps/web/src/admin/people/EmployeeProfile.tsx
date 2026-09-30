@@ -22,6 +22,8 @@ import { EmployeeOffersPanel } from './OfferLetters';
 import { EmployeeDialog, EmployeeStatusBadge } from './People';
 import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
+import { command } from '../../data/api';
+import { AadhaarValue } from '../../shared/aadhaar';
 
 type Tab = 'overview' | 'personal' | 'documents' | 'offers' | 'attendance' | 'leave' | 'salary' | 'bank' | 'lifecycle' | 'history' | 'access';
 
@@ -156,6 +158,17 @@ export function EmployeeProfilePage() {
                 value={p.emergencyName ? `${p.emergencyName}${p.emergencyRelation ? ` (${p.emergencyRelation})` : ''} · ${p.emergencyPhone ?? ''}` : null}
               />
               <Fact label={ht.pan} value={p.pan && <span className="mono">{p.pan}</span>} />
+              <Fact
+                label={ht.aadhaar}
+                value={
+                  p.aadhaarLast4 && (
+                    <AadhaarValue
+                      last4={p.aadhaarLast4}
+                      reveal={canPrivate ? () => command<{ aadhaar: string }>('employees-revealAadhaar', { orgId, employeeId: e.id }).then((r) => r.aadhaar) : undefined}
+                    />
+                  )
+                }
+              />
               <Fact label={ht.uan} value={p.uan && <span className="mono">{p.uan}</span>} />
               <Fact label={ht.esiNumber} value={p.esiNumber && <span className="mono">{p.esiNumber}</span>} />
             </dl>

@@ -204,7 +204,7 @@ export const joinOptions = query('me-joinOptions', z.strictObject({}), async () 
  */
 export const join = command(
   'me-join',
-  z.strictObject({ orgId: id, branchId: id, fullName: profile.fullName, dob: profile.dob, phone: z.string().trim().min(8).max(20), address: profile.address }),
+  z.strictObject({ orgId: id, branchId: id, fullName: profile.fullName, dob: profile.dob, phone: z.string().trim().min(8).max(20), address: profile.address, aadhaar: profile.aadhaar }),
   async ({ actor, input, requestId }, tx) => {
     if (!actor.email || !actor.emailVerified) throw errors.conflict('EMAIL_NOT_VERIFIED', 'Verify your email address first (check your inbox for the link), then sign up.');
     const org = await tx.get(db.doc(`orgs/${input.orgId}`));

@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { command } from '../../data/api';
 import { type Employee, type PrivateProfile, type Transition } from '../../data/hr';
+import { aadhaarError, aadhaarHint, cleanAadhaar } from '../../shared/aadhaar';
 import { cleanIfsc, IFSC_PATTERN } from '../../shared/ifsc';
 import { t } from '../../strings';
 import { Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../components/Dialog';
@@ -37,9 +38,16 @@ export function PersonalDialog({
     uan: profile.uan ?? '',
     esiNumber: profile.esiNumber ?? '',
   });
+  const [aadhaar, setAadhaar] = useState('');
   const set = (k: keyof typeof f) => (v: string) => setF((x) => ({ ...x, [k]: v }));
   const { busy, error, submit } = useSubmit(async () => {
-    await command('employees-setPrivate', { orgId, employeeId: employee.id, ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim()])) });
+    if (aadhaarError(aadhaar)) return;
+    await command('employees-setPrivate', {
+      orgId,
+      employeeId: employee.id,
+      ...Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.trim()])),
+      aadhaar: cleanAadhaar(aadhaar),
+    });
     onSaved();
     onClose();
   });
@@ -58,6 +66,7 @@ export function PersonalDialog({
           <TextField label={ht.personalEmail} type="email" value={f.personalEmail} onChange={set('personalEmail')} />
           <TextField label={ht.personalPhone} type="tel" value={f.personalPhone} onChange={set('personalPhone')} />
           <TextField label={ht.pan} value={f.pan} onChange={set('pan')} />
+          <TextField label={ht.aadhaar} value={aadhaar} onChange={setAadhaar} autoComplete="off" hint={aadhaarHint(profile.aadhaarLast4)} error={aadhaarError(aadhaar) || undefined} />
           <TextField label={ht.uan} value={f.uan} onChange={set('uan')} />
           <TextField label={ht.esiNumber} value={f.esiNumber} onChange={set('esiNumber')} />
           <TextField label={ht.emergencyName} value={f.emergencyName} onChange={set('emergencyName')} />

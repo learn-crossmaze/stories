@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import { command } from '../../data/api';
+import { AadhaarValue, aadhaarError, aadhaarHint, cleanAadhaar } from '../../shared/aadhaar';
 import { type PrivateProfile } from '../../data/hr';
 import { myOnboarding, onboardingChanged, type OnboardingStatus, type ProfileField } from '../../data/selfOnboarding';
 import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows } from '../../shared/ui';
@@ -19,7 +20,7 @@ import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 
 const BLOOD_GROUPS = ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
-type Form = Required<Omit<PrivateProfile, 'bank'>>;
+type Form = Required<Omit<PrivateProfile, 'bank' | 'aadhaarLast4'>>;
 
 const fromProfile = (p: PrivateProfile): Form => ({
   dob: p.dob ?? '',
@@ -65,6 +66,7 @@ function Progress({ s }: { s: OnboardingStatus }) {
 function DetailsForm({ orgId, s, onSaved }: { orgId: string; s: OnboardingStatus; onSaved: () => void }) {
   const [f, setF] = useState<Form>(() => fromProfile(s.profile));
   const [same, setSame] = useState(false);
+  const [aadhaar, setAadhaar] = useState('');
   const [saved, setSaved] = useState(false);
   useEffect(() => setF(fromProfile(s.profile)), [s.profile]);
   const need = (k: ProfileField) => s.required.includes(k);
@@ -74,8 +76,15 @@ function DetailsForm({ orgId, s, onSaved }: { orgId: string; s: OnboardingStatus
     setF((x) => ({ ...x, [k]: v }));
   };
   const { busy, error, submit } = useSubmit(async () => {
+    if (aadhaarError(aadhaar)) return;
     const body = { ...f, permanentAddress: same ? f.currentAddress : f.permanentAddress };
-    await command('employees-setPrivate', { orgId, employeeId: s.employee.id, ...Object.fromEntries(Object.entries(body).map(([k, v]) => [k, v.trim()])) });
+    await command('employees-setPrivate', {
+      orgId,
+      employeeId: s.employee.id,
+      ...Object.fromEntries(Object.entries(body).map(([k, v]) => [k, v.trim()])),
+      aadhaar: cleanAadhaar(aadhaar),
+    });
+    setAadhaar('');
     setSaved(true);
     onSaved();
   });
@@ -128,6 +137,25 @@ function DetailsForm({ orgId, s, onSaved }: { orgId: string; s: OnboardingStatus
         <div className="form-grid">
           <div id="ob-pan">
             <TextField label={label(ht.pan, 'pan')} value={f.pan} onChange={set('pan')} hint="ABCDE1234F" />
+          </div>
+          <div id="ob-aadhaar">
+            <TextField
+              label={label(ht.aadhaar, 'aadhaar')}
+              value={aadhaar}
+              onChange={(v) => {
+                setSaved(false);
+                setAadhaar(v);
+              }}
+              autoComplete="off"
+              hint={aadhaarHint(s.profile.aadhaarLast4)}
+              error={aadhaarError(aadhaar) || undefined}
+            />
+            {s.profile.aadhaarLast4 && (
+              <AadhaarValue
+                last4={s.profile.aadhaarLast4}
+                reveal={() => command<{ aadhaar: string }>('employees-revealAadhaar', { orgId, employeeId: s.employee.id }).then((r) => r.aadhaar)}
+              />
+            )}
           </div>
           <div id="ob-uan">
             <TextField label={label(ht.uan, 'uan')} value={f.uan} onChange={set('uan')} hint="12 digits" />

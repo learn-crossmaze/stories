@@ -66,6 +66,8 @@ export const lt = {
   condition: 'Condition',
   location: 'Shelf location',
   noLocation: 'Not shelved yet',
+  aadhaar: 'Aadhaar number (optional)',
+  aadhaarShort: 'Aadhaar',
   ownBarcodes: 'Existing label codes (optional, one per line)',
   ownBarcodesHint: 'Leave empty to print new Stories QR labels (the QR code holds the copy code).',
   added: (n: number) => `${n} cop${n === 1 ? 'y' : 'ies'} added.`,

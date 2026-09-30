@@ -251,6 +251,18 @@ describe('self-onboarding', () => {
     expect(done.map((i) => i.key).sort()).toEqual(['bank', 'emergency-contact', 'pan']);
     expect(done[0].doneBy).toBe(newcomer.email);
 
+    // Aadhaar: only the last four digits are readable; the employee and HR can see the full number (audited).
+    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details, aadhaar: '2341 2341 2346' });
+    const withAadhaar = (await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).data()!;
+    expect(withAadhaar.aadhaarLast4).toBe('2346');
+    expect(JSON.stringify(withAadhaar)).not.toContain('234123412346');
+    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details });
+    expect((await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).get('aadhaarLast4')).toBe('2346');
+    expect(await call(emp.revealAadhaar, newcomer, { orgId: org, employeeId })).toEqual({ aadhaar: '234123412346' });
+    expect(await call(emp.revealAadhaar, hr, { orgId: org, employeeId })).toEqual({ aadhaar: '234123412346' });
+    expect(await failure(call(emp.revealAadhaar, bm, { orgId: org, employeeId }))).toBe('FORBIDDEN');
+    expect(await failure(call(emp.setPrivate, newcomer, { orgId: org, employeeId, aadhaar: '123412341234' }))).toBe('INVALID_INPUT');
+
     // A second bank change goes through HR; HR can still change it.
     expect(await failure(call(emp.setBank, newcomer, { orgId: org, employeeId, ...bank, accountNumber: '999999999999' }))).toBe('BANK_ON_FILE');
     await call(emp.setBank, fin, { orgId: org, employeeId, ...bank, accountNumber: '111122223333' });

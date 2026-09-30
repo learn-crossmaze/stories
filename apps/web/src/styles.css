@@ -732,3 +732,5 @@ main h1[tabindex='-1']:focus { outline: none; }
 .ob-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 16px; border: 0; padding: 0; margin: 0 0 12px; }
 .ob-profile-card { margin-bottom: 16px; }
 .ob-profile-card h2 { margin-top: 0; }
+.btn-inline { min-height: 0; padding: 0 6px; font-size: inherit; vertical-align: baseline; }
+.aadhaar-value { display: inline-flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
