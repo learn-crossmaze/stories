@@ -58,7 +58,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
       icon: 'book',
       items: [
         { to: paths.adminBooks, label: t.navCatalogue, icon: 'book', requires: 'books.view' },
-        { to: paths.adminBooksBulk, label: lt.bulkNav, icon: 'plus', requires: 'books.create' },
+        { to: paths.adminBooksBulk, label: lt.bulkNav, icon: 'plus', requires: ['copies.manage', 'books.create'] },
         { to: paths.adminInventory, label: t.navInventory, icon: 'shelves', requires: 'books.view' },
       ],
     },

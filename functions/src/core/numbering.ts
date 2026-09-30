@@ -183,6 +183,44 @@ export async function reserveCodes(
   return { codes, number: counter.value, commit: () => counter.commit(count) };
 }
 
+/**
+ * Codes for several requests of one kind in one transaction, such as copies of
+ * several titles received together. Requests that share a counter take
+ * consecutive numbers from it, so no two get the same code (calling
+ * reserveCodes twice on one counter in a transaction would). Reads only; call
+ * `commit()` in the write phase.
+ */
+export async function reserveCodeBatch(
+  tx: Transaction,
+  opts: {
+    kind: CodeKind;
+    pattern: string;
+    base: string;
+    requests: { values: TokenValues; count: number; bookCode?: string }[];
+    taken?: (codes: string[]) => Promise<string[]>;
+  },
+) {
+  const now = new Date();
+  const paths = opts.requests.map((r) => counterPath(opts.kind, opts.pattern, r.values, opts.base, now, r.bookCode));
+  const counters = new Map<string, Awaited<ReturnType<typeof reserveCounter>>>();
+  for (const p of new Set(paths)) counters.set(p, await reserveCounter(tx, p));
+  const used = new Map<string, number>();
+  const codes = opts.requests.map((r, i) => {
+    const start = counters.get(paths[i])!.value + (used.get(paths[i]) ?? 0);
+    used.set(paths[i], (used.get(paths[i]) ?? 0) + r.count);
+    return Array.from({ length: r.count }, (_, k) => renderCode(opts.pattern, r.values, start + k, now));
+  });
+  const all = codes.flat();
+  const clash = new Set(all).size !== all.length ? [all.find((c, i) => all.indexOf(c) !== i)!] : opts.taken ? await opts.taken(all) : [];
+  if (clash.length) {
+    throw errors.conflict(
+      'CODE_TAKEN',
+      `The numbering pattern ${opts.pattern} produced ${clash[0]}, which is already in use. Change the pattern in the numbering settings.`,
+    );
+  }
+  return { codes, commit: () => counters.forEach((c, p) => c.commit(used.get(p)!)) };
+}
+
 /** Finds which of `codes` already exist in `collection` (field `code`). */
 export async function existingCodes(tx: Transaction, collection: string, codes: string[]) {
   const found: string[] = [];

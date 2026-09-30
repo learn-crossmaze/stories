@@ -119,6 +119,7 @@ export const PERMISSIONS = {
   "books.create": [
     "HO",
     "BM",
+    "LIB",
     "CM"
   ],
   "books.edit": [

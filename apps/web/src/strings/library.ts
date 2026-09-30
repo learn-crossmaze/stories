@@ -404,7 +404,39 @@ export const lt = {
 
   // add by ISBN (bulk)
   bulkTitle: 'Add books by ISBN',
-  bulkNav: 'Add by ISBN',
+  bulkNav: 'Receive books',
+  // Receiving a delivery (the same page, for staff who look after copies at the branch)
+  receiveTitle: 'Receive books',
+  receiveIntro: (branch: string, canAddTitles: boolean) =>
+    `Scan each book as it comes out of the box${branch ? ` at ${branch}` : ''}: scanning the same book again counts another copy. ${
+      canAddTitles ? 'Books new to the catalogue are looked up and added with it; ' : 'Books must already be in the catalogue; '
+    }one click adds every copy to the branch, ready for labels.`,
+  receiveDelivery: 'This delivery',
+  receiveNewTitles: 'For new titles',
+  receivePrice: 'Price per copy (₹)',
+  receiveCopies: 'Copies',
+  receiveRowPrice: 'Price (₹)',
+  receiveCopiesRow: (n: number) => `Copies, row ${n}`,
+  receivePriceRow: (n: number) => `Price per copy, row ${n}`,
+  receiveInCatalogue: 'In the catalogue.',
+  receiveCannotAdd: 'New title: ask head office or a branch manager to add it.',
+  receiveNotFound: 'Not found online. Type the title and author to add it:',
+  receiveOrType: 'Or type the title and author:',
+  receiveTitleLabel: 'Title',
+  receiveAuthorLabel: 'Author',
+  receiveTitleRow: (n: number) => `Title, row ${n}`,
+  receiveBumped: (row: number, copies: string) => `Same book as row ${row}: now ${copies} ${copies === '1' ? 'copy' : 'copies'}.`,
+  receiveAdded: (codes: string[], bookCode: string | null) =>
+    `${bookCode ? `Added as ${bookCode}; ` : ''}${codes.length} ${codes.length === 1 ? 'copy' : 'copies'}: ${codes.length > 3 ? `${codes[0]} … ${codes[codes.length - 1]}` : codes.join(', ')}`,
+  receiveSummary: (titles: number, copies: number, attention: number) =>
+    [`${titles} ${titles === 1 ? 'title' : 'titles'}, ${copies} ${copies === 1 ? 'copy' : 'copies'} ready`, attention && `${attention} need attention`].filter(Boolean).join(' · '),
+  receiveSubmit: (copies: number) => (copies ? `Receive ${copies} ${copies === 1 ? 'copy' : 'copies'}` : 'Receive books'),
+  receiveSaving: (done: number, total: number) => `Receiving ${done} of ${total} titles…`,
+  receiveDone: (copies: number, titles: number, created: number, allocated: number) =>
+    `Received ${copies} ${copies === 1 ? 'copy' : 'copies'} of ${titles} ${titles === 1 ? 'title' : 'titles'}${created ? ` (${created} new to the catalogue)` : ''}.${
+      allocated ? ` ${allocated} went straight to members waiting for them.` : ''
+    }`,
+  receiveLabels: (n: number) => `Print ${n} ${n === 1 ? 'label' : 'labels'}`,
   bulkIntro: 'Type or scan one ISBN per row (Enter moves to the next), or paste a list. Each row is checked and looked up straight away; add the good ones with one click.',
   bulkDefaults: 'For every book',
   bulkIsbnLabel: (n: number) => `ISBN, row ${n}`,

@@ -82,7 +82,7 @@ franchise org), BRANCH_MANAGER (BM, branch), LIBRARIAN (LIB, branch), DELIVERY_P
 
 Key permissions: `branches.view` (all staff), `branches.manage` (HO, FO), `departments.manage` (HO, HR, FO),
 `staff.view`/`staff.manageRoles` (HO, HR, FO, BM), `audit.view` (HO, FIN, HR, FO, BM), `books.view` (HO, FIN, FO,
-BM, LIB, DEL, CM), `books.create` (HO, BM, CM), `books.edit` (HO, CM), `books.delete` (HO, CM), `copies.manage`
+BM, LIB, DEL, CM), `books.create` (HO, BM, LIB, CM), `books.edit` (HO, CM), `books.delete` (HO, CM), `copies.manage`
 (HO, FO, BM, LIB), `books.transfer` (HO, FO, BM, LIB), `copies.writeOff` (HO, FIN, FO, BM), `members.view/manage`
 (HO, FIN, FO, BM, LIB), `loans.issue/return`, `exchanges.process`, `reservations.manage` (FO, BM, LIB),
 `subscriptions.manage` (HO, FIN, FO, BM, LIB), `plans.manage` (HO), `deposits.view` (HO, FIN, FO, BM, LIB),

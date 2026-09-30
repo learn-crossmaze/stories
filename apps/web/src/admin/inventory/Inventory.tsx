@@ -206,11 +206,18 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
 }
 
 export function InventoryPage() {
-  const { org } = useWorkspace();
+  const { org, branch } = useWorkspace();
+  const { claims } = useAuth();
+  const canReceive = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
   return (
     <>
-      <header className="page-header">
+      <header className="page-header page-header-row">
         <h1>{lt.inventoryTitle}</h1>
+        {canReceive && (
+          <Link className="btn btn-filled" to={paths.adminBooksBulk}>
+            <Icon name="plus" /> {lt.bulkNav}
+          </Link>
+        )}
       </header>
       <NeedBranch>{(branchId) => org && <BranchInventory orgId={org.id} branchId={branchId} />}</NeedBranch>
     </>

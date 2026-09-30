@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { money } from '../catalogue/model.js';
@@ -7,7 +7,8 @@ import { recordAudit } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
-import { branchPatterns, bookNumber, existingCodes, reserveCodes } from '../core/numbering.js';
+import { bookNumber } from '../core/numbering.js';
+import { planAcquisition } from './acquisition.js';
 import { id, reason } from '../core/schemas.js';
 import { copyRef, loadCopy, requireStatus, transition } from './copyOps.js';
 import { CONDITIONS, IN_STOCK } from './copyState.js';
@@ -15,13 +16,13 @@ import { CONDITIONS, IN_STOCK } from './copyState.js';
 const barcode = z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{4,32}$/, 'must be 4–32 letters, digits or dashes');
 const note = z.string().trim().max(300).default('');
 
-async function activeBranch(tx: FirebaseFirestore.Transaction, orgId: string, branchId: string) {
+export async function activeBranch(tx: FirebaseFirestore.Transaction, orgId: string, branchId: string) {
   const b = await tx.get(db.doc(`orgs/${orgId}/branches/${branchId}`));
   if (!b.exists || b.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
   return b;
 }
 
-async function activeLocation(tx: FirebaseFirestore.Transaction, orgId: string, branchId: string, locationId: string | null) {
+export async function activeLocation(tx: FirebaseFirestore.Transaction, orgId: string, branchId: string, locationId: string | null) {
   if (!locationId) return;
   const l = await tx.get(db.doc(`orgs/${orgId}/branches/${branchId}/locations/${locationId}`));
   if (!l.exists || l.get('status') !== 'ACTIVE') throw errors.notFound('Shelf location');
@@ -54,73 +55,16 @@ export const acquire = command(
     const book = await tx.get(db.doc(`books/${input.bookId}`));
     if (!book.exists || book.get('status') !== 'ACTIVE') throw errors.notFound('Active catalogue title');
     const bookCode = book.get('code') as string;
-    const counter = await reserveCodes(tx, {
-      kind: 'copy',
-      pattern: branchPatterns(branch).copy,
-      values: { BRANCH: branch.get('code'), BOOK: bookNumber(book) },
-      base: `orgs/${input.orgId}/counters`,
-      count: input.quantity,
-      bookCode,
-      taken: (c) => existingCodes(tx, `orgs/${input.orgId}/copies`, c),
+    const plan = await planAcquisition(tx, {
+      orgId: input.orgId,
+      branch,
+      locationId: input.locationId,
+      condition: input.condition,
+      actorUid: actor.uid,
+      lines: [{ bookId: input.bookId, bookCode, bookNumber: bookNumber(book), title: book.get('title') as string, quantity: input.quantity, acquisitionCostMinor: input.acquisitionCostMinor, barcodes: input.barcodes }],
     });
-    const { codes } = counter;
-    const barcodes = input.barcodes.length ? input.barcodes : codes;
-    const barcodeSnaps = await Promise.all(barcodes.map((b) => tx.get(db.doc(`orgs/${input.orgId}/barcodes/${b}`))));
-    const taken = barcodeSnaps.find((s) => s.exists);
-    if (taken) throw errors.conflict('DUPLICATE_BARCODE', `Barcode ${taken.id} is already used by another copy.`);
-    const waiting = await nextWaiting(tx, input.orgId, input.branchId, input.bookId, input.quantity);
-    const { holdHours } = waiting.length ? await readCirculationConfig(tx, input.orgId) : { holdHours: 0 };
-
-    counter.commit();
-    const copyIds: string[] = [];
-    codes.forEach((code, i) => {
-      const ref = db.collection(`orgs/${input.orgId}/copies`).doc();
-      copyIds.push(ref.id);
-      tx.create(db.doc(`orgs/${input.orgId}/barcodes/${barcodes[i]}`), { copyId: ref.id });
-      const copy = {
-        code,
-        barcode: barcodes[i],
-        bookId: input.bookId,
-        bookCode,
-        bookTitle: book.get('title'),
-        orgId: input.orgId,
-        owningBranchId: input.branchId,
-        currentBranchId: input.branchId,
-        locationId: input.locationId,
-        status: 'AVAILABLE',
-        condition: input.condition,
-        acquisitionCostMinor: input.acquisitionCostMinor,
-        acquiredAt: FieldValue.serverTimestamp(),
-        activeLoanId: null,
-        activeReservationId: null,
-        transferId: null,
-        lifetimeLoans: 0,
-        createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      };
-      tx.create(ref, copy);
-      tx.create(db.collection(`${ref.path}/events`).doc(), {
-        type: 'ACQUIRED', actorUid: actor.uid, fromStatus: null, toStatus: 'AVAILABLE', condition: input.condition,
-        note: null, ref: null, at: FieldValue.serverTimestamp(),
-      });
-    });
-    // Hand new copies to members already waiting for this title here.
-    waiting.forEach((res, i) => {
-      const ref = db.doc(`orgs/${input.orgId}/copies/${copyIds[i]}`);
-      tx.update(res.ref, {
-        status: 'ALLOCATED', allocatedCopyId: ref.id, allocatedCopyCode: codes[i], allocatedAt: FieldValue.serverTimestamp(),
-        holdUntil: Timestamp.fromMillis(Date.now() + holdHours * 3_600_000), updatedAt: FieldValue.serverTimestamp(),
-      });
-      tx.update(db.doc(`orgs/${input.orgId}/members/${res.get('memberId')}`), {
-        allocatedCount: FieldValue.increment(1),
-        waitingCount: FieldValue.increment(-1),
-      });
-      tx.update(ref, { status: 'RESERVED', activeReservationId: res.id });
-      tx.create(db.collection(`${ref.path}/events`).doc(), {
-        type: 'RESERVATION_ALLOCATED', actorUid: actor.uid, fromStatus: 'AVAILABLE', toStatus: 'RESERVED', condition: input.condition,
-        note: null, ref: { reservationId: res.id, memberId: res.get('memberId') }, at: FieldValue.serverTimestamp(),
-      });
-    });
+    plan.write();
+    const { codes, copyIds } = plan.results[0];
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'copies.acquire', entityType: 'book', entityId: input.bookId, branchId: input.branchId,
       after: { quantity: input.quantity, codes, acquisitionCostMinor: input.acquisitionCostMinor },

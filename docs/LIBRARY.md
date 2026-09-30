@@ -36,7 +36,27 @@ staff check everything before saving. The match's cover is imported when the boo
 `imageUrl`, allowed only from Google Books / Open Library hosts). If both sources are unreachable, the form says so and
 works as before.
 
-**Add books by ISBN (bulk):** *Collection → Add by ISBN* (`/ops/books/bulk`, or the button on the catalogue) is a
+**Receive books (a delivery):** *Collection → Receive books* (`/ops/books/bulk`, or the button on Inventory and on
+the catalogue) takes a delivery in one pass, for staff who look after copies at the branch in use (`copies.manage`):
+
+- **Scan each book** as it comes out of the box. The row shows the title from **our catalogue first** (by ISBN, no
+  outside lookup, so restocking works offline and for everyone), otherwise the public-catalogue match as below.
+  Scanning a book already on the list **adds a copy to that row** (the scan field stays ready for the next book), so
+  a stack of 5 copies is 5 scans or one row with *Copies* = 5.
+- **New titles:** looked up (see below); if nobody knows the ISBN, or the lookup services are down, type the title
+  and author in the row. Adding titles needs `books.create` (head office, branch managers, librarians, catalogue
+  managers) in a corporate organization; others can only receive titles already in the catalogue.
+- **This delivery:** shelf location, condition and price per copy are set once (price can be changed per row).
+- **One click** (*Receive N copies*, `copies-receive`) adds the new titles to the catalogue and every copy to the
+  branch in one transaction per batch of up to 25 titles / 100 copies: copy codes from the branch's pattern
+  (copies of several titles sharing one counter get consecutive numbers), barcodes, `ACQUIRED` events, and members
+  already waiting for a title get the new copies first. An ISBN that turns out to be in the catalogue just gets
+  copies; the same title listed twice is one line. Then covers are imported and **Print N labels** opens the label
+  sheet for exactly the new copies.
+- `copies-receive` shares its code with `books-bulkCreate` (planning new titles) and `copies-acquire` (planning
+  copies), so receiving, "Add by ISBN" and *Add copies* on a book page number and record copies the same way.
+
+**Add books by ISBN (titles only):** the same page, for catalogue managers without a branch, is a
 list of rows. Type, scan or paste ISBNs (pasting several fills several rows); each one is checked as soon as it is a
 valid ISBN-10/13, looked up with `books-lookup`, and the row shows the cover, title, authors and year, or says the
 ISBN is not valid, repeated, not found or already in the catalogue. Rows whose match has no author ask for one. Age

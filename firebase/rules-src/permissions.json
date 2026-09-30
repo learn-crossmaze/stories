@@ -30,7 +30,7 @@
     "config.manage": ["HO"],
 
     "books.view": ["HO", "FIN", "FO", "BM", "LIB", "DEL", "CM"],
-    "books.create": ["HO", "BM", "CM"],
+    "books.create": ["HO", "BM", "LIB", "CM"],
     "books.edit": ["HO", "CM"],
     "books.delete": ["HO", "CM"],
     "copies.manage": ["HO", "FO", "BM", "LIB"],
