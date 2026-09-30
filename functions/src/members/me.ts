@@ -13,6 +13,7 @@ import { createMember, profile } from './members.js';
 import { requestOnlinePayment, settleOpenRequests } from '../billing/online.js';
 import { type Plan, pricesFor } from '../billing/plans.js';
 import { cancelPendingSubscription, createSchema, startSubscription } from '../billing/subscriptions.js';
+import { quoteSchema, startUpgrade, upgradeQuote, upgradeSchema } from '../billing/upgrade.js';
 
 // Member self-service ("me-*"): a signed-in member sees and acts on their own
 // memberships and those of the children they are guardian for. Access is by
@@ -260,6 +261,16 @@ export const addChild = command(
 /** A member (or their guardian) chooses a plan: a subscription waiting for payment is created. */
 export const subscribe = command('me-subscribe', createSchema, (ctx, tx) =>
   startSubscription(ctx, tx, (member) => requireOwner(ctx.actor, member, ctx.input.orgId, tx)),
+);
+
+/** What upgrading now would cost, with the credit for the days left on the current plan. */
+export const upgradeQuoteForMember = query('me-upgradeQuote', quoteSchema, (ctx) =>
+  upgradeQuote(ctx, (member) => requireOwner(ctx.actor, member, ctx.input.orgId)),
+);
+
+/** A member (or their guardian) upgrades mid-term: a pro-rated upgrade waiting for payment is created. */
+export const upgrade = command('me-upgrade', upgradeSchema, (ctx, tx) =>
+  startUpgrade(ctx, tx, (member) => requireOwner(ctx.actor, member, ctx.input.orgId, tx)),
 );
 
 /** Drops the member's own unpaid subscription (to choose a different plan). */

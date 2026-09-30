@@ -1,7 +1,9 @@
 import { useState } from 'react';
 
 import { command } from '../../data/api';
-import { listPlans, type Plan, pricesFor, type Subscription } from '../../data/billing';
+import { listPlans, type Plan, pricesFor, startUpgrade, type Subscription, upgradeQuote } from '../../data/billing';
+import { toApiError } from '../../data/api';
+import { PendingUpgrade, UpgradeChooser } from '../../shared/Upgrade';
 import { type Book } from '../../data/catalogue';
 import { DURATION_LABELS, type Duration, planWithOption } from '../../data/common';
 import { type Member } from '../../data/members';
@@ -34,23 +36,65 @@ export function PaymentDialog({ orgId, sub, onClose, onDone }: { orgId: string; 
   return (
     <Dialog title={lt.recordPayment} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <dl className="facts">
-          <dt>{lt.planFee}</dt>
-          <dd>
-            {money(sub.amountDue.subscriptionMinor)} · {planWithOption(sub.planSnapshot)}
-          </dd>
-          <dt>{lt.depositTopUp}</dt>
-          <dd>{money(sub.amountDue.depositMinor)}</dd>
-          <dt>{lt.total}</dt>
-          <dd>
-            <strong>{money(sub.amountDue.totalMinor)}</strong>
-          </dd>
-        </dl>
+        {sub.kind === 'UPGRADE' && sub.upgrade ? (
+          <PendingUpgrade upgrade={sub.upgrade} planName={planWithOption(sub.planSnapshot)} amountDue={sub.amountDue} />
+        ) : (
+          <dl className="facts">
+            <dt>{lt.planFee}</dt>
+            <dd>
+              {money(sub.amountDue.subscriptionMinor)} · {planWithOption(sub.planSnapshot)}
+            </dd>
+            <dt>{lt.depositTopUp}</dt>
+            <dd>{money(sub.amountDue.depositMinor)}</dd>
+            <dt>{lt.total}</dt>
+            <dd>
+              <strong>{money(sub.amountDue.totalMinor)}</strong>
+            </dd>
+          </dl>
+        )}
         <SelectField label={lt.paymentMethod} value={method} onChange={setMethod} options={[...METHODS]} />
         {method !== 'OFFLINE_CASH' && <TextField label={lt.reference} value={reference} onChange={setReference} />}
         <FormError error={error} />
         <DialogActions busy={busy} submitLabel={`${lt.recordPayment} · ${money(sub.amountDue.totalMinor)}`} onCancel={onClose} />
       </form>
+    </Dialog>
+  );
+}
+
+/** Upgrade mid-term: the quote with the pro-rata credit, then an upgrade waiting for payment. */
+export function UpgradeDialog({ orgId, member, onClose, onCreated }: { orgId: string; member: Member; onClose: () => void; onCreated: () => void }) {
+  const quote = useAsync(() => upgradeQuote(orgId, member.id), [orgId, member.id]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Dialog title={lt.upgradeTitle(member.fullName)} onClose={onClose}>
+      <p className="muted">{t.upIntro}</p>
+      {quote.loading ? (
+        <SkeletonRows rows={3} />
+      ) : quote.error || !quote.data ? (
+        <p className="form-error" role="alert">
+          {quote.error}
+        </p>
+      ) : (
+        <UpgradeChooser
+          quote={quote.data}
+          busy={busy}
+          error={error}
+          onUpgrade={async (o) => {
+            setBusy(true);
+            setError(null);
+            try {
+              await startUpgrade(orgId, member.id, o);
+              onCreated();
+              onClose();
+            } catch (e) {
+              setError(toApiError(e).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}
     </Dialog>
   );
 }

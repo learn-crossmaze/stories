@@ -1,5 +1,6 @@
 import { call, command } from './api';
 import type { AgeGroup, Duration } from './common';
+import type { SubscriptionUpgrade, UpgradeOption, UpgradeQuote } from './billing';
 
 // Member self-service (functions/src/members/me.ts). Dates arrive as ISO strings.
 
@@ -17,8 +18,10 @@ export interface MyPlan {
 
 export interface MySubscription {
   id: string;
-  kind: 'NEW' | 'RENEWAL';
-  status: 'PENDING_PAYMENT' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+  kind: 'NEW' | 'RENEWAL' | 'UPGRADE';
+  status: 'PENDING_PAYMENT' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'UPGRADED';
+  upgrade?: SubscriptionUpgrade;
+  endedAt?: string | null;
   planSnapshot: { name: string; duration: Duration; maxSimultaneousBooks: number; priceMinor: number; depositMinor: number };
   amountDue: { subscriptionMinor: number; depositMinor: number; totalMinor: number };
   startAt: string | null;
@@ -125,6 +128,12 @@ export const loadOverview = () => call<Overview>('me-overview', {});
 
 export const subscribeToPlan = (m: Membership, planId: string, duration: Duration) =>
   command<{ subscriptionId: string }>('me-subscribe', { orgId: m.orgId, memberId: m.memberId, planId, duration });
+
+/** What upgrading now would cost (the days left on the current plan are credited). */
+export const myUpgradeQuote = (m: Membership) => call<UpgradeQuote>('me-upgradeQuote', { orgId: m.orgId, memberId: m.memberId });
+
+export const upgradeMyPlan = (m: Membership, o: Pick<UpgradeOption, 'planId' | 'duration'>) =>
+  command<{ subscriptionId: string }>('me-upgrade', { orgId: m.orgId, memberId: m.memberId, planId: o.planId, duration: o.duration });
 
 export const cancelUnpaid = (m: Membership, subscriptionId: string) => command('me-cancelPending', { orgId: m.orgId, subscriptionId });
 

@@ -133,10 +133,11 @@ const tone: Record<string, string> = {
   ARCHIVED: 'muted',
   REVOKED: 'muted',
   SUSPENDED: 'warn',
+  UPGRADED: 'info',
 };
 
 /** Status chip: always text (and a dot), never color alone. */
 export function StatusBadge({ status }: { status: string }) {
-  const label = ({ ACTIVE: t.active, ARCHIVED: t.archived, REVOKED: t.revoked, SUSPENDED: t.suspended } as Record<string, string>)[status] ?? status;
+  const label = ({ ACTIVE: t.active, ARCHIVED: t.archived, REVOKED: t.revoked, SUSPENDED: t.suspended, UPGRADED: t.upgraded } as Record<string, string>)[status] ?? status;
   return <span className={`badge badge-${tone[status] ?? 'muted'}`}>{label}</span>;
 }

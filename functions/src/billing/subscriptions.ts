@@ -2,7 +2,7 @@ import { FieldValue, Timestamp, type Transaction } from 'firebase-admin/firestor
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
-import { type CallContext, command } from '../core/callable.js';
+import { type CallContext, command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
@@ -12,6 +12,7 @@ import type { Member } from '../members/model.js';
 import { balanceOf, depositRef, postLedger } from './ledger.js';
 import { DURATIONS, type Duration, planOptions, type Plan, priceFor } from './plans.js';
 import { currentTerm } from './term.js';
+import { quoteSchema, startUpgrade, upgradeProblem, upgradeQuote, upgradeSchema } from './upgrade.js';
 
 /**
  * Starts a subscription (or a renewal) awaiting payment. Stores a snapshot of
@@ -113,6 +114,16 @@ export const create = command('subscriptions-create', createSchema, (ctx, tx) =>
   startSubscription(ctx, tx, (member) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, member.homeBranchId, tx)),
 );
 
+/** What upgrading the member's current plan would cost today, for every eligible plan (D7). */
+export const upgradeQuoteForStaff = query('subscriptions-upgradeQuote', quoteSchema, (ctx) =>
+  upgradeQuote(ctx, (member) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, member.homeBranchId)),
+);
+
+/** Starts a pro-rated upgrade, waiting for payment like any new plan. */
+export const upgrade = command('subscriptions-upgrade', upgradeSchema, (ctx, tx) =>
+  startUpgrade(ctx, tx, (member) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, member.homeBranchId, tx)),
+);
+
 export const cancelSchema = z.strictObject({ orgId: id, subscriptionId: id, reason });
 
 /** Cancels an unpaid subscription (staff, or the member it belongs to via me-cancelPending). */
@@ -163,6 +174,8 @@ export const recordOfflinePayment = command(
     if (s.status !== 'PENDING_PAYMENT') {
       throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment (it may already be paid).');
     }
+    const stale = upgradeProblem(s.subSnap, s.term?.snap.id ?? null);
+    if (stale) throw errors.conflict('UPGRADE_STALE', stale);
     if (input.amountMinor !== s.due.totalMinor) {
       throw errors.invalid(`The amount must be exactly ₹${(s.due.totalMinor / 100).toFixed(2)}.`);
     }
@@ -207,7 +220,8 @@ export interface SettlementPayment {
  * Records the payment, activates the subscription and collects the deposit
  * into the ledger (writes only; the caller has checked it is pending and the
  * amount matches). A renewal paid before the current term ends starts when
- * it ends (no gap, no overlap — D6).
+ * it ends (no gap, no overlap — D6). An upgrade starts now and ends the term
+ * it replaces today (D7; the caller has checked upgradeProblem).
  */
 export function writeSettlement(
   tx: Transaction,
@@ -218,6 +232,7 @@ export function writeSettlement(
 ) {
   const { orgId, subscriptionId, subSnap, branchId, due, memberId, member, memberSnap, deposit, term } = s;
   const now = new Date();
+  const upgrading = subSnap.get('kind') === 'UPGRADE' && term && term.snap.id === subSnap.get('upgrade.fromSubscriptionId');
   const startsLater = subSnap.get('kind') === 'RENEWAL' && term && term.snap.id !== subSnap.id;
   const start = startsLater ? term!.snap.get('endAt').toDate() : now;
   const end = addMonths(start, subSnap.get('planSnapshot.months'));
@@ -230,6 +245,7 @@ export function writeSettlement(
     subscriptionId,
     purpose: 'SUBSCRIPTION',
     direction: 'IN',
+    ...(upgrading ? { upgrade: { fromSubscriptionId: term!.snap.id, creditMinor: subSnap.get('upgrade.creditMinor'), unusedDays: subSnap.get('upgrade.unusedDays') } } : {}),
     lines: [
       { type: 'SUBSCRIPTION', amountMinor: due.subscriptionMinor },
       ...(due.depositMinor > 0 ? [{ type: 'DEPOSIT', amountMinor: due.depositMinor }] : []),
@@ -251,6 +267,12 @@ export function writeSettlement(
     activatedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  if (upgrading) {
+    // The replaced term ends now; its unused days were credited in this payment.
+    tx.update(term!.snap.ref, {
+      status: 'UPGRADED', endedAt: Timestamp.fromDate(now), upgradedToSubscriptionId: subscriptionId, updatedAt: FieldValue.serverTimestamp(),
+    });
+  }
   const memberChanges: Record<string, unknown> = term?.rollover ? { ...term.rollover } : {};
   // Member list: the plan paid for last and the date to renew by (a pre-paid renewal pushes it out).
   Object.assign(memberChanges, { planName: subSnap.get('planSnapshot.name'), renewalDueAt: Timestamp.fromDate(end) });
@@ -268,7 +290,7 @@ export function writeSettlement(
     before: { status: 'PENDING_PAYMENT' },
     after: {
       status: 'ACTIVE', paymentId: payRef.id, amountMinor: due.totalMinor, method: payment.method, reference: payment.reference,
-      startAt: start.toISOString(), endAt: end.toISOString(),
+      startAt: start.toISOString(), endAt: end.toISOString(), ...(upgrading ? { upgradedFrom: term!.snap.id } : {}),
     },
   });
   return { paymentId: payRef.id, start, end };

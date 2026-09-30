@@ -1,7 +1,7 @@
 // Plans, subscriptions, payments and the deposit ledger.
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 
-import { call } from './api';
+import { call, command } from './api';
 import { AgeGroup, db, Duration, DURATIONS, Scope, scoped, withId } from './common';
 import { todayIST } from '../shared/dates';
 
@@ -80,13 +80,70 @@ export interface Subscription {
   planId: string;
   planVersion: number;
   planSnapshot: { name: string; duration: Duration; months: number; priceMinor: number; listPriceMinor?: number; discountMinor?: number; discountLabel?: string | null; depositMinor: number; maxSimultaneousBooks: number };
-  kind: 'NEW' | 'RENEWAL';
-  status: 'PENDING_PAYMENT' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED';
+  kind: 'NEW' | 'RENEWAL' | 'UPGRADE';
+  status: 'PENDING_PAYMENT' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'UPGRADED';
   amountDue: { subscriptionMinor: number; depositMinor: number; totalMinor: number };
+  /** An upgrade: the pro-rata credit for the plan it replaces (functions/src/billing/upgrade.ts). */
+  upgrade?: SubscriptionUpgrade;
   startAt: unknown;
   endAt: unknown;
+  /** An upgraded term: when it ended (earlier than endAt). */
+  endedAt?: unknown;
   exchangesThisTerm: number;
 }
+
+export interface SubscriptionUpgrade {
+  fromSubscriptionId: string;
+  fromPlanName: string;
+  fromPriceMinor: number;
+  termDays: number;
+  unusedDays: number;
+  creditMinor: number;
+  newPriceMinor: number;
+  validUntil: unknown;
+}
+
+/** One way to upgrade today (plan + billing period) and what it costs. */
+export interface UpgradeOption {
+  planId: string;
+  planName: string;
+  duration: Duration;
+  months: number;
+  maxSimultaneousBooks: number;
+  deliveryEligible: boolean;
+  listPriceMinor: number;
+  discountMinor: number;
+  discountLabel: string | null;
+  priceMinor: number;
+  creditMinor: number;
+  subscriptionMinor: number;
+  depositMinor: number;
+  totalMinor: number;
+  startAt: string;
+  endAt: string;
+}
+
+export interface UpgradeQuote {
+  blocked: string | null;
+  current: {
+    subscriptionId: string;
+    planName: string;
+    duration: Duration | null;
+    maxSimultaneousBooks: number;
+    priceMinor: number;
+    startAt: string;
+    endAt: string;
+    termDays: number;
+    unusedDays: number;
+    creditMinor: number;
+  } | null;
+  options: UpgradeOption[];
+  validUntil: string;
+}
+
+export const upgradeQuote = (orgId: string, memberId: string) => call<UpgradeQuote>('subscriptions-upgradeQuote', { orgId, memberId });
+export const startUpgrade = (orgId: string, memberId: string, o: Pick<UpgradeOption, 'planId' | 'duration'>) =>
+  command<{ subscriptionId: string }>('subscriptions-upgrade', { orgId, memberId, planId: o.planId, duration: o.duration });
 
 export interface LedgerEntry {
   id: string;

@@ -12,6 +12,8 @@ export const routes = {
   'plans-archive': plans.archive,
   'subscriptions-create': subscriptions.create,
   'subscriptions-cancelPending': subscriptions.cancelPending,
+  'subscriptions-upgradeQuote': subscriptions.upgradeQuoteForStaff,
+  'subscriptions-upgrade': subscriptions.upgrade,
   'payments-recordOffline': subscriptions.recordOfflinePayment,
   'payments-createRequest': online.createRequest,
   'payments-checkRequest': online.checkRequest,

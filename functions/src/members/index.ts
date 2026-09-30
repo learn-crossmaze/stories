@@ -13,6 +13,8 @@ export const routes = {
   'me-join': me.join,
   'me-addChild': me.addChild,
   'me-subscribe': me.subscribe,
+  'me-upgradeQuote': me.upgradeQuoteForMember,
+  'me-upgrade': me.upgrade,
   'me-cancelPending': me.cancelPending,
   'me-pay': me.pay,
   'me-checkPayment': me.checkPayment,

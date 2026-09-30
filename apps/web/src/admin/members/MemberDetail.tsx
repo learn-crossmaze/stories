@@ -21,13 +21,15 @@ import { useWorkspace } from '../Workspace';
 import { CollectOnlineDialog } from './OnlinePayments';
 import { MemberDialog } from './Members';
 import { LoanHistory, MemberAudit, PaymentHistory, SubscriptionHistory } from './MemberHistory';
-import { AdjustmentDialog, PaymentDialog, RefundDialog, ReserveDialog, SubscribeDialog } from './memberDialogs';
+import { AdjustmentDialog, PaymentDialog, RefundDialog, ReserveDialog, SubscribeDialog, UpgradeDialog } from './memberDialogs';
+import { PendingUpgrade } from '../../shared/Upgrade';
 
 type DialogKind =
   | 'idCard'
   | 'edit'
   | 'subscribe'
   | 'renew'
+  | 'upgrade'
   | 'pay'
   | 'online'
   | 'cancelPending'
@@ -190,6 +192,9 @@ export function MemberDetailPage() {
                   <p>
                     <strong>{lt.pendingPayment}:</strong> {planWithOption(pending.planSnapshot)} · {money(pending.amountDue.totalMinor)}
                   </p>
+                  {pending.kind === 'UPGRADE' && pending.upgrade && (
+                    <PendingUpgrade upgrade={pending.upgrade} planName={planWithOption(pending.planSnapshot)} amountDue={pending.amountDue} />
+                  )}
                   <div className="row">
                     {perm('payments.recordOffline') && (
                       <button type="button" className="btn btn-filled" onClick={() => setDialog('pay')}>
@@ -210,9 +215,16 @@ export function MemberDetailPage() {
                 </div>
               )}
               {!subs.loading && !subs.error && !pending && m.status === 'ACTIVE' && perm('subscriptions.manage') && !next && (
-                <button type="button" className="btn btn-outlined" onClick={() => setDialog(current ? 'renew' : 'subscribe')}>
-                  {current ? lt.renew : lt.subscribe}
-                </button>
+                <div className="row">
+                  <button type="button" className="btn btn-outlined" onClick={() => setDialog(current ? 'renew' : 'subscribe')}>
+                    {current ? lt.renew : lt.subscribe}
+                  </button>
+                  {current && (
+                    <button type="button" className="btn btn-outlined" onClick={() => setDialog('upgrade')}>
+                      {lt.upgradePlan}
+                    </button>
+                  )}
+                </div>
               )}
             </section>
 
@@ -401,6 +413,7 @@ export function MemberDetailPage() {
       {(dialog === 'subscribe' || dialog === 'renew') && (
         <SubscribeDialog orgId={orgId} member={m} renewing={dialog === 'renew'} onClose={() => setDialog(null)} onCreated={refresh} />
       )}
+      {dialog === 'upgrade' && <UpgradeDialog orgId={orgId} member={m} onClose={() => setDialog(null)} onCreated={refresh} />}
       {dialog === 'online' && pending && (
         <CollectOnlineDialog
           orgId={orgId}

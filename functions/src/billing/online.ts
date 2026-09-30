@@ -10,6 +10,7 @@ import { db } from '../core/firebase.js';
 import { id } from '../core/schemas.js';
 import { handleRefundEvent } from './refunds.js';
 import { readSettlement, writeSettlement } from './subscriptions.js';
+import { upgradeProblem } from './upgrade.js';
 import {
   gatewayError,
   KEY_ID,
@@ -130,6 +131,12 @@ export async function requestOnlinePayment(
     const reusable = open.docs.find((d) => (input.channel === 'LINK' ? d.get('channel') === 'LINK' : d.get('channel') !== 'LINK') && (d.get('expiresAt') as Timestamp).toMillis() > Date.now() + 60_000);
     if (reusable) return describe(reusable);
 
+    // An upgrade's price holds only until its quote lapses; its link closes then too.
+    const lapses = sub.get('kind') === 'UPGRADE' ? (sub.get('upgrade.validUntil') as Timestamp).toMillis() : Infinity;
+    if (lapses < Date.now() + 20 * 60_000) {
+      throw errors.conflict('UPGRADE_STALE', 'This upgrade price has lapsed. Cancel it and take a fresh quote (the credit for the days left has changed).');
+    }
+    const until = (ms: number) => new Date(Math.min(Date.now() + ms, lapses));
     const creds = await loadCredentials(null, input.orgId, branchId);
     const member = await db.doc(`orgs/${input.orgId}/members/${sub.get('memberId')}`).get();
     const amount = sub.get('amountDue.totalMinor') as number;
@@ -149,7 +156,7 @@ export async function requestOnlinePayment(
       if (notify && !phone && !email) throw errors.invalid('Add a mobile number or email to the member to send a payment link.');
       const sms = notify && creds.settings.notifySms && !!phone;
       const mail = notify && creds.settings.notifyEmail && !!email;
-      const expire = new Date(Date.now() + LINK_DAYS * 86_400_000);
+      const expire = until(LINK_DAYS * 86_400_000);
       const link = await rzp<PaymentLink>(creds, 'POST', '/payment_links', {
         amount,
         currency: 'INR',
@@ -173,7 +180,7 @@ export async function requestOnlinePayment(
         url = link.short_url;
         expiresAt = expire;
       } else {
-        const close = new Date(Date.now() + QR_MINUTES * 60_000);
+        const close = until(QR_MINUTES * 60_000);
         try {
           const qr = await rzp<QrCode>(creds, 'POST', '/payments/qr_codes', {
             type: 'upi_qr',
@@ -280,7 +287,7 @@ export async function applyGatewayPayment(orgId: string, gatewayId: string, paid
         ? 'The subscription was no longer waiting for payment.'
         : paid.amountMinor !== s.due.totalMinor
           ? `Paid ₹${(paid.amountMinor / 100).toFixed(2)} but ₹${(s.due.totalMinor / 100).toFixed(2)} was due.`
-          : null;
+          : upgradeProblem(s.subSnap, s.term?.snap.id ?? null, null);
 
     if (problem) {
       const payRef = db.collection(`orgs/${orgId}/payments`).doc();

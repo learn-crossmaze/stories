@@ -10,7 +10,7 @@ export const rupees = (n: number) => wholeInr.format(n);
 export const toMinor = (rupees: string) => Math.round(Number(rupees.replace(/[₹,\s]/g, '')) * 100);
 
 /** Firestore Timestamp, Date, or an ISO date string (member data from the server). */
-const asDate = (v: unknown): Date | null => {
+export const asDate = (v: unknown): Date | null => {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
   if (typeof v === 'string') {
     const d = new Date(v);
