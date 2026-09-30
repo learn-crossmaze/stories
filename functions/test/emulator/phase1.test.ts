@@ -85,7 +85,7 @@ describe('M1.1 catalogue', () => {
     const ho = await createUser('ho@stories.test');
     await grant(ho, ['HEAD_OFFICE_ADMIN'], ['*']);
     await call(catalog.authors.create, ho, { name: 'Jules Verne' });
-    expect(await failure(call(catalog.authors.create, lib, { name: 'Someone' }))).toBe('FORBIDDEN');
+    expect(await failure(call(catalog.authors.create, fin, { name: 'Someone' }))).toBe('FORBIDDEN');
     const fran = (await call<{ orgId: string }>(orgs.create, sa, { name: 'Franchise', type: 'FRANCHISE' })).orgId;
     const fo = await createUser('fo@stories.test');
     await call(staff.setRoles, sa, { orgId: fran, email: fo.email, roles: ['FRANCHISE_OWNER'], branchIds: ['*'] });
@@ -164,7 +164,7 @@ describe('book covers', () => {
   });
 
   it('only catalogue editors may change covers, and only images are accepted', async () => {
-    expect(await failure(call(covers.setCover, lib, { bookId, image: png }))).toBe('FORBIDDEN');
+    expect(await failure(call(covers.setCover, fin, { bookId, image: png }))).toBe('FORBIDDEN');
     expect(await failure(call(covers.setCover, sa, { bookId, image: Buffer.from('<svg onload=alert(1)>').toString('base64') }))).toBe('INVALID_INPUT');
   });
 });
@@ -187,7 +187,7 @@ describe('branch managers add titles', () => {
     expect(await failure(call(catalog.update, bm, { bookId: added, title: 'Changed', authorIds: [author], language: 'en', genres: ['FICTION'], ageGroup: 'CHILDREN', readingLevel: 'BEGINNER' }))).toBe('FORBIDDEN');
     expect(await failure(call(catalog.authors.rename, bm, { id: author, name: 'R. Bond' }))).toBe('FORBIDDEN');
     // Librarians still can't add titles.
-    expect(await failure(call(catalog.authors.create, lib, { name: 'Someone Else' }))).toBe('FORBIDDEN');
+    expect(await failure(call(catalog.authors.create, fin, { name: 'Someone Else' }))).toBe('FORBIDDEN');
   });
 });
 
@@ -227,7 +227,7 @@ describe('book details lookup', () => {
 
   it('is for catalogue editors only, and says so plainly when the catalogues are unreachable', async () => {
     fakeInternet({ down: true });
-    expect(await failure(call(bookLookup.lookup, lib, { q: 'stevenson' }, null))).toBe('FORBIDDEN');
+    expect(await failure(call(bookLookup.lookup, fin, { q: 'stevenson' }, null))).toBe('FORBIDDEN');
     expect(await failure(call(bookLookup.lookup, sa, { q: 'stevenson' }, null))).toBe('LOOKUP_UNAVAILABLE');
   });
 

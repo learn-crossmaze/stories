@@ -185,54 +185,58 @@ const bulkItem = z.strictObject({
   keywords: z.array(z.string().trim().min(1).max(40)).max(15).default([]),
 });
 
+export type BulkBook = z.infer<typeof bulkItem>;
+export const bulkBookSchema = bulkItem;
+
 /**
- * Adds several titles by ISBN at once (the "Add by ISBN" page), in one
- * transaction. Titles whose ISBN is already in the catalogue are skipped and
- * reported; authors and publishers are matched by name or added.
+ * Plans adding titles by ISBN (reads first: ISBNs already in the catalogue,
+ * authors and publishers by name, the next book codes), with a `write()` for
+ * the write phase. Used by "Add by ISBN" (books-bulkCreate) and by receiving
+ * stock (copies-receive), which adds copies of the new titles in the same
+ * transaction. ISBNs already in the catalogue are returned as `existing`.
  */
-export const bulkCreate = command(
-  'books-bulkCreate',
-  z.strictObject({ items: z.array(bulkItem).min(1).max(BULK_MAX, `add at most ${BULK_MAX} books at a time`) }),
-  async ({ actor, input, requestId }, tx) => {
-    await actor.requireCatalog('books.create', tx);
-    const items = input.items.map((item) => {
-      const isbn = normalizeIsbn(item.isbn);
-      if (!isbn) throw errors.invalid(`${item.isbn} is not a valid ISBN.`);
-      return { ...item, isbn };
-    });
-    const isbns = items.map((i) => i.isbn);
-    const repeated = isbns.find((isbn, i) => isbns.indexOf(isbn) !== i);
-    if (repeated) throw errors.invalid(`ISBN ${repeated} is listed twice.`);
+export async function planNewBooks(tx: Transaction, input: BulkBook[]) {
+  const items = input.map((item) => {
+    const isbn = normalizeIsbn(item.isbn);
+    if (!isbn) throw errors.invalid(`${item.isbn} is not a valid ISBN.`);
+    return { ...item, isbn };
+  });
+  const isbns = items.map((i) => i.isbn);
+  const repeated = isbns.find((isbn, i) => isbns.indexOf(isbn) !== i);
+  if (repeated) throw errors.invalid(`ISBN ${repeated} is listed twice.`);
 
-    // Reads first: existing ISBNs, then every author and publisher name.
-    const known = await Promise.all(isbns.map((isbn) => tx.get(db.doc(`isbnIndex/${isbn}`))));
-    const fresh = items.filter((_, i) => !known[i].exists);
-    const skipped = items.filter((_, i) => known[i].exists).map((i) => ({ isbn: i.isbn, title: i.title, reason: 'Already in the catalogue.' }));
-    const wanted = (kind: 'authors' | 'publishers') => {
-      const names = new Map<string, string>();
-      for (const it of fresh) for (const n of kind === 'authors' ? it.authors : it.publisher ? [it.publisher] : []) names.set(normalizeText(n), names.get(normalizeText(n)) ?? n);
-      return names;
-    };
-    const resolve = async (kind: 'authors' | 'publishers') => {
-      const names = wanted(kind);
-      const found = await Promise.all(
-        [...names.keys()].map(async (key) => {
-          const hit = await tx.get(db.collection(kind).where('nameNormalized', '==', key).where('status', '==', 'ACTIVE').limit(1));
-          return [key, hit.empty ? null : hit.docs[0]] as const;
-        }),
-      );
-      const ids = new Map<string, { id: string; name: string; isNew: boolean }>();
-      for (const [key, doc] of found) {
-        ids.set(key, doc ? { id: doc.id, name: doc.get('name') as string, isNew: false } : { id: db.collection(kind).doc().id, name: names.get(key)!, isNew: true });
-      }
-      return ids;
-    };
-    const [authorIds, publisherIds] = await Promise.all([resolve('authors'), resolve('publishers')]);
-    const counter = fresh.length
-      ? await reserveCodes(tx, { kind: 'book', pattern: await bookPattern(tx), values: {}, base: 'counters', count: fresh.length, taken: (c) => existingCodes(tx, 'books', c) })
-      : null;
+  const known = await Promise.all(isbns.map((isbn) => tx.get(db.doc(`isbnIndex/${isbn}`))));
+  const fresh = items.filter((_, i) => !known[i].exists);
+  const existing = items.flatMap((it, i) => (known[i].exists ? [{ isbn: it.isbn, title: it.title, bookId: known[i].get('bookId') as string }] : []));
+  const wanted = (kind: 'authors' | 'publishers') => {
+    const names = new Map<string, string>();
+    for (const it of fresh) for (const n of kind === 'authors' ? it.authors : it.publisher ? [it.publisher] : []) names.set(normalizeText(n), names.get(normalizeText(n)) ?? n);
+    return names;
+  };
+  const resolve = async (kind: 'authors' | 'publishers') => {
+    const names = wanted(kind);
+    const found = await Promise.all(
+      [...names.keys()].map(async (key) => {
+        const hit = await tx.get(db.collection(kind).where('nameNormalized', '==', key).where('status', '==', 'ACTIVE').limit(1));
+        return [key, hit.empty ? null : hit.docs[0]] as const;
+      }),
+    );
+    const ids = new Map<string, { id: string; name: string; isNew: boolean }>();
+    for (const [key, doc] of found) {
+      ids.set(key, doc ? { id: doc.id, name: doc.get('name') as string, isNew: false } : { id: db.collection(kind).doc().id, name: names.get(key)!, isNew: true });
+    }
+    return ids;
+  };
+  const [authorIds, publisherIds] = await Promise.all([resolve('authors'), resolve('publishers')]);
+  const counter = fresh.length
+    ? await reserveCodes(tx, { kind: 'book', pattern: await bookPattern(tx), values: {}, base: 'counters', count: fresh.length, taken: (c) => existingCodes(tx, 'books', c) })
+    : null;
+  const created = fresh.map((it, i) => ({ isbn: it.isbn, bookId: db.collection('books').doc().id, code: counter!.codes[i], number: counter!.number + i, title: it.title }));
+  const newRefs = [...authorIds.values(), ...publisherIds.values()].filter((r) => r.isNew).map((r) => r.name);
+  /** The title each input ends up as (new or already in the catalogue), in input order. */
+  const bookIds = items.map((it) => (created.find((c) => c.isbn === it.isbn) ?? existing.find((e) => e.isbn === it.isbn))!.bookId);
 
-    // Writes.
+  function write() {
     const now = FieldValue.serverTimestamp();
     for (const [kind, ids] of [['authors', authorIds], ['publishers', publisherIds]] as const) {
       for (const r of ids.values()) {
@@ -241,8 +245,8 @@ export const bulkCreate = command(
       }
     }
     counter?.commit();
-    const created = fresh.map((it, i) => {
-      const code = counter!.codes[i];
+    fresh.forEach((it, i) => {
+      const { bookId, code, number } = created[i];
       const authors = [...new Map(it.authors.map((n) => [authorIds.get(normalizeText(n))!.id, authorIds.get(normalizeText(n))!])).values()];
       const publisher = it.publisher ? publisherIds.get(normalizeText(it.publisher))! : null;
       const fields: BookInput = {
@@ -265,17 +269,32 @@ export const bulkCreate = command(
         replacementPriceMinor: 0,
       };
       const names = { authorNames: authors.map((a) => a.name), publisherName: publisher?.name ?? null, categoryNames: [] };
-      const ref = db.collection('books').doc();
-      tx.create(db.doc(`isbnIndex/${it.isbn}`), { bookId: ref.id });
-      tx.create(ref, { ...derived(fields, code, it.isbn, names), code, number: counter!.number + i, status: 'ACTIVE', createdAt: now, updatedAt: now });
-      return { isbn: it.isbn, bookId: ref.id, code, title: it.title };
+      tx.create(db.doc(`isbnIndex/${it.isbn}`), { bookId });
+      tx.create(db.doc(`books/${bookId}`), { ...derived(fields, code, it.isbn, names), code, number, status: 'ACTIVE', createdAt: now, updatedAt: now });
     });
-    const newRefs = [...authorIds.values(), ...publisherIds.values()].filter((r) => r.isNew).map((r) => r.name);
+  }
+  return { created, existing, bookIds, newRefs, write };
+}
+
+/**
+ * Adds several titles by ISBN at once (the "Add by ISBN" page), in one
+ * transaction. Titles whose ISBN is already in the catalogue are skipped and
+ * reported; authors and publishers are matched by name or added.
+ */
+export const bulkCreate = command(
+  'books-bulkCreate',
+  z.strictObject({ items: z.array(bulkItem).min(1).max(BULK_MAX, `add at most ${BULK_MAX} books at a time`) }),
+  async ({ actor, input, requestId }, tx) => {
+    await actor.requireCatalog('books.create', tx);
+    const plan = await planNewBooks(tx, input.items);
+    plan.write();
+    const created = plan.created.map(({ isbn, bookId, code, title }) => ({ isbn, bookId, code, title }));
+    const skipped = plan.existing.map((e) => ({ isbn: e.isbn, title: e.title, reason: 'Already in the catalogue.' }));
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, null, {
       action: 'book.bulkCreate',
       entityType: 'book',
       entityId: created[0]?.bookId ?? 'none',
-      after: { books: created.map((c) => `${c.code} ${c.isbn}`), skipped: skipped.map((s) => s.isbn), newAuthorsAndPublishers: newRefs },
+      after: { books: created.map((c) => `${c.code} ${c.isbn}`), skipped: skipped.map((s) => s.isbn), newAuthorsAndPublishers: plan.newRefs },
     });
     return { created, skipped };
   },

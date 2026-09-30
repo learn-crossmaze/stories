@@ -1,9 +1,11 @@
 // Physical copies and shelf locations (inventory router).
 import * as copies from './copies.js';
 import * as locations from './locations.js';
+import * as receive from './receive.js';
 
 export const routes = {
   'copies-acquire': copies.acquire,
+  'copies-receive': receive.receive,
   'copies-relocate': copies.relocate,
   'copies-recordCondition': copies.recordCondition,
   'copies-inspect': copies.inspect,

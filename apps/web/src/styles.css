@@ -635,6 +635,9 @@ main h1[tabindex='-1']:focus { outline: none; }
 .bulk-done .bulk-isbn { opacity: .7; }
 .bulk-footer { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-top: 12px; }
 .bulk-footer p { margin: 0; }
+.receive-num { width: 5.5em; min-height: 40px; font-variant-numeric: tabular-nums; }
+.bulk-manual { display: grid; gap: 6px; min-width: 220px; }
+.bulk-manual input { min-height: 36px; }
 .weekday-picks { display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .line-row { display: grid; grid-template-columns: 1fr 140px auto; gap: 10px; align-items: end; }
 .line-row-code { grid-template-columns: 110px 1fr 140px auto; }

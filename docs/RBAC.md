@@ -45,7 +45,7 @@ Initial catalogue (excerpt):
 | Permission | SA | HO | FIN | HR | BM | LIB | DEL | FO | EMP | MEM |
 |---|---|---|---|---|---|---|---|---|---|---|
 | books.view | ✓ | ✓ | ✓ | | ✓ | ✓ | ✓ | ✓ | | ✓ |
-| books.create (add titles, authors, publishers, categories; a missing cover) | ✓ | ✓ | | | ✓ | | | | | |
+| books.create (add titles, authors, publishers, categories; a missing cover) | ✓ | ✓ | | | ✓ | ✓ | | | | |
 | books.edit (change/archive/restore titles and reference data, covers, book numbering) | ✓ | ✓ | | | | | | | | |
 | books.delete (permanently delete an archived title no library ever stocked or reserved) | ✓ | ✓ | | | | | | | | |
 
