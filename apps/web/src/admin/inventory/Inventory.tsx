@@ -6,7 +6,8 @@ import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { CONDITIONS, type Condition, COPY_STATUSES, type CopyStatus, label } from '../../data/common';
-import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy } from '../../data/inventory';
+import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle } from '../../data/inventory';
+import { useDebounced } from '../../shared/useDebounced';
 import { useAsync } from '../../shared/useAsync';
 import { money, when } from '../../shared/format';
 import { paths } from '../../paths';
@@ -50,6 +51,9 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
   const { claims } = useAuth();
   const navigate = useNavigate();
   const [status, setStatus] = useState<CopyStatus | ''>('');
+  const [q, setQ] = useState('');
+  const title = useDebounced(q.trim());
+  const searching = title.length >= 2;
   const [copies, setCopies] = useState<Copy[]>([]);
   const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
   const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
@@ -63,9 +67,16 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
   const load = async (after?: DocumentSnapshot) => {
     setState({ loading: true, error: null });
     try {
-      const page = await listCopies(orgId, branchId, status, after);
-      setCopies((prev) => (after ? [...prev, ...page.items] : page.items));
-      setCursor(page.cursor);
+      if (searching) {
+        // Title search: every matching copy at once, filtered by status here.
+        const found = await searchCopiesByTitle(orgId, branchId, title);
+        setCopies(status ? found.filter((c) => c.status === status) : found);
+        setCursor(undefined);
+      } else {
+        const page = await listCopies(orgId, branchId, status, after);
+        setCopies((prev) => (after ? [...prev, ...page.items] : page.items));
+        setCursor(page.cursor);
+      }
       setState({ loading: false, error: null });
     } catch (e) {
       console.error(e);
@@ -75,7 +86,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, branchId, status, attempt]);
+  }, [orgId, branchId, status, title, attempt]);
 
   const locName = (id: string | null) => (id ? (locations.data?.find((l) => l.id === id)?.code ?? '—') : '—');
 
@@ -101,6 +112,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
             }
           }}
         />
+        <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={lt.searchCopiesByTitle} aria-label={lt.searchCopiesByTitle} />
         <select value={status} onChange={(e) => setStatus(e.target.value as CopyStatus | '')} aria-label={lt.status}>
           <option value="">{lt.allStatuses}</option>
           {COPY_STATUSES.map((s) => (
@@ -122,7 +134,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
       ) : state.loading && copies.length === 0 ? (
         <SkeletonRows rows={6} />
       ) : copies.length === 0 ? (
-        <EmptyState icon="shelves" title={lt.copiesEmpty} message="" />
+        <EmptyState icon="shelves" title={searching ? lt.noCopiesMatch(title) : lt.copiesEmpty} message="" />
       ) : (
         <>
           <TableWrap>

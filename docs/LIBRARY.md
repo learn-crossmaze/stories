@@ -72,6 +72,9 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   elsewhere, catalogue search shows every branch holding each title (`Central 2/3` = 2 of 3 in-stock copies on the
   shelf; their branch first), the book page lists availability per branch, and scanning a copy held at another branch
   in Inventory says which branch has it and its status (`copies-locate`).
+- **Finding copies:** Inventory's *Find a copy* takes a scanned or typed copy code or barcode; *Search by title*
+  lists the branch's copies of every title matching the word typed (the catalogue's title search), with the status
+  filter still applied.
 - **Labels:** the console prints A4 sheets (3 × 8). Stories prints **QR codes only** (no 1-D barcodes): each label
   has the QR code of the copy code with the copy code and the book title (small type) beside it; the copy page shows
   the same QR tag, and member ID cards carry a QR code of the member code. Older labels with Code 128 bars and books'
