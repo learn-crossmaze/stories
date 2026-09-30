@@ -15,6 +15,7 @@ import { ht } from '../../strings/hr';
 import { useWorkspace } from '../Workspace';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { CheckInCard } from './MyAttendance';
+import { useMyOnboarding } from './OnboardingReminder';
 import { Checklist } from './employeePanels';
 import { PayslipButton } from './payrollKit';
 
@@ -24,6 +25,7 @@ export function MyProfilePage() {
   const { user } = useAuth();
   const { org, branchName } = useWorkspace();
   const me = useAsync(() => (org && user ? myEmployee(org.id, user.uid) : Promise.resolve(null)), [org?.id, user?.uid]);
+  const onboarding = useMyOnboarding();
   const summary = useAsync(async () => {
     if (!org || !user || !me.data) return null;
     const year = todayIST().slice(0, 4);
@@ -77,6 +79,17 @@ export function MyProfilePage() {
           </p>
         </div>
       </header>
+      {!!onboarding.data?.missing.length && (
+        <section className="card ob-profile-card" aria-labelledby="hub-ob">
+          <h2 id="hub-ob">{ht.obTitle}</h2>
+          <p>
+            {ht.obProgress(onboarding.data.done, onboarding.data.total)} · {ht.obBanner(onboarding.data.missing.length)}
+          </p>
+          <Link className="btn btn-filled" to={paths.adminMyOnboarding}>
+            {ht.obReminderNow}
+          </Link>
+        </section>
+      )}
       {WORKING.includes(e.status) && <CheckInCard />}
 
       <div className="hub-grid">

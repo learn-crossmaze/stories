@@ -13,6 +13,7 @@ import { availableViews, groupFor, isGroup, type NavEntry, navItemFor, VIEW_ICON
 import { ViewContext } from './view';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
+import { OnboardingReminder } from './people/OnboardingReminder';
 
 const MAIN_ID = 'main';
 
@@ -305,6 +306,7 @@ function Shell({ view }: { view: ViewId }) {
             <AccountMenu />
           </header>
           <main className="admin-main" id={MAIN_ID} tabIndex={-1}>
+            <OnboardingReminder />
             <Suspense fallback={<SkeletonRows />}>
               <Outlet />
             </Suspense>

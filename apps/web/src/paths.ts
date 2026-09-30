@@ -37,6 +37,7 @@ export const paths = {
   adminPeople: '/admin/people',
   adminPeopleOverview: '/admin/people-overview',
   adminMe: '/me',
+  adminMyOnboarding: '/me/complete-profile',
   adminEmployee: (id: string) => `/admin/people/${id}`,
   adminHrSettings: '/admin/settings/jobs',
   adminSettingsSchedule: '/admin/settings/schedule',

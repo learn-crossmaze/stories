@@ -22,6 +22,7 @@ import { Stat } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 import { useTeamPaths } from '../view';
+import { useMyOnboarding } from '../people/OnboardingReminder';
 
 const membersWith = (renewal: RenewalFilter) => `${paths.adminMembers}?renewal=${renewal}`;
 
@@ -85,6 +86,8 @@ export function DashboardPage() {
     };
   }, [org?.id, branch?.id, correctionsApprover, finalizer, leaveApprover, payrollApprover]);
 
+  const onboarding = useMyOnboarding();
+
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   // "All clear" only once everything has loaded; a part that fails says so instead of hiding its items.
@@ -99,6 +102,7 @@ export function DashboardPage() {
   const activeStaff = staff.data?.filter((m) => m.status === 'ACTIVE') ?? null;
   const todos: Todo[] = [];
   if (user && !user.emailVerified) todos.push({ label: t.todoVerifyEmail, to: paths.setup });
+  if (onboarding.data?.missing.length) todos.push({ label: ht.obTodo(onboarding.data.missing.length), to: paths.adminMyOnboarding });
   if (claims.sa && orgs.length === 0) todos.push({ label: t.todoCreateOrg, to: paths.adminOrgs });
   if (org && can(claims, 'branches.manage', org.id) && activeBranches.length === 0) {
     todos.push({ label: t.todoCreateBranch, to: paths.adminBranches });
