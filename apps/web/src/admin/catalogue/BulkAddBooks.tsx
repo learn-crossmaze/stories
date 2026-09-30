@@ -12,7 +12,7 @@ import { AGE_GROUPS, type AgeGroup, CONDITIONS, type Condition, GENRES, type Gen
 import { listLocations } from '../../data/inventory';
 import { paths } from '../../paths';
 import { normalizeIsbn, splitIsbns } from '../../shared/isbn';
-import { toMinor } from '../../shared/format';
+import { money, toMinor } from '../../shared/format';
 import { EmptyState, Icon, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
@@ -49,6 +49,8 @@ interface Row {
   bookId: string | null;
   /** Copy codes added (receiving). */
   copies: string[];
+  /** Price per copy the copies were received at (paise), shown once added. */
+  pricePaid: number | null;
 }
 
 const START_ROWS = 5;
@@ -95,7 +97,7 @@ export function BulkAddBooksPage() {
   const [defaults, setDefaults] = useState<{ ageGroup: AgeGroup; readingLevel: Level; genre: Genre }>({ ageGroup: 'ADULTS', readingLevel: 'INTERMEDIATE', genre: 'FICTION' });
   const blank = (): Row => ({
     key: nextKey++, raw: '', touched: false, checked: null, state: 'idle', candidate: null, genre: defaults.genre, ageGroup: defaults.ageGroup, author: '', title: '',
-    quantity: '1', price: '', message: null, code: null, bookId: null, copies: [],
+    quantity: '1', price: '', message: null, code: null, bookId: null, copies: [], pricePaid: null,
   });
   const [rows, setRows] = useState<Row[]>(() => Array.from({ length: START_ROWS }, blank));
   const rowsRef = useRef(rows);
@@ -271,14 +273,14 @@ export function BulkAddBooksPage() {
       );
       const newByIsbn = new Map(res.newTitles.map((n) => [n.isbn, n]));
       const byBook = new Map(res.received.map((r) => [r.bookId, r]));
-      const readyKeys = new Set(ready.map((v) => v.r.key));
+      const priceOf = new Map(ready.map((v) => [v.r.key, v.price]));
       setRows((rs) =>
         rs.map((r) => {
-          if (!readyKeys.has(r.key)) return r;
+          if (!priceOf.has(r.key)) return r;
           const made = newByIsbn.get(normalizeIsbn(r.raw) ?? '');
           const bookId = made?.bookId ?? r.bookId;
           const got = bookId ? byBook.get(bookId) : undefined;
-          return got ? { ...r, state: 'added', bookId, code: made?.code ?? null, copies: got.codes, candidate: r.candidate ?? typedIn(r) } : r;
+          return got ? { ...r, state: 'added', bookId, code: made?.code ?? null, copies: got.codes, pricePaid: priceOf.get(r.key) ?? null, candidate: r.candidate ?? typedIn(r) } : r;
         }),
       );
       await addCovers(res.newTitles);
@@ -517,6 +519,7 @@ export function BulkAddBooksPage() {
                     ) : null}
                   </td>
                   <td>
+                    {(done || r.state === 'exists') && <span className="muted">{r.code ? label(r.genre) : (r.candidate?.genres ?? []).map(label).join(', ')}</span>}
                     {newTitle && !done && (
                       <select value={r.genre} disabled={!!busy} onChange={(e) => patch(r.key, { genre: e.target.value as Genre })} aria-label={`${lt.bulkGenre}, row ${n}`}>
                         {GENRES.map((g) => (
@@ -528,6 +531,7 @@ export function BulkAddBooksPage() {
                     )}
                   </td>
                   <td>
+                    {done && r.code && <span className="muted">{label(r.ageGroup)}</span>}
                     {newTitle && !done && (
                       <select value={r.ageGroup} disabled={!!busy} onChange={(e) => patch(r.key, { ageGroup: e.target.value as AgeGroup })} aria-label={`${lt.ageGroup}, row ${n}`}>
                         {AGE_GROUPS.map((a) => (
@@ -568,6 +572,7 @@ export function BulkAddBooksPage() {
                           onChange={(e) => patch(r.key, { price: e.target.value })}
                         />
                       )}
+                      {done && r.pricePaid !== null && <span>{money(r.pricePaid)}</span>}
                     </td>
                   )}
                   <td className="cell-actions">
