@@ -14,6 +14,7 @@ import { Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 import { BankDialog } from './employeeDialogs';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
+import { EmployeePhoto } from './EmployeePhoto';
 
 // Staff → Complete my profile (self-onboarding): the details and documents HR
 // needs, filled in by the person themselves. The reminder in the shell points here.
@@ -199,6 +200,17 @@ export function MyOnboardingPage() {
         <p className="muted">{ht.obIntro}</p>
       </header>
       <Progress s={s} />
+
+      <section className="section" id="ob-photo" aria-labelledby="ob-photo-title">
+        <h2 id="ob-photo-title">
+          {ht.photo}
+          {s.required.includes('photo') && <span className="muted small"> ({ht.obRequired})</span>}
+        </h2>
+        <div className="card ob-photo-card">
+          <EmployeePhoto orgId={org.id} employee={s.employee} canEdit onChanged={changed} />
+          <p className="muted">{ht.obPhotoIntro}</p>
+        </div>
+      </section>
 
       <section className="section" aria-labelledby="ob-details">
         <h2 id="ob-details">{ht.obMyDetails}</h2>

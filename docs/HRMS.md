@@ -23,7 +23,7 @@ audited.
 
 | Path | Contents | Who reads it (rules) |
 |---|---|---|
-| `orgs/{o}/employees/{e}` | `code` (employee ID), `uid` (linked Stories account or null), `email`, `emailLower`, `fullName`, `phone`, `branchId` (null = head office), `departmentId/Name`, `designationId/Name`, `managerId/Name`, `employmentType`, `joiningDate`, `status`, `noticeEndDate`, `exitDate`, `exitReason`, `onboarding[]`, `offboarding[]`, `source` (HR, ROLES or BACKFILL) | `employees.view` at the employee's branch (org-wide viewers also see head-office records); the employee themselves |
+| `orgs/{o}/employees/{e}` | `code` (employee ID), `uid` (linked Stories account or null), `email`, `emailLower`, `fullName`, `phone`, `branchId` (null = head office), `departmentId/Name`, `designationId/Name`, `managerId/Name`, `employmentType`, `joiningDate`, `status`, `noticeEndDate`, `exitDate`, `exitReason`, `onboarding[]`, `offboarding[]`, `source` (HR, ROLES or BACKFILL), `photoUrl` / `photoPath` (profile picture) | `employees.view` at the employee's branch (org-wide viewers also see head-office records); the employee themselves |
 | `…/employees/{e}/history/{h}` | `type` (CREATED, JOB_CHANGE, DETAILS, STATUS or ACCOUNT), `effectiveDate`, `changes {field: {from, to}}`, `note`, `by`, `at` | same as the record |
 | `…/employees/{e}/private/profile` | date of birth, gender, blood group, personal contact, addresses, emergency contact, PAN, `aadhaarLast4`, UAN, ESI number, `bank` (masked: holder, bank, IFSC, last 4 digits) | `employees.privateData` at the branch; the employee |
 | `…/employees/{e}/private/aadhaar` | the full Aadhaar number (12 digits, Verhoeff-checked) | nobody (functions only; `employees-revealAadhaar` shows it to HR with `employees.privateData` or to the employee, and is audited) |
@@ -494,9 +494,15 @@ Staff fill in their own HR details and documents instead of HR typing them in.
 - **Who:** anyone with a Stories sign-in linked to an employee record that is DRAFT, ONBOARDING, ACTIVE or
   NOTICE_PERIOD. People edit only their own record (`uid` = the caller, not offboarded); HR permissions still apply
   for everyone else. The audit entry records `self: true`.
+- **Profile picture:** added, changed or removed by the person (Complete my profile, My profile) or by HR who may
+  edit employees (the employee profile), with `employees-setPhoto`. The browser shrinks the photo to 480 px JPEG
+  first; the server accepts JPEG, PNG or WebP up to 1 MB (checked by its bytes), stores it at
+  `employee-photos/{orgId}/{employeeId}/…` behind a download-token URL, deletes the old file after the change, and
+  ticks *Photo collected* while joining. Photos show on the employee profile, My profile and the People list
+  (initials when there is none).
 - **Mandatory details:** HR chooses them under **Settings → Jobs → Self-onboarding** (`hr-setSelfOnboarding`,
   `hr.config`; stored in `config/hr.selfOnboardingFields`). Default: date of birth, gender, personal phone, both
-  addresses, emergency contact (name and phone), PAN and bank account.
+  addresses, emergency contact (name and phone), PAN, Aadhaar number, bank account and profile picture.
 - **Reminders until complete:** in every staff view:
   - a banner on every page ("Your profile is incomplete: N mandatory items missing · Complete now");
   - a pop-up listing what is missing, at sign-in and again **every 4 hours** (*Remind me later* snoozes it for 4

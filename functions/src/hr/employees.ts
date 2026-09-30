@@ -2,6 +2,9 @@ import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { aadhaarInput } from '../core/aadhaar.js';
+import { randomUUID } from 'node:crypto';
+
+import { bucket, downloadUrl, IMAGE_TYPES } from '../catalogue/covers.js';
 import { recordAudit } from '../core/audit.js';
 import { command, type CallContext } from '../core/callable.js';
 import { syncClaims } from '../core/claims.js';
@@ -346,22 +349,24 @@ export const checkItem = command(
  * can't redirect salary). Otherwise the HR permission is needed. Returns
  * whether the caller is the employee.
  */
-async function requireSelfOr(actor: Actor, perm: 'employees.privateData' | 'employees.bank', orgId: string, snap: FirebaseFirestore.DocumentSnapshot, tx: Transaction) {
+async function requireSelfOr(actor: Actor, perm: 'employees.privateData' | 'employees.bank' | 'employees.edit', orgId: string, snap: FirebaseFirestore.DocumentSnapshot, tx: Transaction) {
   if (snap.get('uid') && snap.get('uid') === actor.uid && snap.get('status') !== 'OFFBOARDED') return true;
   await requireFor(actor, perm, orgId, snap.get('branchId'), tx);
   return false;
 }
 
 /** While joining, ticks the checklist items the details now cover (HR can still untick them). */
-function tickFromDetails(tx: Transaction, snap: FirebaseFirestore.DocumentSnapshot, keys: string[], by: string) {
-  if (snap.get('status') !== 'ONBOARDING' || !keys.length) return;
+function checklistTicks(snap: FirebaseFirestore.DocumentSnapshot, keys: string[], by: string): { onboarding: ChecklistItem[] } | null {
+  if (snap.get('status') !== 'ONBOARDING' || !keys.length) return null;
   const items = (snap.get('onboarding') ?? []) as ChecklistItem[];
-  if (!items.some((i) => keys.includes(i.key) && !i.done)) return;
+  if (!items.some((i) => keys.includes(i.key) && !i.done)) return null;
   const at = new Date().toISOString();
-  tx.update(snap.ref, {
-    onboarding: items.map((i) => (keys.includes(i.key) && !i.done ? { ...i, done: true, doneBy: by, doneAt: at } : i)),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  return { onboarding: items.map((i) => (keys.includes(i.key) && !i.done ? { ...i, done: true, doneBy: by, doneAt: at } : i)) };
+}
+
+function tickFromDetails(tx: Transaction, snap: FirebaseFirestore.DocumentSnapshot, keys: string[], by: string) {
+  const ticks = checklistTicks(snap, keys, by);
+  if (ticks) tx.update(snap.ref, { ...ticks, updatedAt: FieldValue.serverTimestamp() });
 }
 
 const pan = z.union([z.literal(''), z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'must be a valid PAN (ABCDE1234F)')]).default('');
@@ -412,6 +417,66 @@ export const setPrivate = command(
 
 const bankRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employees/${employeeId}/private/bank`);
 const aadhaarRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employees/${employeeId}/private/aadhaar`);
+
+/** Largest profile picture accepted; the console shrinks photos to ~50 KB before sending. */
+export const MAX_PHOTO_BYTES = 1_000_000;
+
+/**
+ * Sets (image: base64 JPEG/PNG/WebP) or removes (image: null) an employee's
+ * profile picture: the person themselves (self-service) or HR who may edit
+ * employees at the branch. Stored at employee-photos/{orgId}/{employeeId}/…
+ * and shown through a download-token URL on the employee record; the old file
+ * is deleted once the change commits. While joining, it ticks "Photo collected".
+ */
+export const setPhoto = command(
+  'employees-setPhoto',
+  z.strictObject({
+    orgId: id,
+    employeeId: id,
+    image: z.string().max(Math.ceil((MAX_PHOTO_BYTES * 4) / 3) + 4).nullable(),
+  }),
+  async (ctx, tx) => {
+    const { actor, input, requestId } = ctx as typeof ctx & { requestId?: string };
+    const snap = await loadEmployee(tx, input.orgId, input.employeeId);
+    const self = await requireSelfOr(actor, 'employees.edit', input.orgId, snap, tx);
+    const previousPath = (snap.get('photoPath') as string | undefined) ?? null;
+    let photo: { photoUrl: string; photoPath: string } | null = null;
+    if (input.image !== null) {
+      const bytes = Buffer.from(input.image, 'base64');
+      const kind = IMAGE_TYPES.find((t) => t.matches(bytes));
+      if (!kind) throw errors.invalid('The photo must be a JPEG, PNG or WebP image.');
+      if (bytes.length > MAX_PHOTO_BYTES) throw errors.invalid('The photo is too large (1 MB at most).');
+      const b = bucket();
+      const path = `employee-photos/${input.orgId}/${input.employeeId}/${requestId ?? randomUUID()}.${kind.ext}`;
+      const token = randomUUID();
+      await b.file(path).save(bytes, {
+        resumable: false,
+        contentType: kind.type,
+        metadata: { cacheControl: 'private, max-age=31536000, immutable', metadata: { firebaseStorageDownloadTokens: token } },
+      });
+      photo = { photoUrl: downloadUrl(b.name, path, token), photoPath: path };
+    } else if (!previousPath) {
+      return { employeeId: input.employeeId, photoUrl: null, previousPath: null };
+    }
+    tx.update(snap.ref, {
+      photoUrl: photo?.photoUrl ?? null,
+      photoPath: photo?.photoPath ?? null,
+      ...(photo ? checklistTicks(snap, ['photo'], actor.email ?? actor.uid) : null),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    recordAudit(tx, auditCtx(ctx), input.orgId, {
+      action: photo ? 'employee.photo.set' : 'employee.photo.remove',
+      entityType: 'employee',
+      entityId: input.employeeId,
+      branchId: snap.get('branchId'),
+      after: { self },
+    });
+    return { employeeId: input.employeeId, photoUrl: photo?.photoUrl ?? null, previousPath: previousPath === photo?.photoPath ? null : previousPath };
+  },
+  async ({ previousPath }) => {
+    if (previousPath) await bucket().file(previousPath).delete({ ignoreNotFound: true });
+  },
+);
 
 /** Shows the full Aadhaar number to HR with access to personal data, or to the employee, and records that they did. */
 export const revealAadhaar = command(

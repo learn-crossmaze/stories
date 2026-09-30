@@ -18,6 +18,7 @@ import { CheckInCard } from './MyAttendance';
 import { useMyOnboarding } from './OnboardingReminder';
 import { Checklist } from './employeePanels';
 import { PayslipButton } from './payrollKit';
+import { EmployeePhoto } from './EmployeePhoto';
 
 const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
 
@@ -72,11 +73,14 @@ export function MyProfilePage() {
   return (
     <>
       <header className="page-header page-header-row">
-        <div>
+        <div className="profile-head">
+          <EmployeePhoto orgId={org.id} employee={e} canEdit={e.status !== 'OFFBOARDED'} onChanged={me.reload} />
+          <div>
           <h1>{e.fullName}</h1>
           <p className="muted">
             {e.code} · {e.designationName ?? ht.navMyProfile} <span className="badge badge-info">{ht.status[e.status] ?? e.status}</span>
           </p>
+          </div>
         </div>
       </header>
       {!!onboarding.data?.missing.length && (
