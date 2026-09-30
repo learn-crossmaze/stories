@@ -19,6 +19,27 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci && npm run build
+      # Each PR gets its own preview channel for 7 days, and a site holds only so many: remove the channels of PRs
+      # that are no longer open, so a busy week of PRs can't block new previews ("channel quota reached").
+      - name: Remove preview channels of closed PRs
+        continue-on-error: true
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          open=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')
+          npx firebase hosting:channel:list --project stories-by-crossmaze --json \
+            | jq -r '.result.channels[]?.name' | sed 's#.*/channels/##' | grep -E '^pr[0-9]+-' \
+            | while read -r channel; do
+                number=${channel#pr}; number=${number%%-*}
+                if ! printf '%s\n' "$open" | grep -qx "$number"; then
+                  echo "Removing $channel"
+                  npx firebase hosting:channel:delete "$channel" --project stories-by-crossmaze --force || true
+                fi
+              done
+          rm -f "$RUNNER_TEMP/sa.json"
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
