@@ -205,6 +205,10 @@ async function seedLibrary() {
   for (const b of bookIds) {
     codes[b.id] = (await call<{ codes: string[] }>(copies.acquire, { orgId: CORP, branchId: CENTRAL, bookId: b.id, quantity: 2, acquisitionCostMinor: 29900, condition: 'GOOD', locationId: shelf[b.age] })).codes;
   }
+  // A fresh delivery at Central still waiting to go on a shelf (Collection → Shelve books).
+  for (const b of bookIds.slice(0, 3)) {
+    await call(copies.acquire, { orgId: CORP, branchId: CENTRAL, bookId: b.id, quantity: 1, acquisitionCostMinor: 29900, condition: 'NEW' });
+  }
   for (const b of bookIds.slice(0, 12)) {
     await call(copies.acquire, { orgId: FRAN, branchId: DEMO_FRANCHISE, bookId: b.id, quantity: 1, acquisitionCostMinor: 29900, condition: 'NEW' });
   }

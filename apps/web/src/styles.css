@@ -370,6 +370,18 @@ main h1[tabindex='-1']:focus { outline: none; }
 .tab-active { color: var(--on-surface); border-bottom-color: var(--primary); }
 .tab-count { margin-left: 6px; font-size: 12px; background: var(--surface-dim); border-radius: 999px; padding: 1px 8px; }
 
+/* Shelve books: shelf + scan side by side, the button under them. */
+.shelve-bar { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(240px, 2fr); gap: 12px 16px; align-items: end; margin-bottom: 12px; }
+.shelve-bar .field { margin: 0; }
+.shelve-bar > .row, .shelve-bar > .form-error, .shelve-bar > [role='alert'] { grid-column: 1 / -1; }
+@media (max-width: 640px) { .shelve-bar { grid-template-columns: minmax(0, 1fr); } }
+.shelve-bar > * { min-width: 0; }
+.shelve-bar select { width: 100%; }
+.check-col { width: 44px; }
+.check-col input { width: 20px; height: 20px; }
+.table tr.row-selected td { background: var(--primary-container); color: var(--on-primary-container); }
+.table tr.row-selected td a { color: inherit; }
+
 .scan { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 500; }
 .scan-row { display: flex; align-items: center; gap: 8px; border: 1px solid var(--outline); border-radius: var(--radius-md); background: var(--surface-raised); padding: 0 6px 0 12px; }
 .scan-row:focus-within { outline: 2px solid var(--primary); outline-offset: 1px; }

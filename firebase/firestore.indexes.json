@@ -279,6 +279,28 @@
       ]
     },
     {
+      "collectionGroup": "copies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "currentBranchId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "locationId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "code",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "members",
       "queryScope": "COLLECTION",
       "fields": [

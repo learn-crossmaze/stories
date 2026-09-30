@@ -14,6 +14,7 @@ import * as xfer from '../../src/circulation/transfers.js';
 import { db } from '../../src/core/firebase.js';
 import * as copies from '../../src/inventory/copies.js';
 import * as locations from '../../src/inventory/locations.js';
+import * as shelving from '../../src/inventory/shelve.js';
 import * as me from '../../src/members/me.js';
 import * as members from '../../src/members/members.js';
 import * as orgs from '../../src/organization/orgs.js';
@@ -592,6 +593,44 @@ describe('member audit trail', () => {
     expect(await trail(r)).toEqual(['member.register', 'subscription.create', 'payment.recordOffline', 'circulation.issue', 'circulation.return']);
     const ret = await db.collection(`orgs/${org}/auditLogs`).where('memberId', '==', a).where('action', '==', 'circulation.return').get();
     expect(ret.docs[0].get('after').copies).toEqual([c1]);
+  });
+});
+
+describe('shelving in bulk', () => {
+  const idOf = async (code: string) => (await db.collection(`orgs/${org}/copies`).where('code', '==', code).get()).docs[0].id;
+  const newShelf = async (branchId = central) =>
+    (await call<{ locationId: string }>(locations.create, lib, { orgId: org, branchId, code: '', label: 'New arrivals', kind: 'SHELF' })).locationId;
+  const shelve = (locationId: string, copyIds: string[], by = lib, branchId = central) =>
+    call<{ shelved: number; unchanged: number }>(shelving.shelve, by, { orgId: org, branchId, locationId, copyIds });
+
+  it('puts new and returned copies on one shelf, and leaves ones already there alone', async () => {
+    const codes = await acquire(bookId, 3);
+    const ids = await Promise.all(codes.map(idOf));
+    const m = await register('Asha');
+    await subscribe(m);
+    await issue(m, [codes[0]]);
+    await giveBack([codes[0]]);
+    await call(copies.inspect, lib, { orgId: org, copyId: ids[0], outcome: 'PASS', condition: 'GOOD', note: '' });
+    expect(await get(`copies/${ids[0]}`)).toMatchObject({ status: 'AVAILABLE', locationId: null });
+
+    const shelf = await newShelf();
+    expect(await shelve(shelf, ids)).toEqual({ shelved: 3, unchanged: 0 });
+    for (const c of ids) expect((await get(`copies/${c}`)).locationId).toBe(shelf);
+    const events = await path(`copies/${ids[1]}`).collection('events').where('type', '==', 'SHELVED').get();
+    expect(events.docs[0].get('ref')).toEqual({ from: null, to: shelf });
+    expect(await shelve(shelf, ids.slice(0, 1))).toEqual({ shelved: 0, unchanged: 1 });
+  });
+
+  it('refuses copies on loan or at another branch, and staff of other branches (nothing is moved)', async () => {
+    const [here, lent] = await Promise.all((await acquire(bookId, 2)).map(idOf));
+    const [there] = await Promise.all((await acquire(bookId, 1, north)).map(idOf));
+    const shelf = await newShelf();
+    await path(`copies/${lent}`).update({ status: 'ISSUED' });
+    expect(await failure(shelve(shelf, [here, lent]))).toBe('COPY_STATE');
+    expect(await failure(shelve(shelf, [here, there]))).toBe('OTHER_BRANCH');
+    expect(await failure(shelve(await newShelf(north), [there], lib2, north))).toBe('FORBIDDEN');
+    expect(await failure(shelve(shelf, [here, here]))).toBe('INVALID_INPUT');
+    expect((await get(`copies/${here}`)).locationId).toBeNull();
   });
 });
 

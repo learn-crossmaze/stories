@@ -83,6 +83,13 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   for that title at the branch.
 - **Shelf locations:** `orgs/{o}/branches/{b}/locations` (code, label, kind). Leave the code blank to number it with the
   branch's shelf pattern.
+- **Shelve books** (Collection → *Shelve books*, `/ops/inventory/shelve`, `copies-shelve`, `copies.manage` at the
+  branch): lists every copy at the branch that is **available but not on a shelf** (`locationId == null`): new stock
+  received without a shelf, and returned books that passed inspection (issuing clears a copy's shelf). Pick the shelf,
+  tick the books or scan them (scanning also brings in a copy already on another shelf, to move it), and one click
+  puts them all there: one transaction per 100 copies, all or none, with a `SHELVED` event per copy. Copies on loan,
+  in transit, lost or retired, or at another branch, are refused; copies already on that shelf are left alone.
+  Inventory shows these copies as *Not on a shelf*, and its **Shelve books (N)** button opens the page.
 - **Condition:** NEW, GOOD, FAIR, POOR (changes are recorded as events). DAMAGED/LOST/RETIRED are *statuses*.
 - **State machine** — see [CIRCULATION.md](CIRCULATION.md). Retired copies are never deleted and never return.
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
@@ -147,9 +154,11 @@ See [CIRCULATION.md §Transfers](CIRCULATION.md#transfers).
 The home page of the Admin and Operations views (`admin/dashboard/Dashboard.tsx`) answers "what do I need to do
 now?". Each part shows only when the person may see it:
 
-- **Needs attention:** inspections, incoming transfers, deposit approvals, memberships to renew in the next 15 days,
+- **Needs attention:** inspections, books to put back on the shelf (new or returned, for staff who look after
+  copies; opens *Shelve books*), incoming transfers, deposit approvals, memberships to renew in the next 15 days,
   and the HR items (documents, corrections, leave, payroll runs, last month's attendance). Each links to its page.
-- **Today at the branch:** issued, exchanges, holds ready, members waiting, awaiting inspection, incoming transfers.
+- **Today at the branch:** issued, exchanges, holds ready, members waiting, awaiting inspection, not on a shelf,
+  incoming transfers.
 - **Members at the branch:** active, renewal due, expired and all. Each opens the member list with that filter
   (`/ops/members?renewal=DUE`).
 - **Catalogue** (catalogue owners): titles, and titles added this month.

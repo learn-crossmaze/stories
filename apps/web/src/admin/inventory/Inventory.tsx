@@ -6,7 +6,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { CONDITIONS, type Condition, COPY_STATUSES, type CopyStatus, label } from '../../data/common';
-import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle } from '../../data/inventory';
+import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle, unshelvedCount } from '../../data/inventory';
 import { getBook } from '../../data/catalogue';
 import { BookCover } from '../../shared/BookCover';
 import { useDebounced } from '../../shared/useDebounced';
@@ -165,7 +165,11 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
                       <CopyStatusBadge status={c.status} />
                     </td>
                     <td>{label(c.condition)}</td>
-                    <td className="mono">{locName(c.locationId)}</td>
+                    {c.locationId || c.status !== 'AVAILABLE' ? (
+                      <td className="mono">{locName(c.locationId)}</td>
+                    ) : (
+                      <td className="muted">{lt.unshelved}</td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -209,14 +213,20 @@ export function InventoryPage() {
   const { org, branch } = useWorkspace();
   const { claims } = useAuth();
   const canReceive = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
+  const unshelved = useAsync(() => (org && branch && canReceive ? unshelvedCount(org.id, branch.id) : Promise.resolve(0)), [org?.id, branch?.id, canReceive]);
   return (
     <>
       <header className="page-header page-header-row">
         <h1>{lt.inventoryTitle}</h1>
         {canReceive && (
-          <Link className="btn btn-filled" to={paths.adminBooksBulk}>
-            <Icon name="plus" /> {lt.bulkNav}
-          </Link>
+          <div className="row">
+            <Link className="btn btn-outlined" to={paths.adminShelve}>
+              <Icon name="shelves" /> {lt.shelveButton(unshelved.data ?? 0)}
+            </Link>
+            <Link className="btn btn-filled" to={paths.adminBooksBulk}>
+              <Icon name="plus" /> {lt.bulkNav}
+            </Link>
+          </div>
         )}
       </header>
       <NeedBranch>{(branchId) => org && <BranchInventory orgId={org.id} branchId={branchId} />}</NeedBranch>

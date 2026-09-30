@@ -2,11 +2,13 @@
 import * as copies from './copies.js';
 import * as locations from './locations.js';
 import * as receive from './receive.js';
+import * as shelve from './shelve.js';
 
 export const routes = {
   'copies-acquire': copies.acquire,
   'copies-receive': receive.receive,
   'copies-relocate': copies.relocate,
+  'copies-shelve': shelve.shelve,
   'copies-recordCondition': copies.recordCondition,
   'copies-inspect': copies.inspect,
   'copies-repair': copies.repair,
