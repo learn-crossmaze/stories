@@ -193,6 +193,7 @@ const NO_VALUES: Record<LetterField, string> = { designation: '', department: ''
  * employee record.
  */
 export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssued }: { orgId: string; employee?: Employee; candidates?: Employee[]; onClose: () => void; onIssued: (msg: string) => void }) {
+  const { branchName } = useWorkspace();
   const data = useAsync(async () => ({ templates: await listTemplates(orgId), defaults: await templateDefaults(orgId) }), [orgId]);
   const [employeeId, setEmployeeId] = useState(employee?.id ?? '');
   const [choice, setChoice] = useState('APPOINTMENT');
@@ -212,8 +213,13 @@ export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssu
   }
   const { templates, defaults } = data.data;
   const branchId = current?.branchId ?? null;
-  const applies = (x: LetterTemplate) => x.status === 'PUBLISHED' && (!x.branchId || x.branchId === branchId);
-  const custom = templates.filter((x) => x.kind === 'CUSTOM' && applies(x));
+  const published = templates.filter((x) => x.status === 'PUBLISHED');
+  // Every published custom letter is listed until an employee is chosen; then those for other branches are named in a note, not hidden silently.
+  const fits = (x: LetterTemplate) => !x.branchId || !current || x.branchId === branchId;
+  const custom = published.filter((x) => x.kind === 'CUSTOM' && fits(x));
+  const elsewhere = published.filter((x) => x.kind === 'CUSTOM' && !fits(x));
+  const offers = published.filter((x) => x.kind === 'OFFER');
+  const labelOf = (x: LetterTemplate) => (x.branchId ? `${x.name} · ${branchName(x.branchId)}` : x.name);
   // The appointment wording in force: the branch's, else the organization's, else built-in.
   const appointment =
     templates.find((x) => x.kind === 'APPOINTMENT' && x.status === 'PUBLISHED' && !!branchId && x.branchId === branchId) ??
@@ -225,7 +231,7 @@ export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssu
   const date = (v: string) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v);
   const errors = {
     employeeId: current ? undefined : t.required,
-    template: template ? undefined : t.required,
+    template: template ? undefined : choice.startsWith('CUSTOM:') && elsewhere.some((x) => `CUSTOM:${x.id}` === choice) ? ht.letterOtherBranch : t.required,
     annualCtc: !f.annualCtc || (whole(f.annualCtc) && Number(f.annualCtc) >= 1000) ? undefined : ht.enterWholeRupees,
     probationMonths: !f.probationMonths || (whole(f.probationMonths) && Number(f.probationMonths) <= 24) ? undefined : ht.enterNumber,
     noticeDays: !f.noticeDays || (whole(f.noticeDays) && Number(f.noticeDays) <= 180) ? undefined : ht.enterNumber,
@@ -290,9 +296,20 @@ export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssu
           value={choice}
           onChange={setChoice}
           hint={ht.letterTemplateHint}
-          error={e('template')}
-          options={[{ value: 'APPOINTMENT', label: appointment.name }, ...custom.map((x) => ({ value: `CUSTOM:${x.id}`, label: x.name }))]}
+          error={e('template') ?? (template ? undefined : errors.template)}
+          options={[
+            { value: 'APPOINTMENT', label: appointment.name },
+            ...custom.map((x) => ({ value: `CUSTOM:${x.id}`, label: labelOf(x) })),
+            // A choice that no longer fits the chosen employee stays visible, with the reason as its error.
+            ...elsewhere.filter((x) => `CUSTOM:${x.id}` === choice).map((x) => ({ value: `CUSTOM:${x.id}`, label: labelOf(x) })),
+          ]}
         />
+        {(elsewhere.length > 0 || offers.length > 0) && (
+          <p className="muted small">
+            {elsewhere.length > 0 && ht.letterNotForBranch(elsewhere.map(labelOf).join(', '), branchId ? branchName(branchId) : ht.headOffice)}{' '}
+            {offers.length > 0 && ht.letterOffersElsewhere}
+          </p>
+        )}
         <div className="form-grid">
           {shown('designation') && <TextField label={ht.offerDesignation} hint={fromRecord} value={f.designation} onChange={set('designation')} />}
           {shown('department') && <TextField label={ht.offerDepartment} hint={fromRecord} value={f.department} onChange={set('department')} />}
