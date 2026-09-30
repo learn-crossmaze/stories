@@ -2,6 +2,7 @@
 import * as deposits from './deposits.js';
 import * as online from './online.js';
 import * as plans from './plans.js';
+import * as refunds from './refunds.js';
 import * as subscriptions from './subscriptions.js';
 import * as sweep from './sweep.js';
 
@@ -15,6 +16,8 @@ export const routes = {
   'payments-createRequest': online.createRequest,
   'payments-checkRequest': online.checkRequest,
   'payments-cancelRequest': online.cancelRequest,
+  'payments-refund': refunds.refundPayment,
+  'payments-checkRefund': refunds.checkRefund,
   'deposits-proposeAdjustment': deposits.proposeAdjustment,
   'deposits-decide': deposits.decideAdjustment,
   'deposits-startSettlement': deposits.startSettlement,

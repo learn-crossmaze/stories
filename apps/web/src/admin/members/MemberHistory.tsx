@@ -1,5 +1,7 @@
+import { useState } from 'react';
+
 import { memberAudit, type AuditEntry } from '../../data/org';
-import { memberPayments, type Subscription } from '../../data/billing';
+import { memberPayments, type Payment, refundable, type Subscription } from '../../data/billing';
 import { type Loan } from '../../data/circulation';
 import { label, planWithOption } from '../../data/common';
 import { useAsync } from '../../shared/useAsync';
@@ -7,6 +9,8 @@ import { day, money, when } from '../../shared/format';
 import { t } from '../../strings';
 import { ErrorState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { lt } from '../../strings/library';
+import { Notice } from '../components/kit';
+import { methodLabel, RefundBadge, RefundDialog } from './Payments';
 
 type Scope = string[] | 'ALL';
 
@@ -46,38 +50,95 @@ export function SubscriptionHistory({ subs, loading, error, onRetry }: { subs: S
   );
 }
 
-/** Money received from or paid back to the member. */
-export function PaymentHistory({ orgId, memberId, scope, reloadKey }: { orgId: string; memberId: string; scope: Scope; reloadKey: number }) {
+/** Money received from or paid back to the member; staff who may refund can refund a payment from here. */
+export function PaymentHistory({
+  orgId,
+  memberId,
+  memberName,
+  scope,
+  reloadKey,
+  canRefund = false,
+  onChanged,
+}: {
+  orgId: string;
+  memberId: string;
+  memberName?: string;
+  scope: Scope;
+  reloadKey: number;
+  canRefund?: boolean;
+  onChanged?: () => void;
+}) {
   const payments = useAsync(() => memberPayments(orgId, memberId, scope), [orgId, memberId, JSON.stringify(scope), reloadKey]);
+  const [refunding, setRefunding] = useState<Payment | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   if (payments.loading) return <SkeletonRows rows={2} />;
   if (payments.error) return <ErrorState message={payments.error} onRetry={payments.reload} />;
   if (!payments.data?.length) return <p className="muted">{lt.noPayments}</p>;
+  const refundsHere = canRefund && payments.data.some((p) => refundable(p) > 0);
   return (
-    <TableWrap>
-      <table className="table compact">
-        <thead>
-          <tr>
-            <th scope="col">{lt.date}</th>
-            <th scope="col">{lt.paidFor}</th>
-            <th scope="col">{lt.method}</th>
-            <th scope="col">{lt.amountCol}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {payments.data.map((p) => (
-            <tr key={p.id}>
-              <td className="nowrap">{when(p.at)}</td>
-              <td>
-                {p.lines.map((l) => label(l.type)).join(' + ')}
-                {p.reference && <div className="muted small mono">{p.reference}</div>}
-              </td>
-              <td>{label(p.method.replace(/^OFFLINE_/, ''))}</td>
-              <td className="nowrap">{p.direction === 'OUT' ? `− ${money(p.amountMinor)}` : money(p.amountMinor)}</td>
+    <>
+      {notice && <Notice tone="ok">{notice}</Notice>}
+      <TableWrap>
+        <table className="table compact">
+          <thead>
+            <tr>
+              <th scope="col">{lt.date}</th>
+              <th scope="col">{lt.paidFor}</th>
+              <th scope="col">{lt.method}</th>
+              <th scope="col">{lt.amountCol}</th>
+              {refundsHere && (
+                <th scope="col">
+                  <span className="sr-only">{lt.actionsCol}</span>
+                </th>
+              )}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </TableWrap>
+          </thead>
+          <tbody>
+            {payments.data.map((p) => (
+              <tr key={p.id}>
+                <td className="nowrap">{when(p.at)}</td>
+                <td>
+                  {p.lines.map((l) => label(l.type)).join(' + ')}
+                  {p.reference && <div className="muted small mono">{p.reference}</div>}
+                </td>
+                <td>{methodLabel(p.method)}</td>
+                <td className="nowrap">
+                  {p.direction === 'OUT' ? `− ${money(p.amountMinor)}` : money(p.amountMinor)}
+                  {p.purpose === 'REFUND' && p.status !== 'SUCCESS' && (
+                    <div>
+                      <RefundBadge status={p.status} />
+                    </div>
+                  )}
+                  {(p.refundedMinor ?? 0) > 0 && <div className="muted small">{refundable(p) > 0 ? lt.refundedPart(money(p.refundedMinor ?? 0)) : lt.refundedAll}</div>}
+                </td>
+                {refundsHere && (
+                  <td className="cell-actions">
+                    {refundable(p) > 0 && (
+                      <button type="button" className="btn btn-text" onClick={() => setRefunding(p)}>
+                        {lt.refundAction}
+                      </button>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableWrap>
+      {refunding && (
+        <RefundDialog
+          orgId={orgId}
+          payment={refunding}
+          memberName={memberName}
+          onClose={() => setRefunding(null)}
+          onDone={(msg) => {
+            setNotice(msg);
+            payments.reload();
+            onChanged?.();
+          }}
+        />
+      )}
+    </>
   );
 }
 

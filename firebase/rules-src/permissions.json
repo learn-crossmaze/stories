@@ -50,7 +50,7 @@
     "deposits.refund": ["FIN"],
     "payments.view": ["HO", "FIN", "FO", "BM", "LIB"],
     "payments.recordOffline": ["HO", "FIN", "FO", "BM", "LIB"],
-    "payments.refund": ["FIN"],
+    "payments.refund": ["FIN", "FO", "BM", "LIB"],
 
     "delivery.manage": ["FO", "BM", "LIB"],
     "delivery.assign": ["FO", "BM", "LIB"],

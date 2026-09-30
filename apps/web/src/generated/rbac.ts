@@ -224,7 +224,10 @@ export const PERMISSIONS = {
     "LIB"
   ],
   "payments.refund": [
-    "FIN"
+    "FIN",
+    "FO",
+    "BM",
+    "LIB"
   ],
   "delivery.manage": [
     "FO",

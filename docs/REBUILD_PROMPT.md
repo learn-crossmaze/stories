@@ -87,7 +87,7 @@ BM, LIB, DEL, CM), `books.create` (HO, BM, CM), `books.edit` (HO, CM), `books.de
 (HO, FIN, FO, BM, LIB), `loans.issue/return`, `exchanges.process`, `reservations.manage` (FO, BM, LIB),
 `subscriptions.manage` (HO, FIN, FO, BM, LIB), `plans.manage` (HO), `deposits.view` (HO, FIN, FO, BM, LIB),
 `deposits.adjust` (FIN, FO, BM), `deposits.approve`/`deposits.refund` (FIN), `payments.view`/`payments.recordOffline`
-(HO, FIN, FO, BM, LIB), `payments.refund` (FIN), plus HRMS/tasks/reports permissions reserved for later phases.
+(HO, FIN, FO, BM, LIB), `payments.refund` (FIN, FO, BM, LIB), plus HRMS/tasks/reports permissions reserved for later phases.
 
 Grantable: SA → every org role (respecting org type); HO → HO, FIN, HR, CM, BM, LIB, DEL, EMP; FO → FIN, HR, BM,
 LIB, DEL, EMP; HR → EMP; BM → LIB, DEL, EMP (own branches only). Nobody but SA edits their own roles. Org-wide roles
