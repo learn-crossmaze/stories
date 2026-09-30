@@ -97,6 +97,7 @@ export interface Membership {
     waitingCount: number;
     lifetimeLoans: number;
     lifetimeExchanges: number;
+    aadhaarLast4?: string | null;
   };
   branch: {
     id: string;
@@ -164,7 +165,7 @@ export interface JoinOptions {
 export const loadJoinOptions = () => call<JoinOptions>('me-joinOptions', {});
 
 /** Self sign-up: become a member of a branch, linked to this account. */
-export const joinLibrary = (input: { orgId: string; branchId: string; fullName: string; dob: string; phone: string }) =>
+export const joinLibrary = (input: { orgId: string; branchId: string; fullName: string; dob: string; phone: string; aadhaar: string }) =>
   command<{ memberId: string; code: string }>('me-join', { ...input, address: null });
 
 /** Adds a child (under 18) with the signed-in member as guardian. */

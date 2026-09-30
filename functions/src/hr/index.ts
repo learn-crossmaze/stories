@@ -17,6 +17,7 @@ export const routes = {
   'employees-setPrivate': employees.setPrivate,
   'employees-setBank': employees.setBank,
   'employees-revealBank': employees.revealBank,
+  'employees-revealAadhaar': employees.revealAadhaar,
   'employees-linkAccount': employees.linkAccount,
   'employees-backfill': employees.backfill,
   'designations-create': settings.createDesignation,

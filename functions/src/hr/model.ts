@@ -80,12 +80,13 @@ export const PROFILE_FIELDS = [
   'permanentAddress',
   'emergency',
   'pan',
+  'aadhaar',
   'uan',
   'esiNumber',
   'bank',
 ] as const;
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
-export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'bank'];
+export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'aadhaar', 'bank'];
 
 export const hrConfigRef = (orgId: string) => db.doc(`orgs/${orgId}/config/hr`);
 export const employeeRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employees/${employeeId}`);

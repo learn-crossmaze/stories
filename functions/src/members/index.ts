@@ -5,6 +5,7 @@ import * as members from './members.js';
 export const routes = {
   'members-register': members.register,
   'members-update': members.update,
+  'members-revealAadhaar': members.revealAadhaar,
   'members-setStatus': members.setStatus,
   'members-indexList': members.indexList,
   // Member self-service (ownership-checked).

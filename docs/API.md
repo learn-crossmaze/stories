@@ -57,7 +57,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `copies-availability` (query) | any signed-in user |
 | | `copies-availabilityMany` (query) — per-branch counts for up to 60 titles (catalogue search) | any signed-in user |
 | | `copies-locate` (query) — which branch holds a copy, by barcode or code | `books.view` in the org (any branch) |
-| Members | `members-register/update/setStatus` | `members.manage` at the home branch |
+| Members | `members-register/update/setStatus` (optional `aadhaar`: 12 digits; empty keeps the one on file), `members-revealAadhaar` (audited) | `members.manage` at the home branch |
 | | `members-indexList` (query) — one-time fill of plan/renewal date for a branch's older members | `members.view` at the branch |
 | Plans | `plans-create/update/archive` (`options[]`: 1–4 of `{duration, priceMinor}`; `discount`: `{type AMOUNT|PERCENT, value, from, to, durations[], label}` or null; see SUBSCRIPTIONS.md) | `plans.manage` |
 | Subscriptions | `subscriptions-create/cancelPending` (`duration`: the billing option; optional when the plan has one) | `subscriptions.manage` |
@@ -81,6 +81,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Employees | `employees-create` (DRAFT record; links a Stories account with the same email), `employees-update` (job changes recorded with `effectiveDate`), `employees-linkAccount`, `employees-backfill` (records for staff who only had roles; safe to repeat) | `employees-create`: `employees.add` (HO, HR, FO, and BM at their own branches); the rest `employees.edit` at the employee's branch (org-wide for head-office records and backfill) |
 | | `employees-transition` (`START_ONBOARDING, ACTIVATE, RESIGN, WITHDRAW_RESIGNATION, START_OFFBOARDING, COMPLETE_OFFBOARDING, REHIRE`), `employees-checkItem` | `employees.lifecycle` (never on yourself) |
 | | `employees-setPrivate` | `employees.privateData`, or the employee themselves (self-onboarding) |
+| | `employees-revealAadhaar` (audited) | `employees.privateData`, or the employee themselves |
 | | `employees-setBank`, `employees-revealBank` (audited) | `employees.bank`; the employee may add their own bank account once (`setBank`) |
 | | `hr-setSelfOnboarding` (`requiredFields`: personal details staff must fill in) | `hr.config` |
 | Settings | `designations-create/rename/archive`, `hr-setChecklists`, `documentTypes-save/archive` | `hr.config` |

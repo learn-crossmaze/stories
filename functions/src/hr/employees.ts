@@ -1,6 +1,7 @@
 import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
+import { aadhaarInput } from '../core/aadhaar.js';
 import { recordAudit } from '../core/audit.js';
 import { command, type CallContext } from '../core/callable.js';
 import { syncClaims } from '../core/claims.js';
@@ -383,6 +384,8 @@ export const setPrivate = command(
     emergencyRelation: text(40),
     emergencyPhone: phone,
     pan,
+    /** '' keeps the Aadhaar number on file; only its last four digits are readable (private/aadhaar holds it). */
+    aadhaar: aadhaarInput,
     uan: z.union([z.literal(''), z.string().trim().regex(/^\d{12}$/, 'must be 12 digits')]).default(''),
     esiNumber: z.union([z.literal(''), z.string().trim().regex(/^\d{10,17}$/, 'must be 10–17 digits')]).default(''),
   }),
@@ -390,19 +393,40 @@ export const setPrivate = command(
     const { actor, input } = ctx;
     const snap = await loadEmployee(tx, input.orgId, input.employeeId);
     const self = await requireSelfOr(actor, 'employees.privateData', input.orgId, snap, tx);
-    const { orgId, employeeId, ...profile } = input;
-    tx.set(db.doc(`orgs/${orgId}/employees/${employeeId}/private/profile`), { ...profile, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid }, { merge: true });
+    const { orgId, employeeId, aadhaar, ...profile } = input;
+    if (aadhaar) tx.set(aadhaarRef(orgId, employeeId), { number: aadhaar, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid });
+    tx.set(
+      db.doc(`orgs/${orgId}/employees/${employeeId}/private/profile`),
+      { ...profile, ...(aadhaar ? { aadhaarLast4: aadhaar.slice(-4) } : {}), updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid },
+      { merge: true },
+    );
     tickFromDetails(tx, snap, [...(profile.pan ? ['pan'] : []), ...(profile.emergencyName && profile.emergencyPhone ? ['emergency-contact'] : [])], actor.email ?? actor.uid);
     // The audit trail records that personal data changed, not the data itself.
     recordAudit(tx, auditCtx(ctx), orgId, {
       action: 'employee.setPrivate', entityType: 'employee', entityId: employeeId, branchId: snap.get('branchId'),
-      after: { fields: Object.keys(profile).filter((k) => (profile as Record<string, string>)[k] !== ''), self },
+      after: { fields: [...Object.keys(profile).filter((k) => (profile as Record<string, string>)[k] !== ''), ...(aadhaar ? ['aadhaar'] : [])], self },
     });
     return { employeeId };
   },
 );
 
 const bankRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employees/${employeeId}/private/bank`);
+const aadhaarRef = (orgId: string, employeeId: string) => db.doc(`orgs/${orgId}/employees/${employeeId}/private/aadhaar`);
+
+/** Shows the full Aadhaar number to HR with access to personal data, or to the employee, and records that they did. */
+export const revealAadhaar = command(
+  'employees-revealAadhaar',
+  z.strictObject({ orgId: id, employeeId: id }),
+  async (ctx, tx) => {
+    const { actor, input } = ctx;
+    const snap = await loadEmployee(tx, input.orgId, input.employeeId);
+    await requireSelfOr(actor, 'employees.privateData', input.orgId, snap, tx);
+    const doc = await tx.get(aadhaarRef(input.orgId, input.employeeId));
+    if (!doc.exists) throw errors.notFound('Aadhaar number');
+    recordAudit(tx, auditCtx(ctx), input.orgId, { action: 'employee.revealAadhaar', entityType: 'employee', entityId: input.employeeId, branchId: snap.get('branchId') });
+    return { aadhaar: doc.get('number') as string };
+  },
+);
 
 /**
  * Salary account. The full number is kept in private/bank (no client can read

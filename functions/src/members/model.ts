@@ -49,4 +49,6 @@ export interface Member {
   waitingCount: number;
   lifetimeLoans: number;
   lifetimeExchanges: number;
+  /** Last four digits of the Aadhaar number (the full number is in private/aadhaar, functions only). */
+  aadhaarLast4?: string | null;
 }

@@ -84,6 +84,9 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/employees/e-cen/history/h1`, { type: 'CREATED' });
     await put(`orgs/${CORP}/employees/e-cen/private/profile`, { pan: 'ABCDE1234F', bank: { last4: '7890' } });
     await put(`orgs/${CORP}/employees/e-cen/private/bank`, { accountNumber: '001234567890' });
+    await put(`orgs/${CORP}/employees/e-cen/private/aadhaar`, { number: '234123412346' });
+    await put(`orgs/${CORP}/members/m-cen/private/aadhaar`, { number: '234123412346' });
+    await put(`orgs/${CORP}/aadhaarIndex/abc`, { memberId: 'm-cen' });
     await put(`orgs/${CORP}/employees/e-nth/private/profile`, { pan: 'ZZZZZ9999Z' });
     await put(`orgs/${CORP}/designations/d1`, { name: 'Librarian', status: 'ACTIVE' });
     await put(`orgs/${CORP}/employees/e-cen/documents/doc1`, { orgId: CORP, branchId: 'cen', employeeUid: 'alice', status: 'VERIFIED', typeName: 'PAN card' });
@@ -338,6 +341,12 @@ describe('HRMS employee records', () => {
     await assertFails(getDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen/private/bank`)));
     await assertFails(getDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/bank`)));
     await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/employees/e-cen/private/bank`)));
+    // Full Aadhaar numbers (employees and members) and the duplicate index: functions only.
+    await assertFails(getDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen/private/aadhaar`)));
+    await assertFails(getDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/aadhaar`)));
+    await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/members/m-cen/private/aadhaar`)));
+    await assertFails(getDoc(doc(as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } })), `orgs/${CORP}/members/m-cen/private/aadhaar`)));
+    await assertFails(getDoc(doc(hrAdmin(), `orgs/${CORP}/aadhaarIndex/abc`)));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen`), { status: 'OFFBOARDED' }));
     await assertFails(setDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/profile`), { pan: 'X' }));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/designations/d2`), { name: 'X' }));

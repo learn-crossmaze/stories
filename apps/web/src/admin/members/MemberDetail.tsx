@@ -23,6 +23,7 @@ import { MemberDialog } from './Members';
 import { LoanHistory, MemberAudit, PaymentHistory, SubscriptionHistory } from './MemberHistory';
 import { AdjustmentDialog, PaymentDialog, RefundDialog, ReserveDialog, SubscribeDialog, UpgradeDialog } from './memberDialogs';
 import { PendingUpgrade } from '../../shared/Upgrade';
+import { AadhaarValue } from '../../shared/aadhaar';
 
 type DialogKind =
   | 'idCard'
@@ -103,6 +104,15 @@ export function MemberDetailPage() {
           <p className="muted">
             <span className="mono">{m.code}</span> · {label(m.audience)} · {m.phone ?? '—'} · {branchName(m.homeBranchId)}
           </p>
+          {m.aadhaarLast4 && (
+            <p className="muted">
+              {lt.aadhaarShort}:{' '}
+              <AadhaarValue
+                last4={m.aadhaarLast4}
+                reveal={perm('members.manage') ? () => command<{ aadhaar: string }>('members-revealAadhaar', { orgId, memberId: m.id }).then((r) => r.aadhaar) : undefined}
+              />
+            </p>
+          )}
           {m.guardian && (
             <p>
               {lt.guardian}: <Link to={paths.adminMember(m.guardian.memberId)}>{m.guardian.name}</Link> ({m.guardian.relationship})

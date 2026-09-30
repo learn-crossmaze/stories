@@ -9,6 +9,7 @@ import { day } from '../shared/format';
 import { t } from '../strings';
 import { useMemberData } from './memberData';
 import { MemberSwitcher } from './common';
+import { maskAadhaar } from '../shared/aadhaar';
 
 // Profile, ID card and appearance settings.
 const cardInfo = (m: Membership): IdCardInfo => ({
@@ -63,6 +64,12 @@ export function ProfilePage() {
             <dd>{current.member.phone ?? '—'}</dd>
             <dt>{t.meEmail}</dt>
             <dd>{current.member.email ?? '—'}</dd>
+            {current.member.aadhaarLast4 && (
+              <>
+                <dt>{t.meAadhaar}</dt>
+                <dd className="mono">{maskAadhaar(current.member.aadhaarLast4)}</dd>
+              </>
+            )}
             {current.member.guardian && (
               <>
                 <dt>{t.meGuardian}</dt>

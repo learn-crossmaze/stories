@@ -125,6 +125,12 @@ CHILDREN, 13–17 TEENS, 18+ ADULTS), mobile (E.164), home branch, status (ACTIV
 circulation counters (`activeLoanCount`, `allocatedCount`, `waitingCount`, lifetime loans/exchanges).
 
 - Registered at the counter (`members-register`, `members.manage`); self-service sign-up is Phase 2.
+- **Aadhaar number** (optional): typed at registration, on *Edit*, or by the member at sign-up; checked as 12 digits
+  with the Verhoeff check digit. The member record keeps only `aadhaarLast4` (pages show `XXXX XXXX 1234`); the full
+  number is in `members/{m}/private/aadhaar`, which no client can read. Staff who manage members at the branch can
+  press **Show** (`members-revealAadhaar`, audited as `member.revealAadhaar`). One Aadhaar number per member in an
+  organization (`DUPLICATE_AADHAAR`), checked through `orgs/{o}/aadhaarIndex/{sha256}` so the index holds no numbers.
+  Leaving the field empty on *Edit* keeps the number on file.
 - **Guardians (D8):** anyone under 18 must name an ACTIVE adult member as guardian (stored on the child as
   `guardian: {memberId, name, relationship}`); the guardian's page lists their children. Family membership is not
   built; `householdId` is reserved for it.

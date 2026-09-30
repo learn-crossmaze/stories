@@ -714,6 +714,36 @@ describe('member audit trail', () => {
   });
 });
 
+describe('Aadhaar numbers', () => {
+  const AADHAAR = '234123412346';
+
+  it('keeps the full number out of the member record, blocks duplicates, and audits revealing it', async () => {
+    const asha = await register('Asha', { aadhaar: '2341 2341 2346' });
+    const m = await get(`members/${asha}`);
+    expect(m.aadhaarLast4).toBe('2346');
+    expect(JSON.stringify(m)).not.toContain(AADHAAR);
+    expect((await path(`members/${asha}/private/aadhaar`).get()).get('number')).toBe(AADHAAR);
+
+    expect(await failure(register('Asha again', { aadhaar: AADHAAR }))).toBe('DUPLICATE_AADHAAR');
+    expect(await failure(register('Typo', { aadhaar: '234123412347' }))).toBe('INVALID_INPUT');
+
+    // Editing without a number keeps it; a new number replaces it and frees the old one.
+    const base = { orgId: org, memberId: asha, fullName: 'Asha', dob: '1990-05-01', phone: m.phone };
+    await call(members.update, lib, base);
+    expect((await get(`members/${asha}`)).aadhaarLast4).toBe('2346');
+    await call(members.update, lib, { ...base, aadhaar: '499118665246' });
+    expect((await get(`members/${asha}`)).aadhaarLast4).toBe('5246');
+    const other = await register('Ravi', { aadhaar: AADHAAR });
+    expect((await get(`members/${other}`)).aadhaarLast4).toBe('2346');
+
+    const outsider = await createUser('outsider@stories.test');
+    expect(await failure(call(members.revealAadhaar, outsider, { orgId: org, memberId: asha }))).toBe('FORBIDDEN');
+    expect(await call(members.revealAadhaar, lib, { orgId: org, memberId: asha })).toEqual({ aadhaar: '499118665246' });
+    const log = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'member.revealAadhaar').get();
+    expect(log.size).toBe(1);
+  });
+});
+
 describe('shelving in bulk', () => {
   const idOf = async (code: string) => (await db.collection(`orgs/${org}/copies`).where('code', '==', code).get()).docs[0].id;
   const newShelf = async (branchId = central) =>

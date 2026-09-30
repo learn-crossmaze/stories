@@ -25,7 +25,8 @@ audited.
 |---|---|---|
 | `orgs/{o}/employees/{e}` | `code` (employee ID), `uid` (linked Stories account or null), `email`, `emailLower`, `fullName`, `phone`, `branchId` (null = head office), `departmentId/Name`, `designationId/Name`, `managerId/Name`, `employmentType`, `joiningDate`, `status`, `noticeEndDate`, `exitDate`, `exitReason`, `onboarding[]`, `offboarding[]`, `source` (HR, ROLES or BACKFILL) | `employees.view` at the employee's branch (org-wide viewers also see head-office records); the employee themselves |
 | `…/employees/{e}/history/{h}` | `type` (CREATED, JOB_CHANGE, DETAILS, STATUS or ACCOUNT), `effectiveDate`, `changes {field: {from, to}}`, `note`, `by`, `at` | same as the record |
-| `…/employees/{e}/private/profile` | date of birth, gender, blood group, personal contact, addresses, emergency contact, PAN, UAN, ESI number, `bank` (masked: holder, bank, IFSC, last 4 digits) | `employees.privateData` at the branch; the employee |
+| `…/employees/{e}/private/profile` | date of birth, gender, blood group, personal contact, addresses, emergency contact, PAN, `aadhaarLast4`, UAN, ESI number, `bank` (masked: holder, bank, IFSC, last 4 digits) | `employees.privateData` at the branch; the employee |
+| `…/employees/{e}/private/aadhaar` | the full Aadhaar number (12 digits, Verhoeff-checked) | nobody (functions only; `employees-revealAadhaar` shows it to HR with `employees.privateData` or to the employee, and is audited) |
 | `…/employees/{e}/private/bank` | full account number, IFSC, holder, bank | nobody (functions only; `employees-revealBank` is audited) |
 | `orgs/{o}/designations/{d}` | `name`, `nameLower`, `status` | anyone in the org |
 | `orgs/{o}/config/hr` | `onboarding[]`, `offboarding[]` checklist templates (`key`, `label`, `required`) | anyone in the org |

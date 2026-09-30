@@ -30,6 +30,8 @@ export interface Member {
   homeBranchId: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
   guardian: { memberId: string; name: string; relationship: string } | null;
+  /** Last four digits; the full Aadhaar number is only on the server (members-revealAadhaar). */
+  aadhaarLast4?: string | null;
   activeSubscriptionId: string | null;
   nextSubscriptionId: string | null;
   subscriptionEndsAt: unknown;

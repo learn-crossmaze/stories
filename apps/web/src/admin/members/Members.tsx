@@ -17,6 +17,7 @@ import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../compo
 import { NeedBranch } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+import { aadhaarError, aadhaarHint, cleanAadhaar } from '../../shared/aadhaar';
 
 const age = (dob: string) => {
   const d = new Date(dob);
@@ -60,6 +61,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
     phone: member?.phone?.replace('+91', '') ?? '',
     email: member?.email ?? '',
     relationship: member?.guardian?.relationship ?? '',
+    aadhaar: '',
   });
   const [guardian, setGuardian] = useState<{ id: string; name: string } | null>(member?.guardian ? { id: member.guardian.memberId, name: member.guardian.name } : null);
   const [touched, setTouched] = useState(false);
@@ -70,6 +72,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
     dob: /^\d{4}-\d{2}-\d{2}$/.test(f.dob) && new Date(f.dob) < new Date() ? undefined : 'Enter the date of birth.',
     phone: !f.phone.trim() ? (minor ? undefined : lt.mobileHint) : /^[+\d\s-]{10,16}$/.test(f.phone.trim()) ? undefined : 'Enter a valid mobile number.',
     guardian: minor && !guardian ? lt.guardianHint : undefined,
+    aadhaar: aadhaarError(f.aadhaar) || undefined,
   };
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
@@ -77,6 +80,9 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
     const body = {
       orgId, fullName: f.fullName.trim(), dob: f.dob, phone: f.phone.trim(), email: f.email.trim(),
       guardianMemberId: minor ? guardian!.id : null, guardianRelationship: minor ? f.relationship.trim() : '',
+      // Keep what is on file: the address (entered at sign-up) and, when left empty, the Aadhaar number.
+      address: member?.address ?? null,
+      aadhaar: cleanAadhaar(f.aadhaar),
     };
     const res = member
       ? await command<{ memberId: string }>('members-update', { ...body, memberId: member.id })
@@ -95,6 +101,9 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
         <TextField label={lt.mobile} type="tel" value={f.phone} onChange={set('phone')} hint={minor ? undefined : lt.mobileHint} error={err('phone')} />
         <div className="span-2">
           <TextField label={lt.email} type="email" value={f.email} onChange={set('email')} />
+        </div>
+        <div className="span-2">
+          <TextField label={lt.aadhaar} value={f.aadhaar} onChange={set('aadhaar')} autoComplete="off" hint={aadhaarHint(member?.aadhaarLast4)} error={f.aadhaar ? errors.aadhaar : err('aadhaar')} />
         </div>
         {minor && (
           <div className="span-2 guardian-box">

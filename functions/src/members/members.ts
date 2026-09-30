@@ -2,6 +2,7 @@ import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { searchTokens } from '../catalogue/search.js';
+import { aadhaarInput, aadhaarKey } from '../core/aadhaar.js';
 import { recordAudit } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
@@ -24,6 +25,8 @@ export const profile = {
   address: address.nullable().default(null),
   guardianMemberId: id.nullable().default(null),
   guardianRelationship: z.string().trim().max(30).default(''),
+  /** Optional; '' keeps the number on file. Only the last four digits are readable (private/aadhaar holds it). */
+  aadhaar: aadhaarInput,
 };
 
 export const memberRef = (orgId: string, memberId: string) => db.doc(`orgs/${orgId}/members/${memberId}`);
@@ -75,7 +78,30 @@ async function checkPerson(
   return { age, minor, phone, phoneRef, guardian };
 }
 
-export type MemberProfile = z.infer<z.ZodObject<typeof profile>>;
+export type MemberProfile = Omit<z.infer<z.ZodObject<typeof profile>>, 'aadhaar'> & { aadhaar?: string };
+
+const aadhaarRef = (orgId: string, memberId: string) => db.doc(`orgs/${orgId}/members/${memberId}/private/aadhaar`);
+
+/**
+ * Reads for recording a member's Aadhaar number: one person, one membership
+ * per organization (orgs/{o}/aadhaarIndex/{hash} — the number itself is not in
+ * the index). Returns the writes, or null when the number is left as it is.
+ */
+async function planAadhaar(tx: Transaction, orgId: string, memberId: string, number: string | undefined, isNew: boolean) {
+  if (!number) return null;
+  const indexRef = db.doc(`orgs/${orgId}/aadhaarIndex/${aadhaarKey(orgId, number)}`);
+  const [owner, old] = await Promise.all([tx.get(indexRef), isNew ? Promise.resolve(null) : tx.get(aadhaarRef(orgId, memberId))]);
+  if (owner.exists && owner.get('memberId') !== memberId) {
+    throw errors.conflict('DUPLICATE_AADHAAR', 'Another member is already registered with this Aadhaar number.');
+  }
+  const previous = old?.exists ? (old.get('number') as string) : null;
+  return (actorUid: string) => {
+    if (previous === number) return;
+    if (previous) tx.delete(db.doc(`orgs/${orgId}/aadhaarIndex/${aadhaarKey(orgId, previous)}`));
+    tx.set(indexRef, { memberId });
+    tx.set(aadhaarRef(orgId, memberId), { number, updatedAt: FieldValue.serverTimestamp(), updatedBy: actorUid });
+  };
+}
 
 /**
  * Creates a member record (reads first, then writes): checks the person
@@ -99,6 +125,7 @@ export async function createMember(
   });
   const [code] = counter.codes;
   const ref = db.collection(`orgs/${input.orgId}/members`).doc();
+  const aadhaar = await planAadhaar(tx, input.orgId, ref.id, input.aadhaar, true);
 
   const member: Member & Record<string, unknown> = {
     code,
@@ -129,8 +156,10 @@ export async function createMember(
     lifetimeExchanges: 0,
     searchTokens: memberTokens(input.fullName, code, person.phone),
     source: opts.source,
+    aadhaarLast4: input.aadhaar ? input.aadhaar.slice(-4) : null,
   };
   counter.commit();
+  aadhaar?.(opts.actorUid);
   if (person.phoneRef) tx.create(person.phoneRef, { memberId: ref.id });
   tx.create(ref, { ...member, createdBy: opts.actorUid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
   recordAudit(tx, { actorUid: opts.actorUid, actorEmail: opts.actorEmail, requestId: opts.requestId }, input.orgId, {
@@ -163,7 +192,9 @@ export const update = command(
     await actor.require('members.manage', input.orgId, member.homeBranchId, tx);
     if (member.status === 'CLOSED') throw errors.conflict('MEMBER_CLOSED', 'This membership is closed.');
     const person = await checkPerson(tx, input.orgId, input, input.memberId);
+    const aadhaar = await planAadhaar(tx, input.orgId, input.memberId, input.aadhaar, false);
 
+    aadhaar?.(actor.uid);
     if (member.phone && member.phone !== person.phone) tx.delete(db.doc(`orgs/${input.orgId}/phoneIndex/${member.phone}`));
     if (person.phoneRef && member.phone !== person.phone) tx.set(person.phoneRef, { memberId: input.memberId });
     const changes = {
@@ -178,14 +209,31 @@ export const update = command(
       address: input.address,
       guardian: person.guardian,
       searchTokens: memberTokens(input.fullName, member.code, person.phone),
+      ...(input.aadhaar ? { aadhaarLast4: input.aadhaar.slice(-4) } : {}),
     };
     tx.update(snap.ref, { ...changes, updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'member.update', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { fullName: member.fullName, phone: member.phone, guardian: member.guardian?.memberId ?? null },
-      after: { fullName: changes.fullName, phone: changes.phone, guardian: changes.guardian?.memberId ?? null },
+      after: { fullName: changes.fullName, phone: changes.phone, guardian: changes.guardian?.memberId ?? null, ...(input.aadhaar ? { aadhaarLast4: input.aadhaar.slice(-4) } : {}) },
     });
     return { memberId: input.memberId };
+  },
+);
+
+/** Shows a member's full Aadhaar number to staff who manage members at the branch, and records that they did. */
+export const revealAadhaar = command(
+  'members-revealAadhaar',
+  z.strictObject({ orgId: id, memberId: id }),
+  async ({ actor, input, requestId }, tx) => {
+    const { member } = await loadMember(tx, input.orgId, input.memberId);
+    await actor.require('members.manage', input.orgId, member.homeBranchId, tx);
+    const doc = await tx.get(aadhaarRef(input.orgId, input.memberId));
+    if (!doc.exists) throw errors.notFound('Aadhaar number');
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'member.revealAadhaar', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
+    });
+    return { aadhaar: doc.get('number') as string };
   },
 );
 

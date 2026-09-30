@@ -8,6 +8,7 @@ import { useAsync } from '../shared/useAsync';
 import { t } from '../strings';
 import { FormError, SelectField, TextField } from '../admin/components/Dialog';
 import { useMemberData } from './memberData';
+import { aadhaarError, cleanAadhaar } from '../shared/aadhaar';
 
 // Self sign-up (me-join) and adding a child (me-addChild): members join a
 // branch themselves, then choose and pay for a plan on the Membership page.
@@ -26,7 +27,7 @@ export function JoinMembership() {
   const { user } = useAuth();
   const { overview, select } = useMemberData();
   const options = useAsync(() => loadJoinOptions(), []);
-  const [f, setF] = useState({ orgId: '', branchId: '', fullName: user?.displayName ?? '', dob: '', phone: '' });
+  const [f, setF] = useState({ orgId: '', branchId: '', fullName: user?.displayName ?? '', dob: '', phone: '', aadhaar: '' });
   const set = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }));
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,6 +44,7 @@ export function JoinMembership() {
     fullName: f.fullName.trim().length >= 2 ? undefined : t.required,
     dob: !isDate(f.dob) ? t.required : ageOf(f.dob) < 18 ? t.meJoinAdultsOnly : undefined,
     phone: /^\+?[0-9 ]{10,16}$/.test(f.phone.trim()) ? undefined : t.meJoinPhone,
+    aadhaar: aadhaarError(f.aadhaar) || undefined,
   };
   const e = (k: keyof typeof errors) => (touched ? errors[k] : undefined);
   const submit = async (ev: React.FormEvent) => {
@@ -52,7 +54,7 @@ export function JoinMembership() {
     setBusy(true);
     setError(null);
     try {
-      const res = await joinLibrary({ orgId, branchId: f.branchId, fullName: f.fullName.trim(), dob: f.dob, phone: f.phone.trim() });
+      const res = await joinLibrary({ orgId, branchId: f.branchId, fullName: f.fullName.trim(), dob: f.dob, phone: f.phone.trim(), aadhaar: cleanAadhaar(f.aadhaar) });
       select(res.memberId);
       overview.reload();
     } catch (err) {
@@ -91,6 +93,7 @@ export function JoinMembership() {
             <TextField label={t.meJoinName} value={f.fullName} onChange={set('fullName')} autoComplete="name" error={e('fullName')} />
             <TextField label={t.meJoinDob} type="date" value={f.dob} onChange={set('dob')} error={e('dob')} />
             <TextField label={t.meJoinMobile} type="tel" value={f.phone} onChange={set('phone')} autoComplete="tel" error={e('phone')} />
+            <TextField label={t.meJoinAadhaar} value={f.aadhaar} onChange={set('aadhaar')} autoComplete="off" hint={t.meJoinAadhaarHint} error={e('aadhaar')} />
           </div>
           <p className="muted small">{t.meJoinEmailNote(user?.email ?? '')}</p>
           <FormError error={error} />
