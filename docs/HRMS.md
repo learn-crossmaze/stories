@@ -466,6 +466,9 @@ is not part of the letter. The wording comes from letter templates (§13).
 branches; never to yourself): the employee profile's **Letters** tab or the **Letters** page → *Issue letter*, choose
 *Appointment letter* or a published custom letter. The form asks only for the values the template uses; blanks come
 from the employee record (position, department, manager, joining date). Letters go to employees past draft.
+The list shows every published custom letter (a branch's own marked with the branch name). Once an employee is
+chosen, letters published for other branches are named in a note rather than offered; offer-type templates are
+used by *Release offer*, not here.
 
 - Numbers: `OL/…` offers, `AL/…` appointment letters, `LT/…` custom letters (`{prefix}/{employee ID}/{year}/{n}`).
 - Filed in the employee's documents as verified: *Appointment letter* (`appointment-letter`), or for a custom letter
