@@ -24,6 +24,7 @@ import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
 import { command } from '../../data/api';
 import { AadhaarValue } from '../../shared/aadhaar';
+import { EmployeePhoto } from './EmployeePhoto';
 
 type Tab = 'overview' | 'personal' | 'documents' | 'offers' | 'attendance' | 'leave' | 'salary' | 'bank' | 'lifecycle' | 'history' | 'access';
 
@@ -76,13 +77,16 @@ export function EmployeeProfilePage() {
         <Link to={paths.adminPeople}>{ht.employeesTitle}</Link> / <span className="mono">{e.code}</span>
       </p>
       <header className="page-header page-header-row">
-        <div>
+        <div className="profile-head">
+          <EmployeePhoto orgId={orgId} employee={e} canEdit={(canEdit || e.uid === user?.uid) && e.status !== 'OFFBOARDED'} onChanged={employee.reload} />
+          <div>
           <h1>{e.fullName}</h1>
           <p className="muted">
             <span className="mono">{e.code}</span> · {e.designationName ?? ht.notSet} · {e.branchId ? branchName(e.branchId) : ht.headOffice}
           </p>
           {e.status === 'NOTICE_PERIOD' && e.noticeEndDate && <p>{ht.noticeUntil(e.noticeEndDate)}</p>}
           {(e.status === 'OFFBOARDING' || e.status === 'OFFBOARDED') && e.exitDate && <p>{ht.exitOn(e.exitDate)}</p>}
+          </div>
         </div>
         <div className="row">
           <EmployeeStatusBadge status={e.status} />

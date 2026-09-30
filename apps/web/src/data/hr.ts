@@ -36,6 +36,8 @@ export interface Employee {
   uid: string | null;
   email: string | null;
   fullName: string;
+  /** Profile picture (employees-setPhoto), or null for initials. */
+  photoUrl?: string | null;
   phone: string;
   designationId: string | null;
   designationName: string | null;

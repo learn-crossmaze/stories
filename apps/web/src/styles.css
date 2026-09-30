@@ -734,3 +734,14 @@ main h1[tabindex='-1']:focus { outline: none; }
 .ob-profile-card h2 { margin-top: 0; }
 .btn-inline { min-height: 0; padding: 0 6px; font-size: inherit; vertical-align: baseline; }
 .aadhaar-value { display: inline-flex; align-items: baseline; gap: 4px; flex-wrap: wrap; }
+
+/* Employee profile pictures (initials when there is none). */
+.avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: cover; flex: none; background: var(--primary-container); color: var(--on-primary-container); font-weight: 600; }
+.avatar-sm { width: 32px; height: 32px; font-size: 13px; }
+.avatar-lg { width: 96px; height: 96px; font-size: 32px; }
+.employee-photo { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.employee-photo-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.profile-head { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.person-cell { display: inline-flex; align-items: center; gap: 10px; }
+.ob-photo-card { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.ob-photo-card p { margin: 0; flex: 1; min-width: 200px; }

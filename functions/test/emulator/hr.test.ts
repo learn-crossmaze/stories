@@ -284,3 +284,40 @@ describe('self-onboarding', () => {
     expect(await failure(call(hrSettings.setSelfOnboarding, bm, { orgId: org, requiredFields: [] }))).toBe('FORBIDDEN');
   });
 });
+
+describe('profile pictures', () => {
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7)]).toString('base64');
+
+  it('lets people set their own photo (ticking the checklist) and HR replace or remove it', async () => {
+    const { bucket } = await import('../../src/catalogue/covers.js');
+    const newcomer = await createUser('divya@stories.test');
+    const { employeeId } = await hire('Divya Nair', { email: newcomer.email });
+    await move(employeeId, 'START_ONBOARDING');
+
+    const first = await call<{ photoUrl: string }>(emp.setPhoto, newcomer, { orgId: org, employeeId, image: jpeg });
+    const rec = await employee(employeeId);
+    expect(rec.photoUrl).toBe(first.photoUrl);
+    expect(rec.photoPath).toMatch(new RegExp(`^employee-photos/${org}/${employeeId}/`));
+    expect((rec.onboarding as { key: string; done: boolean }[]).find((i) => i.key === 'photo')?.done).toBe(true);
+    const [exists] = await bucket().file(rec.photoPath).exists();
+    expect(exists).toBe(true);
+
+    await call(emp.setPhoto, hr, { orgId: org, employeeId, image: jpeg });
+    const replaced = await employee(employeeId);
+    expect(replaced.photoPath).not.toBe(rec.photoPath);
+    await new Promise((r) => setTimeout(r, 300));
+    expect((await bucket().file(rec.photoPath).exists())[0]).toBe(false);
+
+    await call(emp.setPhoto, hr, { orgId: org, employeeId, image: null });
+    expect(await employee(employeeId)).toMatchObject({ photoUrl: null, photoPath: null });
+  });
+
+  it("refuses other people's photos and files that aren't images", async () => {
+    const newcomer = await createUser('divya@stories.test');
+    const { employeeId } = await hire('Divya Nair', { email: newcomer.email });
+    const { employeeId: other } = await hire('Someone Else');
+    expect(await failure(call(emp.setPhoto, newcomer, { orgId: org, employeeId: other, image: jpeg }))).toBe('FORBIDDEN');
+    expect(await failure(call(emp.setPhoto, bm, { orgId: org, employeeId, image: jpeg }))).toBe('FORBIDDEN');
+    expect(await failure(call(emp.setPhoto, newcomer, { orgId: org, employeeId, image: Buffer.from('%PDF-1.4 hello').toString('base64') }))).toBe('INVALID_INPUT');
+  });
+});

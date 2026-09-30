@@ -22,9 +22,10 @@ export const PROFILE_FIELDS = [
   'uan',
   'esiNumber',
   'bank',
+  'photo',
 ] as const;
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
-export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'aadhaar', 'bank'];
+export const DEFAULT_REQUIRED_FIELDS: ProfileField[] = ['dob', 'gender', 'personalPhone', 'currentAddress', 'permanentAddress', 'emergency', 'pan', 'aadhaar', 'bank', 'photo'];
 
 export const FIELD_LABELS: Record<ProfileField, string> = {
   dob: 'Date of birth',
@@ -40,6 +41,7 @@ export const FIELD_LABELS: Record<ProfileField, string> = {
   uan: 'UAN (PF)',
   esiNumber: 'ESI number',
   bank: 'Salary bank account',
+  photo: 'Profile picture',
 };
 
 /** Everyone still working here fills in their details (not once they are leaving). */
@@ -55,8 +57,8 @@ export async function requiredFields(orgId: string): Promise<ProfileField[]> {
 
 export const saveRequiredFields = (orgId: string, fields: ProfileField[]) => command('hr-setSelfOnboarding', { orgId, requiredFields: fields });
 
-export const hasField = (p: PrivateProfile, f: ProfileField) =>
-  f === 'emergency' ? !!(p.emergencyName && p.emergencyPhone) : f === 'bank' ? !!p.bank?.last4 : f === 'aadhaar' ? !!p.aadhaarLast4 : !!(p as Record<string, unknown>)[f];
+export const hasField = (p: PrivateProfile, f: ProfileField, e?: Pick<Employee, 'photoUrl'>) =>
+  f === 'photo' ? !!e?.photoUrl : f === 'emergency' ? !!(p.emergencyName && p.emergencyPhone) : f === 'bank' ? !!p.bank?.last4 : f === 'aadhaar' ? !!p.aadhaarLast4 : !!(p as Record<string, unknown>)[f];
 
 export interface OnboardingItem {
   key: string;
@@ -96,7 +98,7 @@ export async function myOnboarding(orgId: string, uid: string): Promise<Onboardi
     key: f,
     label: FIELD_LABELS[f],
     kind: 'field',
-    done: hasField(profile, f),
+    done: hasField(profile, f, employee!),
     note: null,
   }));
   for (const type of types.filter((t) => t.status === 'ACTIVE' && t.required && t.selfUpload)) {

@@ -13,7 +13,7 @@ import { id } from '../core/schemas.js';
 /** Largest cover accepted; the console shrinks photos to ~100 KB before sending. */
 export const MAX_COVER_BYTES = 1_500_000;
 
-const TYPES: { type: string; ext: string; matches: (b: Buffer) => boolean }[] = [
+export const IMAGE_TYPES: { type: string; ext: string; matches: (b: Buffer) => boolean }[] = [
   { type: 'image/jpeg', ext: 'jpg', matches: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
   { type: 'image/png', ext: 'png', matches: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
   { type: 'image/webp', ext: 'webp', matches: (b) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
@@ -26,7 +26,7 @@ export function bucket() {
 }
 
 /** Public URL that works without Storage rules (Firebase download-token URL, emulator-aware). */
-function downloadUrl(bucketName: string, path: string, token: string) {
+export function downloadUrl(bucketName: string, path: string, token: string) {
   const host = process.env.FIREBASE_STORAGE_EMULATOR_HOST ? `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}` : 'https://firebasestorage.googleapis.com';
   return `${host}/v0/b/${bucketName}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
 }
@@ -75,7 +75,7 @@ export const setCover = command(
     let cover: { coverUrl: string; coverPath: string } | null = null;
     const bytes = input.imageUrl ? await download(input.imageUrl) : input.image !== null ? Buffer.from(input.image, 'base64') : null;
     if (bytes) {
-      const kind = TYPES.find((t) => t.matches(bytes));
+      const kind = IMAGE_TYPES.find((t) => t.matches(bytes));
       if (!kind) throw errors.invalid('The cover must be a JPEG, PNG or WebP image.');
       if (bytes.length > MAX_COVER_BYTES) throw errors.invalid('The cover image is too large (1.5 MB at most).');
       const b = bucket();

@@ -81,6 +81,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Employees | `employees-create` (DRAFT record; links a Stories account with the same email), `employees-update` (job changes recorded with `effectiveDate`), `employees-linkAccount`, `employees-backfill` (records for staff who only had roles; safe to repeat) | `employees-create`: `employees.add` (HO, HR, FO, and BM at their own branches); the rest `employees.edit` at the employee's branch (org-wide for head-office records and backfill) |
 | | `employees-transition` (`START_ONBOARDING, ACTIVATE, RESIGN, WITHDRAW_RESIGNATION, START_OFFBOARDING, COMPLETE_OFFBOARDING, REHIRE`), `employees-checkItem` | `employees.lifecycle` (never on yourself) |
 | | `employees-setPrivate` | `employees.privateData`, or the employee themselves (self-onboarding) |
+| | `employees-setPhoto` (`image`: base64 JPEG/PNG/WebP ≤ 1 MB, or `null` to remove) | `employees.edit`, or the employee themselves |
 | | `employees-revealAadhaar` (audited) | `employees.privateData`, or the employee themselves |
 | | `employees-setBank`, `employees-revealBank` (audited) | `employees.bank`; the employee may add their own bank account once (`setBank`) |
 | | `hr-setSelfOnboarding` (`requiredFields`: personal details staff must fill in) | `hr.config` |

@@ -18,6 +18,7 @@ import { lt } from '../../strings/library';
 import { grantableRoles } from '../grants';
 import { RolesDialog } from '../organization/Staff';
 import { useWorkspace } from '../Workspace';
+import { EmployeeAvatar } from './EmployeePhoto';
 
 const STATUS_TONE: Record<string, string> = {
   DRAFT: 'muted',
@@ -316,8 +317,13 @@ export function PeoplePage() {
               {shown.map((p) => (
                 <tr key={p.id}>
                   <td>
-                    <Link to={paths.adminEmployee(p.id)}>{p.fullName}</Link>
-                    <div className="muted small">{p.email ?? ''}</div>
+                    <span className="person-cell">
+                      <EmployeeAvatar employee={p} />
+                      <span>
+                        <Link to={paths.adminEmployee(p.id)}>{p.fullName}</Link>
+                        <span className="muted small" style={{ display: 'block' }}>{p.email ?? ''}</span>
+                      </span>
+                    </span>
                   </td>
                   <td className="mono nowrap">{p.code}</td>
                   <td>
