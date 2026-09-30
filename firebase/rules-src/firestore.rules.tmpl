@@ -66,6 +66,23 @@ service cloud.firestore {
       return can(o, perm) && (allBranches(o) || inBranch(o, b));
     }
 
+    // `perm` at either of two branches (copies, transfers). Builds the
+    // permission map once: calling canAt twice builds it twice, and a list
+    // query must fit every rule it touches in one 1000-expression budget.
+    function canAtEither(o, b1, b2, perm) {
+      let c = orgClaims(o);
+      return isSA() || (signedIn() && c != null && c.r.hasAny(perms()[perm])
+        && ('*' in c.b || b1 in c.b || b2 in c.b));
+    }
+
+    // Either of two permissions at branch b, with the map built once (see canAtEither).
+    function canAtAny(o, b, perm1, perm2) {
+      let p = perms();
+      let c = orgClaims(o);
+      return isSA() || (signedIn() && c != null && c.r.hasAny(p[perm1].concat(p[perm2]))
+        && ('*' in c.b || b in c.b));
+    }
+
     // ---------------------------------------------------------------- users
     // Profile: owner reads it; created/maintained by functions only.
     match /users/{uid} {
@@ -165,8 +182,7 @@ service cloud.firestore {
       // reveals that it doesn't exist, so the page can say "not found".)
       match /copies/{c} {
         allow get: if resource == null && can(o, 'books.view');
-        allow read: if canAt(o, resource.data.currentBranchId, 'books.view')
-          || canAt(o, resource.data.owningBranchId, 'books.view');
+        allow read: if canAtEither(o, resource.data.currentBranchId, resource.data.owningBranchId, 'books.view');
         allow write: if false;
 
         match /events/{e} {
@@ -248,8 +264,7 @@ service cloud.firestore {
 
       // Transfers: visible to both the sending and the receiving branch.
       match /transfers/{t} {
-        allow read: if canAt(o, resource.data.fromBranchId, 'books.view')
-          || canAt(o, resource.data.toBranchId, 'books.view');
+        allow read: if canAtEither(o, resource.data.fromBranchId, resource.data.toBranchId, 'books.view');
         allow write: if false;
       }
 
@@ -377,7 +392,7 @@ service cloud.firestore {
       // (head-office staff: all branches) and the employee. The PDF itself is
       // in the employee's private documents. Functions write them.
       match /offerLetters/{l} {
-        allow read: if canAt(o, resource.data.branchId, 'offers.release') || canAt(o, resource.data.branchId, 'letters.issue') || (signedIn() && resource.data.employeeUid == request.auth.uid);
+        allow read: if canAtAny(o, resource.data.branchId, 'offers.release', 'letters.issue') || (signedIn() && resource.data.employeeUid == request.auth.uid);
         allow write: if false;
       }
 

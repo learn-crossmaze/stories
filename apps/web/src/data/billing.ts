@@ -1,6 +1,7 @@
 // Plans, subscriptions, payments and the deposit ledger.
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 
+import { call } from './api';
 import { AgeGroup, db, Duration, DURATIONS, Scope, scoped, withId } from './common';
 import { todayIST } from '../shared/dates';
 
@@ -131,6 +132,10 @@ export async function memberSubscriptions(orgId: string, memberId: string, scope
 
 export interface Payment {
   id: string;
+  memberId: string;
+  memberCode: string | null;
+  memberName?: string | null;
+  branchId: string;
   subscriptionId: string | null;
   purpose: string;
   direction: 'IN' | 'OUT';
@@ -138,9 +143,65 @@ export interface Payment {
   amountMinor: number;
   method: string;
   reference: string | null;
+  /** SUCCESS, NEEDS_ATTENTION (money that couldn't be applied); refunds: PROCESSING, PENDING, SUCCESS, FAILED. */
   status: string;
+  note?: string | null;
+  /** Online payments: Razorpay ids. */
+  gateway?: { provider: string; paymentId: string; refundId?: string | null; speed?: string } | null;
+  /** Received payments: refunded so far (refunds in progress count). */
+  refundedMinor?: number;
+  refundedDepositMinor?: number;
+  /** Refunds: the payment refunded, why, and the deposit part. */
+  refundOf?: string;
+  reason?: string;
+  depositMinor?: number;
+  failure?: string | null;
+  recordedByEmail?: string | null;
   at: unknown;
 }
+
+/** What is left to refund on a received payment. */
+export const refundable = (p: Payment) =>
+  p.direction === 'IN' && ['SUCCESS', 'NEEDS_ATTENTION'].includes(p.status) ? p.amountMinor - (p.refundedMinor ?? 0) : 0;
+/** Deposit a payment collected and hasn't refunded yet. */
+export const depositLeft = (p: Payment) => p.lines.filter((l) => l.type === 'DEPOSIT').reduce((n, l) => n + l.amountMinor, 0) - (p.refundedDepositMinor ?? 0);
+
+export type PaymentView = 'RECEIVED' | 'ATTENTION' | 'REFUNDS';
+
+/** A branch's latest payments: received, flagged for attention, or refunds. */
+export async function branchPayments(orgId: string, branchId: string, view: PaymentView): Promise<Payment[]> {
+  const col = collection(db(), `orgs/${orgId}/payments`);
+  const at = where('branchId', '==', branchId);
+  const q =
+    view === 'REFUNDS'
+      ? query(col, at, where('purpose', '==', 'REFUND'), orderBy('at', 'desc'), limit(50))
+      : view === 'ATTENTION'
+        ? query(col, at, where('status', '==', 'NEEDS_ATTENTION'), orderBy('at', 'desc'), limit(50))
+        : query(col, at, orderBy('at', 'desc'), limit(100));
+  const list = (await getDocs(q)).docs.map((d) => withId<Payment>(d));
+  return view === 'RECEIVED' ? list.filter((p) => p.direction === 'IN') : list;
+}
+
+export interface RefundInput {
+  orgId: string;
+  paymentId: string;
+  amountMinor: number;
+  depositMinor: number;
+  method: 'RAZORPAY' | 'OFFLINE_CASH' | 'OFFLINE_UPI' | 'OFFLINE_BANK_TRANSFER';
+  reference: string;
+  speed: 'normal' | 'optimum';
+  reason: string;
+}
+export interface RefundResult {
+  refundId: string;
+  status: string;
+  amountMinor: number;
+  method: string;
+  gatewayRefundId: string | null;
+}
+/** Refunds (part of) a payment; a retry with the same requestId never refunds twice. */
+export const refundPayment = (input: RefundInput, requestId: string) => call<RefundResult>('payments-refund', { ...input, requestId });
+export const checkRefund = (orgId: string, refundId: string) => call<RefundResult>('payments-checkRefund', { orgId, refundId });
 
 export async function memberPayments(orgId: string, memberId: string, scope: Scope): Promise<Payment[]> {
   const snap = await getDocs(

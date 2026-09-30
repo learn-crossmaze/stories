@@ -8,6 +8,7 @@ import { type CallContext, command, query, requestIdSchema } from '../core/calla
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id } from '../core/schemas.js';
+import { handleRefundEvent } from './refunds.js';
 import { readSettlement, writeSettlement } from './subscriptions.js';
 import {
   gatewayError,
@@ -390,13 +391,14 @@ interface WebhookBody {
     payment_link?: { entity?: { id?: string } };
     qr_code?: { entity?: { id?: string } };
     payment?: { entity?: { id?: string; amount?: number; status?: string; method?: string } };
+    refund?: { entity?: { id: string; amount: number; status: 'pending' | 'processed' | 'failed'; notes?: Record<string, string> } };
   };
 }
 
 /**
  * Razorpay webhook. Its URL carries the branch (`?o=<orgId>&b=<branchId>`) so
  * the signature is checked with that branch's webhook secret. Handles
- * payment_link.paid and qr_code.credited; everything else is acknowledged
+ * payment_link.paid, qr_code.credited, refund.processed and refund.failed; everything else is acknowledged
  * and ignored. Responds 2xx for handled or ignored events so Razorpay
  * doesn't retry, 4xx for bad signatures.
  */
@@ -417,6 +419,13 @@ export async function handleWebhook(req: Pick<Request, 'query' | 'headers' | 'ra
     body = JSON.parse(req.rawBody.toString('utf8')) as WebhookBody;
   } catch {
     return res.status(400).send('bad json');
+  }
+  if (body.event === 'refund.processed' || body.event === 'refund.failed') {
+    const refund = body.payload?.refund?.entity;
+    if (!refund?.id) return res.status(200).send('ignored');
+    const result = await handleRefundEvent(orgId, refund);
+    logger.info('razorpayWebhook refund', { orgId, branchId, gatewayRefundId: refund.id, status: refund.status, result });
+    return res.status(200).send(result);
   }
   const gatewayId = body.event === 'payment_link.paid' ? body.payload?.payment_link?.entity?.id : body.event === 'qr_code.credited' ? body.payload?.qr_code?.entity?.id : undefined;
   const payment = body.payload?.payment?.entity;

@@ -27,7 +27,7 @@ Amounts are integers in **paise**; currency INR.
   never written to the audit log.
 - **Webhook:** Razorpay Dashboard → Account & Settings → Webhooks → Add: URL shown in the dialog
   (`https://asia-south1-<project>.cloudfunctions.net/razorpayWebhook?o=<orgId>&b=<branchId>`), the same webhook secret,
-  events `payment_link.paid` and `qr_code.credited`.
+  events `payment_link.paid`, `qr_code.credited`, `refund.processed` and `refund.failed`.
 
 **Collecting (member page → pending subscription → *Collect online*, `payments.recordOffline`):**
 
@@ -49,7 +49,47 @@ Amounts are integers in **paise**; currency INR.
   `NEEDS_ATTENTION` for finance to refund or apply by hand; the subscription is not changed.
 - *Cancel request* cancels the link / closes the QR code at Razorpay.
 
+## Refunds
+
+**Where:** Operations → Members → **Payments & refunds** (`payments.view`), or *Refund* on a payment in the
+member's History tab. The page lists the branch's payments received, the ones that **need attention** (money
+Razorpay collected that couldn't be applied), and the refunds made.
+
+**Who:** `payments.refund` at the payment's branch: librarians, branch managers, franchise owners and finance. The
+amount is what the person refunding approves, up to what is left on the payment (refunds already made or in
+progress count). Nobody else needs to approve it.
+
+**How the money goes back:**
+
+- **Razorpay payments** (links and UPI QR codes) are refunded through Razorpay
+  (`POST /payments/{id}/refund`, `payments-refund` with method `RAZORPAY`), to the member's card, UPI or bank
+  account, **paid from the branch's Razorpay balance** (keep enough balance there; Razorpay refuses a refund it
+  can't cover and the error is shown). Speed: *normal* (5–7 working days, no fee) or *instant* where the bank allows
+  (Razorpay charges a fee). Full or partial; several partial refunds may add up to the payment.
+- **Counter payments** can't go back through Razorpay: the money is returned at the counter and recorded (cash,
+  UPI or bank transfer, with the reference for UPI and bank).
+
+**Records:** each refund is a payment with `direction: OUT`, `purpose: REFUND` and `refundOf` (the payment
+refunded), with the reason, who made it and the Razorpay refund id. The original payment keeps `refundedMinor`
+(and `refundedDepositMinor`). The part taken **from the deposit** (up to what that payment collected as deposit
+and the member's current balance) leaves the deposit ledger as `DEPOSIT_REFUND`; the rest refunds the fee.
+Refunding does not cancel the subscription.
+
+**Steps and states (Razorpay):** Razorpay can't be part of a Firestore transaction, so a refund is *reserved*
+first (status PROCESSING, counted against the payment), then Razorpay is asked, then it is *settled*:
+
+| Status | Meaning |
+| --- | --- |
+| PROCESSING | Reserved; Razorpay is being asked. |
+| PENDING | Razorpay accepted it; the bank hasn't confirmed yet (shown as "With the bank"). The deposit part is already taken. |
+| SUCCESS | Refunded. Counter refunds are SUCCESS straight away. |
+| FAILED | Razorpay refused or later failed it; the amount is refundable again and any deposit part is restored (`DEPOSIT_ADJUSTMENT`). |
+
+`refund.processed` / `refund.failed` webhooks move a refund on; *Check status* (`payments-checkRefund`) asks
+Razorpay directly, and also finds a refund whose answer was never saved (by its receipt, the refund's id). A retried
+request (same `requestId`) returns the first refund and never refunds twice. Every refund is in the audit log.
+
 ## Later
 
-Refunds through the gateway, member self-service payments in the member app (Phase 2), and payments for other
-purposes (fines, damage) through the same request flow.
+Member self-service payments in the member app (Phase 2), and payments for other purposes (fines, damage) through
+the same request flow.

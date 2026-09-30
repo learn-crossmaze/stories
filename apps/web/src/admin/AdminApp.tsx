@@ -24,6 +24,7 @@ const InventoryPage = lazyPage(() => import('./inventory/Inventory'), 'Inventory
 const LabelsPage = lazyPage(() => import('./inventory/Inventory'), 'LabelsPage');
 const MemberDetailPage = lazyPage(() => import('./members/MemberDetail'), 'MemberDetailPage');
 const MembersPage = lazyPage(() => import('./members/Members'), 'MembersPage');
+const PaymentsPage = lazyPage(() => import('./members/Payments'), 'PaymentsPage');
 const PlansPage = lazyPage(() => import('./members/Plans'), 'PlansPage');
 const ReservationsPage = lazyPage(() => import('./circulation/Reservations'), 'ReservationsPage');
 const TransfersPage = lazyPage(() => import('./circulation/Transfers'), 'TransfersPage');
@@ -79,6 +80,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminMembers, guard(paths.adminMembers, <MembersPage />)],
         [paths.adminMember(':memberId'), guard(paths.adminMembers, <MemberDetailPage />)],
         [paths.adminPlans, guard(paths.adminPlans, <PlansPage />)],
+        [paths.adminPayments, guard(paths.adminPayments, <PaymentsPage />)],
         [paths.adminDeposits, guard(paths.adminDeposits, <DepositApprovalsPage />)],
         [paths.opsAttendance, guard(paths.opsAttendance, <AttendancePage />)],
         [paths.opsLeave, guard(paths.opsLeave, <LeavePage />)],

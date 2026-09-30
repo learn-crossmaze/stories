@@ -62,6 +62,8 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Payments | `payments-recordOffline` | `payments.recordOffline` |
 | | `payments-createRequest` (`subscriptionId, channel: LINK\|QR, requestId`), `payments-cancelRequest` | `payments.recordOffline` at the subscription's branch |
 | | `payments-checkRequest` (query) | `payments.view` |
+| | `payments-refund` (query; `paymentId, amountMinor, depositMinor, method: RAZORPAY\|OFFLINE_*, reference, speed, reason, requestId`) | `payments.refund` at the payment's branch |
+| | `payments-checkRefund` (query) | `payments.view` |
 | | `branches-setPaymentGateway`, `branches-testPaymentGateway` (query) | `branches.manage` |
 | | `razorpayWebhook` (HTTPS, signed by Razorpay) | webhook secret of the branch in `?o=&b=` |
 | Deposits | `deposits-proposeAdjustment`, `deposits-startSettlement` / `deposits-decide` / `deposits-refund` | `deposits.adjust` / `deposits.approve` / `deposits.refund` |

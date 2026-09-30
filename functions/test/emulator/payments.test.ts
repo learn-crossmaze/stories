@@ -9,6 +9,7 @@ import * as orgs from '../../src/organization/orgs.js';
 import * as online from '../../src/billing/online.js';
 import * as staff from '../../src/organization/staff.js';
 import * as plans from '../../src/billing/plans.js';
+import * as refunds from '../../src/billing/refunds.js';
 import * as subs from '../../src/billing/subscriptions.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
@@ -176,5 +177,94 @@ describe('collecting a subscription payment online', () => {
     await call(online.cancelRequest, lib, { orgId: org, paymentRequestId: 'plink_1' });
     expect(calls.some((c) => c.path === '/payment_links/plink_1/cancel')).toBe(true);
     expect((await db.doc(`orgs/${org}/paymentRequests/plink_1`).get()).get('status')).toBe('CANCELLED');
+  });
+});
+
+describe('refunds', () => {
+  const refundOf = (paymentId: string, extra: Record<string, unknown>, by = lib, requestId: string = randomUUID()) =>
+    call<{ refundId: string; status: string; gatewayRefundId: string | null }>(
+      refunds.refundPayment, by, { orgId: org, paymentId, reason: 'Member moved away', requestId, ...extra }, null,
+    );
+  const onlinePayment = async (routes: Record<string, (body: Record<string, unknown>) => { status?: number; json: unknown }> = {}) => {
+    await gateway();
+    const calls = fakeRazorpay({ ...link, ...routes });
+    await createReq('LINK');
+    await webhook(paidLink(due));
+    const pay = await db.collection(`orgs/${org}/payments`).where('memberId', '==', memberId).get();
+    return { calls, paymentId: pay.docs[0].id };
+  };
+  const deposit = async () => (await db.doc(`orgs/${org}/depositAccounts/${memberId}`).get()).get('balanceMinor') as number;
+  const processed = (body: Record<string, unknown>) => ({ json: { id: 'rfnd_1', amount: body.amount, status: 'processed' } });
+
+  it('a librarian refunds part of an online payment through Razorpay, with part of the deposit', async () => {
+    const { calls, paymentId } = await onlinePayment({ 'POST /payments/pay_9/refund': processed });
+    const r = await refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 50000, depositMinor: 40000 });
+    expect(r).toMatchObject({ status: 'SUCCESS', gatewayRefundId: 'rfnd_1' });
+    const call0 = calls.find((c) => c.path === '/payments/pay_9/refund')!;
+    expect(call0.body).toMatchObject({ amount: 50000, speed: 'normal', receipt: r.refundId });
+    const original = await db.doc(`orgs/${org}/payments/${paymentId}`).get();
+    expect(original.get('refundedMinor')).toBe(50000);
+    const out = await db.doc(`orgs/${org}/payments/${r.refundId}`).get();
+    expect(out.data()).toMatchObject({ direction: 'OUT', purpose: 'REFUND', refundOf: paymentId, amountMinor: 50000, memberId });
+    expect(await deposit()).toBe(100000 - 40000);
+    // No more than what is left; a counter method can't refund an online payment.
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: due - 50000 + 100 }))).toBe('INVALID_INPUT');
+    expect(await failure(refundOf(paymentId, { method: 'OFFLINE_CASH', amountMinor: 1000 }))).toBe('INVALID_INPUT');
+  });
+
+  it('gives the amount back when Razorpay refuses (e.g. low balance), and never refunds twice', async () => {
+    const { calls, paymentId } = await onlinePayment({
+      'POST /payments/pay_9/refund': () => ({ status: 400, json: { error: { code: 'BAD_REQUEST_ERROR', description: 'Your account does not have enough balance to carry out the refund operation.' } } }),
+    });
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 30000 }))).toBe('GATEWAY_ERROR');
+    const original = await db.doc(`orgs/${org}/payments/${paymentId}`).get();
+    expect(original.get('refundedMinor')).toBe(0);
+    const failed = await db.collection(`orgs/${org}/payments`).where('purpose', '==', 'REFUND').get();
+    expect(failed.docs.map((d) => d.get('status'))).toEqual(['FAILED']);
+    expect(await deposit()).toBe(100000);
+
+    // Retrying the same request answers with the same refund, without asking Razorpay again.
+    vi.restoreAllMocks();
+    const calls2 = fakeRazorpay({ 'POST /payments/pay_9/refund': processed });
+    const requestId = randomUUID();
+    const a = await refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 30000 }, lib, requestId);
+    const b = await refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 30000 }, lib, requestId);
+    expect(b.refundId).toBe(a.refundId);
+    expect(calls2.filter((c) => c.path === '/payments/pay_9/refund')).toHaveLength(1);
+    expect(calls.length).toBeGreaterThan(0);
+  });
+
+  it('marks a pending refund refunded when Razorpay reports it, or restores it when it fails', async () => {
+    let n = 0;
+    const { paymentId } = await onlinePayment({
+      'POST /payments/pay_9/refund': (body) => ({ json: { id: `rfnd_${++n}`, amount: body.amount, status: 'pending' } }),
+      'GET /refunds/rfnd_2': () => ({ json: { id: 'rfnd_2', amount: 20000, status: 'failed' } }),
+    });
+    const first = await refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 10000, depositMinor: 10000 });
+    expect(first.status).toBe('PENDING');
+    expect(await deposit()).toBe(90000);
+    const r = await webhook({ event: 'refund.processed', payload: { refund: { entity: { id: 'rfnd_1', amount: 10000, status: 'processed', notes: { refundId: first.refundId } } } } });
+    expect(r.status).toBe(200);
+    expect((await db.doc(`orgs/${org}/payments/${first.refundId}`).get()).get('status')).toBe('SUCCESS');
+
+    const second = await refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 20000, depositMinor: 20000 });
+    expect(await deposit()).toBe(70000);
+    const checked = await call<{ status: string }>(refunds.checkRefund, lib, { orgId: org, refundId: second.refundId }, null);
+    expect(checked.status).toBe('FAILED');
+    expect(await deposit()).toBe(90000);
+    expect((await db.doc(`orgs/${org}/payments/${paymentId}`).get()).get('refundedMinor')).toBe(10000);
+  });
+
+  it('records a counter refund for a counter payment, only for staff who may refund', async () => {
+    await call(subs.recordOfflinePayment, lib, { orgId: org, subscriptionId, method: 'OFFLINE_CASH', amountMinor: due });
+    const paymentId = (await db.collection(`orgs/${org}/payments`).where('memberId', '==', memberId).get()).docs[0].id;
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 1000 }))).toBe('INVALID_INPUT');
+    expect(await failure(refundOf(paymentId, { method: 'OFFLINE_UPI', amountMinor: 1000 }))).toBe('INVALID_INPUT'); // needs a reference
+    const stranger = await createUser('someone@stories.test');
+    expect(await failure(refundOf(paymentId, { method: 'OFFLINE_CASH', amountMinor: 1000 }, stranger))).toBe('FORBIDDEN');
+    const r = await refundOf(paymentId, { method: 'OFFLINE_UPI', reference: 'UPI12345', amountMinor: due, depositMinor: 100000 });
+    expect(r.status).toBe('SUCCESS');
+    expect(await deposit()).toBe(0);
+    expect(await failure(refundOf(paymentId, { method: 'OFFLINE_CASH', amountMinor: 1000 }))).toBe('FULLY_REFUNDED');
   });
 });

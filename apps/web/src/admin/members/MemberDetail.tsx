@@ -358,7 +358,15 @@ export function MemberDetailPage() {
           {perm('payments.view') && (
             <section className="section">
               <h2>{lt.paymentHistory}</h2>
-              <PaymentHistory orgId={orgId} memberId={m.id} scope={scope} reloadKey={reloadKey} />
+              <PaymentHistory
+                orgId={orgId}
+                memberId={m.id}
+                memberName={m.fullName}
+                scope={scope}
+                reloadKey={reloadKey}
+                canRefund={perm('payments.refund')}
+                onChanged={() => setReloadKey((k) => k + 1)}
+              />
             </section>
           )}
           <section className="section">

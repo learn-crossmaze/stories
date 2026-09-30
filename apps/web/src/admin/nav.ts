@@ -69,6 +69,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
       items: [
         { to: paths.adminMembers, label: t.navMembers, icon: 'person', requires: 'members.view' },
         { to: paths.adminPlans, label: t.navPlans, icon: 'card', requires: 'plans.manage' },
+        { to: paths.adminPayments, label: lt.navPayments, icon: 'payments', requires: 'payments.view' },
         { to: paths.adminDeposits, label: t.navDepositApprovals, icon: 'wallet', requires: 'deposits.approve' },
       ],
     },

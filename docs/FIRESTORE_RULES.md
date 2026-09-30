@@ -43,6 +43,10 @@ Source: `firebase/rules-src/firestore.rules.tmpl` + `firebase/rules-src/permissi
 
 A `get` of a document that doesn't exist is allowed with the module permission (it reveals only absence), so pages
 can show "not found". `canAt()` checks "all branches" first so org-wide staff can list without a branch filter.
+A list query must fit every rule it touches into one 1000-expression budget, and each permission check builds the
+generated permission map. Rules that need a permission at either of two branches (copies, transfers) or either of
+two permissions (letters) use `canAtEither()` / `canAtAny()`, which build the map once, rather than two `canAt()`
+calls.
 No client can write any of these.
 
 ## Tested guarantees

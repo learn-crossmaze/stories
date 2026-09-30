@@ -31,6 +31,7 @@ export const paths = {
   adminMember: (id: string) => `/ops/members/${id}`,
   adminPlans: '/ops/plans',
   adminDeposits: '/ops/deposits',
+  adminPayments: '/ops/payments',
   adminAppearance: '/me/appearance',
   adminPeople: '/admin/people',
   adminPeopleOverview: '/admin/people-overview',
