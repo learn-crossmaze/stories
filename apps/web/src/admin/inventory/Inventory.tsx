@@ -279,27 +279,29 @@ export function CopyDetailPage() {
             <Link to={paths.adminBook(c.bookId)}>{c.bookTitle}</Link>
           </p>
         </div>
-        <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} className="qr-tag-card" />
       </header>
       <section className="card">
-        <dl className="facts">
-          <dt>{lt.status}</dt>
-          <dd>
-            <CopyStatusBadge status={c.status} />
-          </dd>
-          <dt>{lt.condition}</dt>
-          <dd>{label(c.condition)}</dd>
-          <dt>{lt.currentlyAt}</dt>
-          <dd>
-            {branchName(c.currentBranchId)} · <span className="mono">{locOptions.find((l) => l.value === c.locationId)?.label ?? lt.noLocation}</span>
-          </dd>
-          <dt>{lt.owner}</dt>
-          <dd>{branchName(c.owningBranchId)}</dd>
-          <dt>{lt.cost.replace(' per copy (₹)', '')}</dt>
-          <dd>{money(c.acquisitionCostMinor)}</dd>
-          <dt>{lt.loans}</dt>
-          <dd>{c.lifetimeLoans}</dd>
-        </dl>
+        <div className="copy-summary">
+          <dl className="facts">
+            <dt>{lt.status}</dt>
+            <dd>
+              <CopyStatusBadge status={c.status} />
+            </dd>
+            <dt>{lt.condition}</dt>
+            <dd>{label(c.condition)}</dd>
+            <dt>{lt.currentlyAt}</dt>
+            <dd>
+              {branchName(c.currentBranchId)} · <span className="mono">{locOptions.find((l) => l.value === c.locationId)?.label ?? lt.noLocation}</span>
+            </dd>
+            <dt>{lt.owner}</dt>
+            <dd>{branchName(c.owningBranchId)}</dd>
+            <dt>{lt.cost.replace(' per copy (₹)', '')}</dt>
+            <dd>{money(c.acquisitionCostMinor)}</dd>
+            <dt>{lt.loans}</dt>
+            <dd>{c.lifetimeLoans}</dd>
+          </dl>
+          <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} className="qr-tag-card qr-tag-large" />
+        </div>
         <div className="row">
           {buttons.filter(([, , show]) => show).map(([a, text]) => (
             <button key={a} type="button" className={`btn ${a === 'retire' || a === 'lost' ? 'btn-text' : 'btn-outlined'}`} onClick={() => setAction(a)}>
