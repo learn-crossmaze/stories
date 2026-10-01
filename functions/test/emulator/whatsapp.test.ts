@@ -46,7 +46,7 @@ const connect = (extra: Record<string, unknown> = {}, by = bm) => call(settings.
 const template = (event: string, extra: Record<string, unknown> = {}, by = bm) =>
   call(settings.saveTemplate, by, {
     orgId: org, branchId: central, event, enabled: true, name: `stories_${event}`, language: 'en',
-    body: 'Hello {{member_name}}, welcome to {{branch_name}}! Your member ID is {{member_code}}.', ...extra,
+    body: 'Hello {{member_name}}, welcome to {{branch_name}}! Your member ID is {{member_code}}. Show it at the counter.', ...extra,
   });
 const outbox = async () => (await db.collection(`orgs/${org}/whatsappOutbox`).get()).docs;
 
@@ -128,6 +128,8 @@ describe('WhatsApp settings', () => {
     expect(await failure(template('member_welcome', { body: 'Hello {{member_name}}, your PIN is {{pin}} today.' }))).toBe('INVALID_INPUT');
     expect(await failure(template('member_welcome', { body: '{{member_name}} welcome to the library' }))).toBe('INVALID_INPUT');
     expect(await failure(template('member_welcome', { name: 'Bad Name' }))).toBe('INVALID_INPUT');
+    // Too many values for its length: Meta would reject it, so Stories does first.
+    expect(await failure(template('books_issued', { name: 'stories_books_issued', body: 'Hello {{member_name}}, you borrowed {{book_titles}} from {{branch_name}}. Enjoy!' }))).toBe('INVALID_INPUT');
     await template('member_welcome');
     expect((await db.doc(`orgs/${org}/config/whatsapp`).get()).get(`branches.${central}`)).toEqual(['member_welcome']);
 
@@ -135,7 +137,7 @@ describe('WhatsApp settings', () => {
     const sent = calls.find((c) => c.path === `/${CONN.wabaId}/message_templates` && c.method === 'POST')!;
     expect(sent.body).toMatchObject({
       name: 'stories_member_welcome', language: 'en', category: 'UTILITY',
-      components: [{ type: 'BODY', text: 'Hello {{1}}, welcome to {{2}}! Your member ID is {{3}}.', example: { body_text: [['Asha Rao', 'Stories Central', 'CEN-M000123']] } }],
+      components: [{ type: 'BODY', text: 'Hello {{1}}, welcome to {{2}}! Your member ID is {{3}}. Show it at the counter.', example: { body_text: [['Asha Rao', 'Stories Central', 'CEN-M000123']] } }],
     });
     await call(settings.syncTemplates, bm, { orgId: org, branchId: central }, null);
     const overview = await call<{ events: { key: string; template: { status: string; metaId: string } }[] }>(settings.overview, bm, { orgId: org, branchId: central }, null);
@@ -155,7 +157,7 @@ describe('sending', () => {
   it('queues the newer transaction notifications (status change, waiting list)', async () => {
     fakeMeta();
     await connect();
-    await template('membership_status', { body: 'Hello {{member_name}}, your membership at {{branch_name}} is now {{status}}. Thank you.' });
+    await template('membership_status', { body: 'Hello {{member_name}}, your membership at {{branch_name}} is now {{status}}. Thank you for reading with us.' });
     const { memberId } = await call<{ memberId: string }>(members.register, lib, { orgId: org, homeBranchId: central, fullName: 'Asha Rao', dob: '1990-05-01', phone: '98765 43210' });
     await call(members.setStatus, bm, { orgId: org, memberId, status: 'SUSPENDED', reason: 'Asked to pause for a month' });
     const queued = (await outbox()).map((d) => d.data()).find((m) => m.event === 'membership_status')!;

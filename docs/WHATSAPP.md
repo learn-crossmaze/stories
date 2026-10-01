@@ -154,6 +154,7 @@ For each message you want:
 1. **Edit wording.** Change the text. Click a value chip (e.g. `{{member_name}}`) to insert it. The preview shows
    the message with sample values. Rules:
    - A message can't start or end with a value.
+   - At least 3 words of your own for each value (Meta rejects templates with "too many variables for its length").
    - At most 1,024 characters.
    - Only the values listed for that message.
 2. **Template name in Meta**: `stories_<message>` by default.
@@ -203,6 +204,7 @@ links them.
 | "Meta won't let this access token use …" / "Unsupported post request. Object with ID … does not exist, cannot be loaded due to missing permissions" | The token can't reach that ID. In Business Settings → Users → System users → your system user → **Assign assets**, give it your **WhatsApp account** (and the app) with Full control; generate the token with **both** `whatsapp_business_messaging` and `whatsapp_business_management`; check the WhatsApp Business Account ID is the one on API Setup (not the App ID or Business ID). Save the connection again: Stories now checks the account and number when saving. |
 | "(#131030) Recipient phone number not in allowed list" | The app is in development mode: add the number under API Setup → To, or make the app Live (Step 8). |
 | Template **Rejected: INCORRECT_CATEGORY** | Meta thinks the wording is marketing rather than a transactional update (common for welcomes). Reword it as a plain account update, e.g. "Your membership at {{branch_name}} is registered. Member ID: {{member_code}}. Show it at the counter to borrow books.", save and submit again (same name is fine for a rejected template). |
+| "This template has too many variables for its length" | Meta wants more fixed text around the values. Stories now checks this as you type: write at least **3 words of your own per value** (e.g. "Hello {{member_name}}, you have borrowed {{book_titles}} from {{branch_name}} today. Please take good care of the books and enjoy reading!"), save and **Submit to Meta** again. |
 | A template was **deleted in Meta** / "content is being deleted" when submitting | Meta blocks a deleted template's name (in that language) for 4 weeks. Press **Check approvals** (Stories marks it not submitted), open **Edit wording**, change the **Template name** (e.g. `stories_member_welcome_v2`), save and **Submit to Meta**. |
 | Template stays **Waiting for Meta** | Utility reviews take minutes to 24 hours. Press **Check approvals**: it also tells you if a submitted template isn't in your WhatsApp account any more (sent with an older token, or deleted in Meta), or subscribe the webhook to `message_template_status_update` so it updates by itself. |
 | "Template name does not exist in the translation" (132001) | The template isn't approved yet, or the name or language differs from Meta's. Use **Check approvals**. |

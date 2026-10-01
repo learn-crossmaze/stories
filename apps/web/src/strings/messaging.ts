@@ -72,6 +72,8 @@ export const wt = {
   body: 'Wording',
   bodyHint: 'Click a value to insert it. A message can’t start or end with a value. Up to 1,024 characters.',
   insert: 'Insert',
+  tooShort: (values: number, need: number, words: number) =>
+    `Too many values for the message length: Meta rejects this. With ${values} values, write at least ${need} words of your own around them (now ${words}).`,
   templateName: 'Template name in Meta',
   templateNameHint: 'Lower-case letters, digits and underscores. Change it if Meta rejected a wording (a name can be reused only after 30 days).',
   sendThis: 'Send this message',

@@ -4,11 +4,13 @@ import { toApiError } from '../../data/api';
 import { services } from '../../data/services';
 import {
   fillSamples,
+  fixedWords,
   LANGUAGES,
   loadOverview,
   messageLog,
   type MessageEvent,
   type Overview,
+  WORDS_PER_VALUE,
   placeholders,
   removeTemplate,
   saveConnection,
@@ -161,6 +163,9 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
   const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const unknown = placeholders(f.body).filter((k) => !event.variables.some((v) => v.key === k));
+  const values = placeholders(f.body).length;
+  const words = fixedWords(f.body);
+  const tooShort = words < values * WORDS_PER_VALUE;
   const dirty = f.enabled !== initial.enabled || f.name !== initial.name || f.language !== initial.language || f.body !== initial.body;
   const insert = (key: string) => {
     const el = area.current;
@@ -225,6 +230,7 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
             {wt.bodyHint} {f.body.length}/1024
           </span>
           {unknown.length > 0 && <span className="field-error">{`{{${unknown[0]}}} isn't a value this message has.`}</span>}
+          {tooShort && <span className="field-error">{wt.tooShort(values, values * WORDS_PER_VALUE, words)}</span>}
         </div>
         <div className="chips wa-chips" role="group" aria-label={wt.insert}>
           {event.variables.map((v) => (
