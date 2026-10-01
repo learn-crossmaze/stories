@@ -70,7 +70,11 @@ export const overview = query('whatsapp-overview', z.strictObject(branchInput), 
   return {
     settings,
     webhook: settings ? { path: webhookPath(input.orgId, input.branchId), verifyToken: (secret.get('verifyToken') as string | undefined) ?? null } : null,
-    events: EVENTS.map((e) => ({ ...e, template: templateOf(templates.docs.find((d) => d.id === e.key) ?? null, e.key, language) })),
+    events: EVENTS.map((e) => {
+      const snap = templates.docs.find((d) => d.id === e.key) ?? null;
+      // "Added": the branch has set this notification up (it shows in its list).
+      return { ...e, added: !!snap, template: templateOf(snap, e.key, language) };
+    }),
   };
 });
 
@@ -194,6 +198,28 @@ export const saveTemplate = command(
     return { status: changed ? 'NOT_SUBMITTED' : current.status };
   },
 );
+
+/**
+ * Removes a notification from the branch's list: it stops being sent. The
+ * template stays in Meta's WhatsApp Manager (delete it there if wanted).
+ */
+export const removeTemplate = command('whatsapp-removeTemplate', z.strictObject({ ...branchInput, event: z.enum(EVENT_KEYS) }), async ({ actor, input, requestId }, tx) => {
+  await requireBranch(actor, input.orgId, input.branchId, tx);
+  const ref = templateRef(input.orgId, input.branchId, input.event);
+  const snap = await tx.get(ref);
+  if (!snap.exists) return { removed: false };
+  const switchboard = await planSwitchboard(tx, input.orgId, input.branchId, { template: { event: input.event, enabled: false } });
+  tx.delete(ref);
+  switchboard();
+  recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+    action: 'whatsapp.template.remove',
+    entityType: 'branch',
+    entityId: input.branchId,
+    branchId: input.branchId,
+    before: { event: input.event, name: snap.get('name') as string, enabled: !!snap.get('enabled') },
+  });
+  return { removed: true };
+});
 
 /**
  * Sends the template to Meta for approval (or updates the one Meta already

@@ -288,7 +288,7 @@ export function writeSettlement(
     });
   }
   queueWhatsApp(tx, {
-    orgId, branchId, event: 'subscription_active', memberId,
+    orgId, branchId, event: upgrading ? 'plan_upgraded' : 'subscription_active', memberId,
     vars: { plan_name: subSnap.get('planSnapshot.name') as string, amount: rupeesText(due.totalMinor), valid_until: dateIN(end) },
     ref: { subscriptionId, paymentId: payRef.id },
   });

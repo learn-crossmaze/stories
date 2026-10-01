@@ -11,7 +11,7 @@ import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { balanceOf, depositRef } from '../billing/ledger.js';
 import { requireActiveTerm, type Term } from '../billing/term.js';
-import { queueWhatsApp } from '../messaging/whatsapp.js';
+import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 
 const barcodes = z
   .array(z.string().trim().toUpperCase().min(4).max(32))
@@ -265,6 +265,7 @@ export const declareLost = command(
       action: 'loan.declareLost', entityType: 'loan', entityId: loan.id, branchId, memberId: loan.get('memberId'),
       before: { status: 'ACTIVE' }, after: { status: 'LOST', chargeMinor: charge, proposedDeductionMinor: proposed, adjustmentId }, reason: input.reason,
     });
+    queueWhatsApp(tx, { orgId: input.orgId, branchId, event: 'book_lost', memberId, vars: { book_title: copy.bookTitle, amount: rupeesText(charge) }, ref: { loanId: loan.id } });
     return { adjustmentId, chargeMinor: charge, proposedMinor: proposed };
   },
 );

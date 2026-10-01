@@ -262,6 +262,8 @@ export const setStatus = command(
       action: 'member.setStatus', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { status: member.status }, after: { status: input.status }, reason: input.reason,
     });
+    const statusText = { ACTIVE: 'active again', SUSPENDED: 'paused', CLOSED: 'closed' }[input.status];
+    queueWhatsApp(tx, { orgId: input.orgId, branchId: member.homeBranchId, event: 'membership_status', memberId: input.memberId, vars: { status: statusText }, ref: { memberId: input.memberId } });
     return { memberId: input.memberId };
   },
 );

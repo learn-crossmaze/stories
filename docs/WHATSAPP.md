@@ -133,10 +133,24 @@ template per message, and each branch has its own copy:
 | Reservation ready | a reserved book is set aside | member_name, branch_name, book_title, hold_until |
 | Payment link | staff send an online payment link | member_name, branch_name, amount, payment_link |
 | Refund | a refund is paid out or recorded | member_name, branch_name, amount |
+| Plan upgraded | a member upgrades their plan mid-term | member_name, branch_name, plan_name, amount, valid_until |
+| Plan ended | a plan ends and the member hasn't renewed | member_name, branch_name, plan_name |
+| Membership paused, resumed or closed | staff change a membership's status | member_name, branch_name, status ("paused", "active again", "closed") |
+| Book declared lost | a borrowed book is declared lost | member_name, branch_name, book_title, amount (replacement charge) |
+| Deposit refunded | the security deposit is refunded on settlement | member_name, branch_name, amount |
+| Added to waiting list | a book is reserved and no copy is free yet | member_name, branch_name, book_title |
+| Reservation cancelled | a reservation is cancelled (staff or member) | member_name, branch_name, book_title |
+| Reservation not collected | a held book wasn't collected in time | member_name, branch_name, book_title |
 | Staff notification | any in-app staff notification (leave decided, payslip ready, documents verified…) | employee_name, title, details |
+
+The **Notifications** list shows only the messages this branch has added, one line each: name, Meta's review
+status and an On/Off switch. Click a line (or **Edit**) to see and change everything about it.
 
 For each message you want:
 
+0. **Add notification** and pick the transaction from the list (grouped by Membership, Payments, Borrowing,
+   Reservations and Staff). It opens with a default wording; **Add notification** saves it to the list.
+   **Remove notification** (inside the message) takes it off the list; the template stays in Meta.
 1. **Edit wording.** Change the text. Click a value chip (e.g. `{{member_name}}`) to insert it. The preview shows
    the message with sample values. Rules:
    - A message can't start or end with a value.

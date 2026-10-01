@@ -14,6 +14,8 @@ export interface MessageEvent {
   label: string;
   /** Who receives it. */
   audience: 'MEMBER' | 'STAFF';
+  /** Kind of transaction, for grouping in the "Add notification" list. */
+  group: 'MEMBERSHIP' | 'PAYMENTS' | 'BORROWING' | 'RESERVATIONS' | 'STAFF';
   /** When it is sent. */
   when: string;
   variables: EventVariable[];
@@ -27,6 +29,7 @@ const MEMBER = [v('member_name', 'Member name', 'Asha Rao'), v('branch_name', 'B
 export const EVENTS: MessageEvent[] = [
   {
     key: 'member_welcome',
+    group: 'MEMBERSHIP',
     label: 'Welcome',
     audience: 'MEMBER',
     when: 'A member is registered at the counter or signs up.',
@@ -36,6 +39,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'subscription_active',
+    group: 'PAYMENTS',
     label: 'Plan activated',
     audience: 'MEMBER',
     when: 'A subscription payment is received (counter or online).',
@@ -44,6 +48,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'renewal_reminder',
+    group: 'MEMBERSHIP',
     label: 'Renewal reminder',
     audience: 'MEMBER',
     when: '7 days and 1 day before a plan ends (if not renewed yet).',
@@ -52,6 +57,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'books_issued',
+    group: 'BORROWING',
     label: 'Books issued',
     audience: 'MEMBER',
     when: 'Books are issued to a member (counter or exchange).',
@@ -60,6 +66,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'books_returned',
+    group: 'BORROWING',
     label: 'Books returned',
     audience: 'MEMBER',
     when: 'Books are returned (counter or exchange).',
@@ -68,6 +75,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'reservation_ready',
+    group: 'RESERVATIONS',
     label: 'Reservation ready',
     audience: 'MEMBER',
     when: 'A reserved book is set aside for the member.',
@@ -76,6 +84,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'payment_link',
+    group: 'PAYMENTS',
     label: 'Payment link',
     audience: 'MEMBER',
     when: 'Staff send an online payment link.',
@@ -84,6 +93,7 @@ export const EVENTS: MessageEvent[] = [
   },
   {
     key: 'refund_processed',
+    group: 'PAYMENTS',
     label: 'Refund',
     audience: 'MEMBER',
     when: 'A refund is paid out or recorded.',
@@ -91,7 +101,80 @@ export const EVENTS: MessageEvent[] = [
     body: 'Hello {{member_name}}, {{branch_name}} has refunded {{amount}} to you. It may take a few days to reach your account.',
   },
   {
+    key: 'plan_upgraded',
+    group: 'PAYMENTS',
+    label: 'Plan upgraded',
+    audience: 'MEMBER',
+    when: 'A member upgrades their plan mid-term (counter or online).',
+    variables: [...MEMBER, v('plan_name', 'New plan', 'Explorer · 6 books'), v('amount', 'Amount paid', '₹640'), v('valid_until', 'Valid until', '30 Dec 2026')],
+    body: 'Hello {{member_name}}, your plan at {{branch_name}} is now {{plan_name}}. We received {{amount}} after the credit for unused days. Valid until {{valid_until}}.',
+  },
+  {
+    key: 'plan_ended',
+    group: 'MEMBERSHIP',
+    label: 'Plan ended',
+    audience: 'MEMBER',
+    when: 'A plan ends and the member has not renewed.',
+    variables: [...MEMBER, v('plan_name', 'Plan', 'Learner · 4 books')],
+    body: 'Hello {{member_name}}, your {{plan_name}} plan at {{branch_name}} has ended. Renew at the counter or in the Stories app to keep borrowing.',
+  },
+  {
+    key: 'membership_status',
+    group: 'MEMBERSHIP',
+    label: 'Membership paused, resumed or closed',
+    audience: 'MEMBER',
+    when: 'Staff pause (suspend), resume or close a membership.',
+    variables: [...MEMBER, v('status', 'New status', 'paused')],
+    body: 'Hello {{member_name}}, your membership at {{branch_name}} is now {{status}}. Please contact the branch if you have any questions.',
+  },
+  {
+    key: 'book_lost',
+    group: 'BORROWING',
+    label: 'Book declared lost',
+    audience: 'MEMBER',
+    when: 'A borrowed book is declared lost.',
+    variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book'), v('amount', 'Replacement charge', '₹350')],
+    body: 'Hello {{member_name}}, {{book_title}} borrowed from {{branch_name}} is recorded as lost. Replacement charge: {{amount}}. Please contact the branch for details.',
+  },
+  {
+    key: 'deposit_refunded',
+    group: 'PAYMENTS',
+    label: 'Deposit refunded',
+    audience: 'MEMBER',
+    when: "A member's security deposit is refunded on settlement.",
+    variables: [...MEMBER, v('amount', 'Amount', '₹1,000')],
+    body: 'Hello {{member_name}}, {{branch_name}} has refunded your security deposit of {{amount}}. Thank you for reading with us.',
+  },
+  {
+    key: 'reservation_placed',
+    group: 'RESERVATIONS',
+    label: 'Added to waiting list',
+    audience: 'MEMBER',
+    when: 'A book is reserved and no copy is free yet (the member joins the waiting list).',
+    variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book')],
+    body: 'Hello {{member_name}}, you are on the waiting list for {{book_title}} at {{branch_name}}. We will message you when it is ready to collect.',
+  },
+  {
+    key: 'reservation_cancelled',
+    group: 'RESERVATIONS',
+    label: 'Reservation cancelled',
+    audience: 'MEMBER',
+    when: 'A reservation is cancelled (by staff or the member).',
+    variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book')],
+    body: 'Hello {{member_name}}, your reservation for {{book_title}} at {{branch_name}} has been cancelled.',
+  },
+  {
+    key: 'reservation_expired',
+    group: 'RESERVATIONS',
+    label: 'Reservation not collected',
+    audience: 'MEMBER',
+    when: 'A book set aside was not collected in time and the hold ends.',
+    variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book')],
+    body: 'Hello {{member_name}}, your hold on {{book_title}} at {{branch_name}} has ended as it was not collected in time. You can reserve it again in the Stories app.',
+  },
+  {
     key: 'staff_alert',
+    group: 'STAFF',
     label: 'Staff notification',
     audience: 'STAFF',
     when: 'Any staff notification in the app (leave decided, payslip ready, documents verified…).',
