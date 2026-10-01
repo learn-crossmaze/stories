@@ -95,3 +95,8 @@ export const placeholders = (body: string) => {
 /** A body filled with sample values (the editor's preview). */
 export const fillSamples = (body: string, variables: EventVariable[]) =>
   body.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_, k: string) => variables.find((v) => v.key === k)?.sample ?? `{{${k}}}`);
+
+/** Meta rejects templates with too many values for their length: Stories asks for 3 words of your own per value (functions/src/messaging/events.ts). */
+export const WORDS_PER_VALUE = 3;
+export const fixedWords = (body: string) =>
+  body.replace(/\{\{[^}]*\}\}/g, ' ').split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;

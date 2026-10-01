@@ -9,7 +9,7 @@ import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id } from '../core/schemas.js';
-import { EVENT_KEYS, EVENTS, eventFor, metaBody, placeholders } from './events.js';
+import { EVENT_KEYS, EVENTS, eventFor, metaBody, placeholders, tooFewWords } from './events.js';
 import {
   graph,
   loadConnection,
@@ -174,6 +174,9 @@ export const saveTemplate = command(
     const snap = await tx.get(ref);
     const switchboard = await planSwitchboard(tx, input.orgId, input.branchId, { template: { event: input.event, enabled: input.enabled } });
     const current = templateOf(snap, input.event, (branch.get('whatsapp.language') as string | undefined) ?? 'en');
+    // Checked when the wording changes (switching an older template on or off still works).
+    const short = current.body !== input.body || !snap.exists ? tooFewWords(input.body) : null;
+    if (short) throw errors.invalid(short);
     const changed = current.body !== input.body || current.name !== input.name || current.language !== input.language;
     tx.set(ref, {
       event: input.event,
@@ -232,6 +235,8 @@ export const submitTemplate = query('whatsapp-submitTemplate', z.strictObject({ 
   const ref = templateRef(input.orgId, input.branchId, input.event);
   const t = templateOf(await ref.get(), input.event, conn.settings.language);
   const event = eventFor(input.event)!;
+  const short = tooFewWords(t.body);
+  if (short) throw errors.invalid(`${short} Open the message and add words, then submit again.`);
   const keys = placeholders(t.body);
   const samples = keys.map((k) => event.variables.find((v) => v.key === k)!.sample);
   const component = { type: 'BODY', text: metaBody(t.body), ...(keys.length ? { example: { body_text: [samples] } } : {}) };

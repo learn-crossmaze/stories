@@ -44,7 +44,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'A subscription payment is received (counter or online).',
     variables: [...MEMBER, v('plan_name', 'Plan', 'Learner · 4 books'), v('amount', 'Amount paid', '₹1,399'), v('valid_until', 'Valid until', '30 Dec 2026')],
-    body: 'Hello {{member_name}}, we received {{amount}} for {{plan_name}} at {{branch_name}}. Your plan is valid until {{valid_until}}. Happy reading!',
+    body: 'Hello {{member_name}}, we have received your payment of {{amount}} for the {{plan_name}} plan at {{branch_name}}. Your plan is now active and valid until {{valid_until}}. Happy reading!',
   },
   {
     key: 'renewal_reminder',
@@ -62,7 +62,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'Books are issued to a member (counter or exchange).',
     variables: [...MEMBER, v('book_titles', 'Book titles', 'The Jungle Book, Panchatantra')],
-    body: 'Hello {{member_name}}, you borrowed {{book_titles}} from {{branch_name}}. Enjoy!',
+    body: 'Hello {{member_name}}, you have borrowed {{book_titles}} from {{branch_name}} today. Please take good care of the books and enjoy reading!',
   },
   {
     key: 'books_returned',
@@ -71,7 +71,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'Books are returned (counter or exchange).',
     variables: [...MEMBER, v('book_titles', 'Book titles', 'The Jungle Book')],
-    body: 'Hello {{member_name}}, we received {{book_titles}} back at {{branch_name}}. Thank you!',
+    body: 'Hello {{member_name}}, we have received {{book_titles}} back at {{branch_name}}. Thank you for returning them, and happy reading!',
   },
   {
     key: 'reservation_ready',
@@ -80,7 +80,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'A reserved book is set aside for the member.',
     variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book'), v('hold_until', 'Collect by', '3 Oct 2026, 6:00 pm')],
-    body: 'Hello {{member_name}}, {{book_title}} is ready for you at {{branch_name}}. Please collect it by {{hold_until}}.',
+    body: 'Hello {{member_name}}, the book you reserved, {{book_title}}, is now ready for you at {{branch_name}}. Please collect it from the counter by {{hold_until}}, after which it goes to the next reader.',
   },
   {
     key: 'payment_link',
@@ -89,7 +89,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'Staff send an online payment link.',
     variables: [...MEMBER, v('amount', 'Amount', '₹1,399'), v('payment_link', 'Payment link', 'https://rzp.io/i/AbCd123')],
-    body: 'Hello {{member_name}}, please pay {{amount}} to {{branch_name}} using this secure link: {{payment_link}} . Thank you!',
+    body: 'Hello {{member_name}}, here is your secure link to pay {{amount}} to {{branch_name}}: {{payment_link}} . Please complete the payment to activate your plan. Thank you!',
   },
   {
     key: 'refund_processed',
@@ -161,7 +161,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'A reservation is cancelled (by staff or the member).',
     variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book')],
-    body: 'Hello {{member_name}}, your reservation for {{book_title}} at {{branch_name}} has been cancelled.',
+    body: 'Hello {{member_name}}, your reservation for {{book_title}} at {{branch_name}} has been cancelled. You can reserve it again any time in the Stories app.',
   },
   {
     key: 'reservation_expired',
@@ -179,7 +179,7 @@ export const EVENTS: MessageEvent[] = [
     audience: 'STAFF',
     when: 'Any staff notification in the app (leave decided, payslip ready, documents verified…).',
     variables: [v('employee_name', 'Employee name', 'Lata'), v('title', 'Notification', 'Your leave was approved'), v('details', 'Details', '2–3 Oct · Casual leave')],
-    body: 'Hello {{employee_name}}, {{title}}. {{details}}. Open the Stories app for details.',
+    body: 'Hello {{employee_name}}, you have a new update in Stories: {{title}}. Details: {{details}}. Please open the Stories app to see more.',
   },
 ];
 
@@ -191,6 +191,25 @@ export function placeholders(body: string): string[] {
   const seen: string[] = [];
   for (const m of body.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/g)) if (!seen.includes(m[1])) seen.push(m[1]);
   return seen;
+}
+
+/**
+ * Meta rejects templates with "too many variables for its length". Stories asks
+ * for at least this many words of fixed text per value, which Meta accepts.
+ */
+export const WORDS_PER_VALUE = 3;
+
+/** Words in a body other than its {{values}}. */
+export const fixedWords = (body: string) =>
+  body.replace(/\{\{[^}]*\}\}/g, ' ').split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/** Why Meta would reject the body as too short for its values, or null. */
+export function tooFewWords(body: string): string | null {
+  const values = placeholders(body).length;
+  const words = fixedWords(body);
+  const need = values * WORDS_PER_VALUE;
+  if (words >= need) return null;
+  return `Meta rejects messages with too many values for their length. With ${values} values, write at least ${need} words of your own around them (now ${words}).`;
 }
 
 /** The body as Meta wants it: {{1}}, {{2}}, … in order of first use. */
