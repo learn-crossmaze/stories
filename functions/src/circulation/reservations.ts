@@ -12,7 +12,7 @@ import { logEvent } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { requireActiveTerm } from '../billing/term.js';
-import { makeAvailable, nextWaiting, readCirculationConfig } from './allocation.js';
+import { makeAvailable, nextWaiting, readCirculationConfig, queueReady } from './allocation.js';
 
 /**
  * Reserves a title for a member at a branch. If a copy is on the shelf it is
@@ -68,6 +68,7 @@ export async function placeReservation(
         allocatedAt: FieldValue.serverTimestamp(), holdUntil: Timestamp.fromMillis(Date.now() + holdHours * 3_600_000),
       });
       tx.update(copy.ref, { status: 'RESERVED', activeReservationId: ref.id, updatedAt: FieldValue.serverTimestamp() });
+      queueReady(tx, input.orgId, input.branchId, input.memberId, book.get('title') as string, new Date(Date.now() + holdHours * 3_600_000), ref.id);
       logEvent(tx, copy.ref.path, {
         type: 'RESERVATION_ALLOCATED', actorUid: actor.uid, fromStatus: 'AVAILABLE', toStatus: 'RESERVED',
         condition: copy.get('condition'), ref: { reservationId: ref.id, memberId: input.memberId },

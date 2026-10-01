@@ -80,6 +80,11 @@ export const PERMISSIONS = {
     "HO",
     "FO"
   ],
+  "messaging.manage": [
+    "HO",
+    "FO",
+    "BM"
+  ],
   "departments.manage": [
     "HO",
     "HR",

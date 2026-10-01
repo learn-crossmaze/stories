@@ -87,6 +87,9 @@ beforeEach(async () => {
     await put(`orgs/${CORP}/employees/e-cen/private/aadhaar`, { number: '234123412346' });
     await put(`orgs/${CORP}/members/m-cen/private/aadhaar`, { number: '234123412346' });
     await put(`orgs/${CORP}/aadhaarIndex/abc`, { memberId: 'm-cen' });
+    await put(`orgs/${CORP}/branches/cen/private/whatsapp`, { accessToken: 'EAAG-secret' });
+    await put(`orgs/${CORP}/branches/cen/whatsappTemplates/member_welcome`, { body: 'Hello' });
+    await put(`orgs/${CORP}/whatsappOutbox/w1`, { branchId: 'cen', event: 'member_welcome', memberId: 'm-cen' });
     await put(`orgs/${CORP}/employees/e-nth/private/profile`, { pan: 'ZZZZZ9999Z' });
     await put(`orgs/${CORP}/designations/d1`, { name: 'Librarian', status: 'ACTIVE' });
     await put(`orgs/${CORP}/employees/e-cen/documents/doc1`, { orgId: CORP, branchId: 'cen', employeeUid: 'alice', status: 'VERIFIED', typeName: 'PAN card' });
@@ -347,6 +350,13 @@ describe('HRMS employee records', () => {
     await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/members/m-cen/private/aadhaar`)));
     await assertFails(getDoc(doc(as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } })), `orgs/${CORP}/members/m-cen/private/aadhaar`)));
     await assertFails(getDoc(doc(hrAdmin(), `orgs/${CORP}/aadhaarIndex/abc`)));
+    // WhatsApp: the access token, templates and message queue are for functions only (pages use callables).
+    const bm = as('bm', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+    await assertFails(getDoc(doc(bm, `orgs/${CORP}/branches/cen/private/whatsapp`)));
+    await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/branches/cen/private/whatsapp`)));
+    await assertFails(getDoc(doc(bm, `orgs/${CORP}/branches/cen/whatsappTemplates/member_welcome`)));
+    await assertFails(getDoc(doc(bm, `orgs/${CORP}/whatsappOutbox/w1`)));
+    await assertFails(setDoc(doc(bm, `orgs/${CORP}/whatsappOutbox/w2`), { branchId: 'cen' }));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/employees/e-cen`), { status: 'OFFBOARDED' }));
     await assertFails(setDoc(doc(alice(), `orgs/${CORP}/employees/e-cen/private/profile`), { pan: 'X' }));
     await assertFails(setDoc(doc(hrAdmin(), `orgs/${CORP}/designations/d2`), { name: 'X' }));

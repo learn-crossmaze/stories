@@ -745,3 +745,24 @@ main h1[tabindex='-1']:focus { outline: none; }
 .person-cell { display: inline-flex; align-items: center; gap: 10px; }
 .ob-photo-card { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
 .ob-photo-card p { margin: 0; flex: 1; min-width: 200px; }
+
+/* Settings → WhatsApp */
+.wa-form { margin-top: 8px; }
+.wa-test { border-top: 1px solid var(--outline); margin-top: 16px; padding-top: 12px; }
+.wa-test h3 { margin: 0 0 8px; font-size: 15px; }
+.wa-test .row, .wa-test-to { align-items: flex-end; }
+.wa-test .field, .wa-test-to .field { margin: 0; min-width: 220px; }
+.wa-events { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+.wa-event { display: flex; flex-direction: column; gap: 6px; }
+.wa-event h3 { margin: 0; font-size: 16px; }
+.wa-event p { margin: 0; }
+.wa-event-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.wa-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.wa-body { white-space: pre-wrap; background: var(--surface-dim); border-radius: var(--radius-md); padding: 8px 12px; font-size: 14px; }
+.wa-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.chip-button { border: 1px solid var(--outline); background: var(--surface-raised); color: var(--on-surface); border-radius: 999px; padding: 4px 10px; font: 500 13px ui-monospace, Menlo, monospace; cursor: pointer; min-height: 32px; }
+.chip-button:hover { border-color: var(--primary); }
+.wa-preview { background: #dcf8c6; color: #111; border-radius: 10px 10px 10px 2px; padding: 8px 12px; margin-bottom: 12px; max-width: 520px; }
+.wa-preview p { margin: 4px 0 0; white-space: pre-wrap; }
+.wa-preview .muted { color: #44524a; }
+.field-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }

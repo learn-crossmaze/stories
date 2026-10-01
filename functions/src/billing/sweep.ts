@@ -4,6 +4,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 import { recordAudit } from '../core/audit.js';
 import { db, REGION } from '../core/firebase.js';
+import { queueRenewalReminders } from '../messaging/outbox.js';
 
 /**
  * Marks subscriptions whose term has ended as EXPIRED and moves members onto
@@ -51,5 +52,6 @@ export async function expireDueSubscriptions(now = new Date(), batch = 300): Pro
 
 export const expireSweep = onSchedule({ schedule: 'every 60 minutes', region: REGION, timeZone: 'Asia/Kolkata' }, async () => {
   const n = await expireDueSubscriptions();
-  logger.info(`expired ${n} subscriptions`);
+  const reminders = await queueRenewalReminders();
+  logger.info(`expired ${n} subscriptions; queued ${reminders} renewal reminders`);
 });

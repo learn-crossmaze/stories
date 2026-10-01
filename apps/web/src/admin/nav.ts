@@ -4,6 +4,7 @@ import { paths, viewHome } from '../paths';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
 import { lt } from '../strings/library';
+import { wt } from '../strings/messaging';
 import type { IconName } from '../shared/ui';
 
 /** Permission needed in the current organization (any of a list); `superAdmin` for platform pages; null for everyone. */
@@ -133,6 +134,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminSettingsDocuments, label: ht.navDocumentTypes, icon: 'folder', requires: 'hr.config' },
         { to: paths.adminSettingsLetters, label: ht.navLetterTemplates, icon: 'folder', requires: 'hr.config' },
         { to: paths.adminSettingsPayroll, label: ht.navPayrollSettings, icon: 'payments', requires: 'salary.edit' },
+        { to: paths.adminSettingsWhatsApp, label: wt.nav, icon: 'chat', requires: 'messaging.manage' },
       ],
     },
     { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },

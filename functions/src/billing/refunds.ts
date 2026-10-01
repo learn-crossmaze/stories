@@ -10,6 +10,7 @@ import { db } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
 import { balanceOf, depositRef, postLedger } from './ledger.js';
 import { gatewayError, loadCredentials, RazorpayError, rzp } from './razorpay.js';
+import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 
 /**
  * Refunds against a payment the member made (docs/PAYMENTS.md §Refunds).
@@ -128,6 +129,7 @@ export const refundPayment = query('payments-refund', refundSchema, async ({ act
     });
     if (offline) {
       if (input.depositMinor > 0) takeDeposit(tx, input.orgId, account, memberId, branchId, input.depositMinor, refundRef.id, actor.uid);
+      queueWhatsApp(tx, { orgId: input.orgId, branchId, event: 'refund_processed', memberId, vars: { amount: rupeesText(input.amountMinor) }, ref: { refundId: refundRef.id } });
       recordAudit(tx, audit, input.orgId, {
         action: 'payment.refund', entityType: 'payment', entityId: pay.id, branchId, memberId, reason: input.reason,
         after: { refundId: refundRef.id, amountMinor: input.amountMinor, depositMinor: input.depositMinor, method: input.method, reference: input.reference || null },
@@ -182,6 +184,7 @@ async function settle(orgId: string, refundId: string, refund: RazorpayRefund, a
       takeDeposit(tx, orgId, account, memberId, r.get('branchId'), Math.min(depositMinor, balanceOf(account)), refundId, r.get('recordedBy'));
     }
     tx.update(ref, { status, 'gateway.refundId': refund.id, 'gateway.speedProcessed': refund.speed_processed ?? null, reference: refund.id, settledAt: FieldValue.serverTimestamp() });
+    queueWhatsApp(tx, { orgId, branchId: r.get('branchId'), event: 'refund_processed', memberId, vars: { amount: rupeesText(r.get('amountMinor') as number) }, ref: { refundId } });
     recordAudit(tx, audit, orgId, {
       action: 'payment.refund', entityType: 'payment', entityId: r.get('refundOf'), branchId: r.get('branchId'), memberId, reason: r.get('reason'),
       after: { refundId, amountMinor: r.get('amountMinor'), depositMinor, method: 'RAZORPAY', gatewayRefundId: refund.id, status },

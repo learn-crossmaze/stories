@@ -11,6 +11,7 @@ import { id } from '../core/schemas.js';
 import { handleRefundEvent } from './refunds.js';
 import { readSettlement, writeSettlement } from './subscriptions.js';
 import { upgradeProblem } from './upgrade.js';
+import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 import {
   gatewayError,
   KEY_ID,
@@ -231,6 +232,10 @@ export async function requestOnlinePayment(
         createdAt: FieldValue.serverTimestamp(),
         expiresAt: Timestamp.fromDate(expiresAt!),
       });
+      // Staff sending a link: it also goes on WhatsApp when the branch sends payment links there.
+      if (notify && channel === 'LINK' && url) {
+        queueWhatsApp(tx, { orgId: input.orgId, branchId, event: 'payment_link', memberId: member.id, vars: { amount: rupeesText(amount), payment_link: url }, ref: { subscriptionId: input.subscriptionId } });
+      }
       recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId: input.requestId }, input.orgId, {
         action: 'payment.requestOnline', entityType: 'subscription', entityId: input.subscriptionId, branchId, memberId: member.id,
         after: { channel, gatewayId: gatewayId!, amountMinor: amount, sentTo },

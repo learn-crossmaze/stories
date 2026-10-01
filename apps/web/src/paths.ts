@@ -45,6 +45,7 @@ export const paths = {
   adminSettingsDocuments: '/admin/settings/documents',
   adminSettingsLetters: '/admin/settings/letters',
   adminSettingsPayroll: '/admin/settings/payroll',
+  adminSettingsWhatsApp: '/admin/settings/whatsapp',
   adminDocuments: '/admin/documents',
   adminOffers: '/admin/offer-letters',
   adminAttendance: '/admin/attendance',

@@ -11,6 +11,7 @@ import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { balanceOf, depositRef } from '../billing/ledger.js';
 import { requireActiveTerm, type Term } from '../billing/term.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
 
 const barcodes = z
   .array(z.string().trim().toUpperCase().min(4).max(32))
@@ -60,6 +61,9 @@ function checkLimit(member: Member, term: Term, returning: number, plan: IssuePl
   }
 }
 
+/** Book titles for a message: up to three, then "and N more". */
+const titles = (list: string[]) => (list.length <= 3 ? list.join(', ') : `${list.slice(0, 3).join(', ')} and ${list.length - 3} more`);
+
 function writeIssue(tx: Transaction, orgId: string, branchId: string, member: Member, memberId: string, term: Term, plan: IssuePlan, actorUid: string, exchangeId: string | null) {
   const loanIds: string[] = [];
   for (const { snap, copy, reservation } of plan.copies) {
@@ -79,6 +83,10 @@ function writeIssue(tx: Transaction, orgId: string, branchId: string, member: Me
       tx.update(reservation.ref, { status: 'FULFILLED', fulfilledLoanId: loanRef.id, updatedAt: FieldValue.serverTimestamp() });
     }
   }
+  queueWhatsApp(tx, {
+    orgId, branchId, event: 'books_issued', memberId,
+    vars: { book_titles: titles(plan.copies.map((c) => c.copy.bookTitle)) }, ref: { loanIds },
+  });
   return loanIds;
 }
 
@@ -101,7 +109,7 @@ async function readReturns(tx: Transaction, orgId: string, codes: string[], memb
 }
 
 /** Returned copies go to inspection at the branch that received them; ownership never changes. */
-function writeReturns(tx: Transaction, branchId: string, items: ReturnItem[], actorUid: string, exchangeId: string | null) {
+function writeReturns(tx: Transaction, orgId: string, branchId: string, items: ReturnItem[], actorUid: string, exchangeId: string | null) {
   for (const { snap, loan } of items) {
     tx.update(loan.ref, {
       status: 'RETURNED', returnedAt: FieldValue.serverTimestamp(), returnedBy: actorUid, returnBranchId: branchId,
@@ -110,6 +118,12 @@ function writeReturns(tx: Transaction, branchId: string, items: ReturnItem[], ac
     transition(tx, snap, 'UNDER_INSPECTION', { activeLoanId: null, currentBranchId: branchId }, {
       type: 'RETURNED', actorUid, ref: { loanId: loan.id, memberId: loan.get('memberId') },
     });
+  }
+  // One message per member (a return can include books of several members).
+  const byMember = new Map<string, string[]>();
+  for (const { copy, loan } of items) byMember.set(loan.get('memberId'), [...(byMember.get(loan.get('memberId')) ?? []), copy.bookTitle]);
+  for (const [memberId, list] of byMember) {
+    queueWhatsApp(tx, { orgId, branchId, event: 'books_returned', memberId, vars: { book_titles: titles(list) }, ref: { exchangeId } });
   }
 }
 
@@ -153,7 +167,7 @@ export const returnCopies = command(
     const perMember = new Map<string, number>();
     for (const i of items) perMember.set(i.loan.get('memberId'), (perMember.get(i.loan.get('memberId')) ?? 0) + 1);
 
-    writeReturns(tx, input.branchId, items, actor.uid, null);
+    writeReturns(tx, input.orgId, input.branchId, items, actor.uid, null);
     for (const [memberId, n] of perMember) {
       tx.update(db.doc(`orgs/${input.orgId}/members/${memberId}`), { activeLoanCount: FieldValue.increment(-n), updatedAt: FieldValue.serverTimestamp() });
     }
@@ -185,7 +199,7 @@ export const exchange = command(
     checkLimit(member, term, returns.length, plan);
 
     const exRef = db.collection(`orgs/${input.orgId}/exchanges`).doc();
-    writeReturns(tx, input.branchId, returns, actor.uid, exRef.id);
+    writeReturns(tx, input.orgId, input.branchId, returns, actor.uid, exRef.id);
     const loanIds = writeIssue(tx, input.orgId, input.branchId, member, input.memberId, term, plan, actor.uid, exRef.id);
     const count = Math.min(returns.length, plan.copies.length);
     const fulfilled = plan.copies.filter((c) => c.reservation).length;

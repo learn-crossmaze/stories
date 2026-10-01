@@ -63,6 +63,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
     relationship: member?.guardian?.relationship ?? '',
     aadhaar: '',
   });
+  const [whatsapp, setWhatsapp] = useState(!member?.whatsappOptOut);
   const [guardian, setGuardian] = useState<{ id: string; name: string } | null>(member?.guardian ? { id: member.guardian.memberId, name: member.guardian.name } : null);
   const [touched, setTouched] = useState(false);
   const set = (k: keyof typeof f) => (v: string) => setF((s) => ({ ...s, [k]: v }));
@@ -83,6 +84,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
       // Keep what is on file: the address (entered at sign-up) and, when left empty, the Aadhaar number.
       address: member?.address ?? null,
       aadhaar: cleanAadhaar(f.aadhaar),
+      ...(member ? { whatsappOptOut: !whatsapp } : {}),
     };
     const res = member
       ? await command<{ memberId: string }>('members-update', { ...body, memberId: member.id })
@@ -103,6 +105,11 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
           <TextField label={lt.email} type="email" value={f.email} onChange={set('email')} />
         </div>
         <div className="span-2">
+          {member && (
+            <label className="check">
+              <input type="checkbox" checked={whatsapp} onChange={(e) => setWhatsapp(e.target.checked)} /> {lt.whatsappUpdates}
+            </label>
+          )}
           <TextField label={lt.aadhaar} value={f.aadhaar} onChange={set('aadhaar')} autoComplete="off" hint={aadhaarHint(member?.aadhaarLast4)} error={f.aadhaar ? errors.aadhaar : err('aadhaar')} />
         </div>
         {minor && (

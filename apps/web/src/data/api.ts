@@ -39,7 +39,7 @@ export function toApiError(e: unknown): ApiError {
  * chosen by the action's prefix; the action name itself is unchanged.
  */
 const ROUTERS: Record<string, string> = {
-  users: 'admin', platform: 'admin', orgs: 'admin', branches: 'admin', departments: 'admin', staff: 'admin',
+  users: 'admin', platform: 'admin', orgs: 'admin', branches: 'admin', departments: 'admin', staff: 'admin', whatsapp: 'admin',
   books: 'catalogue', authors: 'catalogue', publishers: 'catalogue', categories: 'catalogue',
   copies: 'inventory', locations: 'inventory',
   members: 'members', me: 'members',
