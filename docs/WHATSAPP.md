@@ -186,6 +186,7 @@ links them.
 | You see | What it means / what to do |
 |---|---|
 | "Meta rejected the access token" | The token expired or lacks permissions: create a System User token (Step 5) and save it again. |
+| "Meta won't let this access token use …" / "Unsupported post request. Object with ID … does not exist, cannot be loaded due to missing permissions" | The token can't reach that ID. In Business Settings → Users → System users → your system user → **Assign assets**, give it your **WhatsApp account** (and the app) with Full control; generate the token with **both** `whatsapp_business_messaging` and `whatsapp_business_management`; check the WhatsApp Business Account ID is the one on API Setup (not the App ID or Business ID). Save the connection again: Stories now checks the account and number when saving. |
 | "(#131030) Recipient phone number not in allowed list" | The app is in development mode: add the number under API Setup → To, or make the app Live (Step 8). |
 | Template **Rejected: INCORRECT_CATEGORY** | Meta thinks the wording is marketing rather than a transactional update (common for welcomes). Reword it as a plain account update, e.g. "Your membership at {{branch_name}} is registered. Member ID: {{member_code}}. Show it at the counter to borrow books.", save and submit again (same name is fine for a rejected template). |
 | Template stays **Waiting for Meta** | Utility reviews take minutes to 24 hours. Press **Check approvals**, or subscribe the webhook to `message_template_status_update` so it updates by itself. |

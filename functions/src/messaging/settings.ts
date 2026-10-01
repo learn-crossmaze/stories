@@ -13,6 +13,7 @@ import { EVENT_KEYS, EVENTS, eventFor, metaBody, placeholders } from './events.j
 import {
   graph,
   loadConnection,
+  MetaError,
   metaError,
   outboxCol,
   privateRef,
@@ -101,6 +102,11 @@ export const saveConnection = command(
     let number: { display_phone_number?: string; verified_name?: string };
     try {
       number = await graph(accessToken, 'GET', `/${input.phoneNumberId}?fields=display_phone_number,verified_name`);
+      // Templates are managed through the business account: check the token can use it and the number belongs to it.
+      const numbers = await graph<{ data?: { id: string }[] }>(accessToken, 'GET', `/${input.wabaId}/phone_numbers?fields=id`);
+      if (!numbers.data?.some((n) => n.id === input.phoneNumberId)) {
+        throw errors.invalid('This Phone number ID is not in that WhatsApp Business Account. Copy both IDs from WhatsApp → API Setup in your Meta app.');
+      }
     } catch (e) {
       metaError(e);
     }
@@ -203,11 +209,16 @@ export const submitTemplate = query('whatsapp-submitTemplate', z.strictObject({ 
   const keys = placeholders(t.body);
   const samples = keys.map((k) => event.variables.find((v) => v.key === k)!.sample);
   const component = { type: 'BODY', text: metaBody(t.body), ...(keys.length ? { example: { body_text: [samples] } } : {}) };
+  const create = () => graph<{ id?: string; status?: string }>(conn.accessToken, 'POST', `/${conn.settings.wabaId}/message_templates`, { name: t.name, language: t.language, category: 'UTILITY', components: [component] });
   let res: { id?: string; status?: string; success?: boolean };
   try {
-    res = t.metaId
-      ? await graph(conn.accessToken, 'POST', `/${t.metaId}`, { components: [component] })
-      : await graph(conn.accessToken, 'POST', `/${conn.settings.wabaId}/message_templates`, { name: t.name, language: t.language, category: 'UTILITY', components: [component] });
+    try {
+      res = t.metaId ? await graph(conn.accessToken, 'POST', `/${t.metaId}`, { components: [component] }) : await create();
+    } catch (e) {
+      // The template Meta had is gone (deleted, or made under another account): submit it afresh.
+      if (!(t.metaId && e instanceof MetaError && e.code === 'NO_ACCESS')) throw e;
+      res = await create();
+    }
   } catch (e) {
     metaError(e);
   }
