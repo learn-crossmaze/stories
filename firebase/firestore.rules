@@ -17,6 +17,7 @@ service cloud.firestore {
         'org.manage': [],
         'branches.view': ['HO', 'FIN', 'HR', 'FO', 'BM', 'LIB', 'DEL', 'EMP'],
         'branches.manage': ['HO', 'FO'],
+        'messaging.manage': ['HO', 'FO', 'BM'],
         'departments.manage': ['HO', 'HR', 'FO'],
         'staff.view': ['HO', 'HR', 'FO', 'BM'],
         'staff.manageRoles': ['HO', 'HR', 'FO', 'BM'],

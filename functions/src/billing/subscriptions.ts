@@ -13,6 +13,8 @@ import { balanceOf, depositRef, postLedger } from './ledger.js';
 import { DURATIONS, type Duration, planOptions, type Plan, priceFor } from './plans.js';
 import { currentTerm } from './term.js';
 import { quoteSchema, startUpgrade, upgradeProblem, upgradeQuote, upgradeSchema } from './upgrade.js';
+import { dateIN } from '../messaging/outbox.js';
+import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 
 /**
  * Starts a subscription (or a renewal) awaiting payment. Stores a snapshot of
@@ -285,6 +287,11 @@ export function writeSettlement(
       reference: { paymentId: payRef.id, subscriptionId }, actorUid: actor.uid,
     });
   }
+  queueWhatsApp(tx, {
+    orgId, branchId, event: 'subscription_active', memberId,
+    vars: { plan_name: subSnap.get('planSnapshot.name') as string, amount: rupeesText(due.totalMinor), valid_until: dateIN(end) },
+    ref: { subscriptionId, paymentId: payRef.id },
+  });
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, orgId, {
     action: payment.gateway ? 'payment.online' : 'payment.recordOffline', entityType: 'subscription', entityId: subscriptionId, branchId, memberId,
     before: { status: 'PENDING_PAYMENT' },

@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp, type Transaction, type WriteBatch } from 'firebase-admin/firestore';
 
 import { db } from './firebase.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
 
 /**
  * In-app notifications (docs/HRMS.md §11): users/{uid}/notifications/{id},
@@ -34,6 +35,8 @@ export function notify(writer: Transaction | WriteBatch, uid: string | null | un
     at: FieldValue.serverTimestamp(),
     expireAt: Timestamp.fromMillis(Date.now() + KEEP_DAYS * 86_400_000),
   });
+  // The same notice on WhatsApp, when the employee's branch sends staff notifications.
+  queueWhatsApp(writer, { orgId: notice.orgId, branchId: null, event: 'staff_alert', uid, vars: { title: notice.title, details: notice.body ?? '' }, ref: { kind: notice.kind } });
 }
 
 /** Web paths notifications point to. */

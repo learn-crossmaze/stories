@@ -16,6 +16,7 @@ import { expireHolds } from './circulation/index.js';
 import { REGION } from './core/firebase.js';
 import { router } from './core/router.js';
 import { accrueLeave, expireDocuments } from './hr/index.js';
+import { handleWhatsAppWebhook, sendWhatsApp } from './messaging/index.js';
 import { ROUTES } from './routes.js';
 
 setGlobalOptions({ region: REGION, maxInstances: 5 });
@@ -37,6 +38,12 @@ export const hr = router(ROUTES.hr);
 
 /** Razorpay webhook (payment_link.paid, qr_code.credited); URL per branch: …/razorpayWebhook?o=<orgId>&b=<branchId>. */
 export const razorpayWebhook = onRequest({ region: REGION }, (req, res) => handleRazorpayWebhook(req, res).then(() => undefined));
+
+/** WhatsApp (Meta) webhook: delivery updates and STOP replies; URL per branch: …/whatsappWebhook?o=<orgId>&b=<branchId>. */
+export const whatsappWebhook = onRequest({ region: REGION }, (req, res) => handleWhatsAppWebhook(req, res).then(() => undefined));
+
+/** Sends each queued WhatsApp message (orgs/{o}/whatsappOutbox). */
+export const whatsapp = { send: sendWhatsApp };
 
 /** Scheduled jobs (idempotent). */
 export const scheduled = { expireSubscriptions, expireHolds, expireDocuments, accrueLeave };

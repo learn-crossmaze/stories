@@ -10,6 +10,7 @@ import { db } from '../core/firebase.js';
 import { branchPatterns, existingCodes, reserveCodes } from '../core/numbering.js';
 import { address, id, reason } from '../core/schemas.js';
 import { ageOn, audienceFor, ADULT_AGE, type Member, normalizePhone } from './model.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
 
 const dob = z
   .string()
@@ -162,6 +163,7 @@ export async function createMember(
   aadhaar?.(opts.actorUid);
   if (person.phoneRef) tx.create(person.phoneRef, { memberId: ref.id });
   tx.create(ref, { ...member, createdBy: opts.actorUid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+  queueWhatsApp(tx, { orgId: input.orgId, branchId: input.homeBranchId, event: 'member_welcome', memberId: ref.id, ref: { memberId: ref.id } });
   recordAudit(tx, { actorUid: opts.actorUid, actorEmail: opts.actorEmail, requestId: opts.requestId }, input.orgId, {
     action: opts.source === 'SELF' ? 'member.selfRegister' : 'member.register',
     entityType: 'member',
@@ -186,7 +188,7 @@ export const register = command(
 /** Edits a member's personal details (home branch and status have their own commands). */
 export const update = command(
   'members-update',
-  z.strictObject({ orgId: id, memberId: id, ...profile }),
+  z.strictObject({ orgId: id, memberId: id, ...profile, whatsappOptOut: z.boolean().optional() }),
   async ({ actor, input, requestId }, tx) => {
     const { snap, member } = await loadMember(tx, input.orgId, input.memberId);
     await actor.require('members.manage', input.orgId, member.homeBranchId, tx);
@@ -210,6 +212,7 @@ export const update = command(
       guardian: person.guardian,
       searchTokens: memberTokens(input.fullName, member.code, person.phone),
       ...(input.aadhaar ? { aadhaarLast4: input.aadhaar.slice(-4) } : {}),
+      ...(input.whatsappOptOut !== undefined ? { whatsappOptOut: input.whatsappOptOut } : {}),
     };
     tx.update(snap.ref, { ...changes, updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {

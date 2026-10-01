@@ -4,6 +4,7 @@ import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { canTransition, type CopyStatus, describeStatus } from '../inventory/copyState.js';
 import { type CopyEvent, logEvent } from '../inventory/copyOps.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
 
 export const DEFAULT_HOLD_HOURS = 48;
 
@@ -30,6 +31,13 @@ export async function nextWaiting(tx: Transaction, orgId: string, branchId: stri
  * reservation — copy → RESERVED, reservation → ALLOCATED with a hold, and the
  * member's allocated count +1 (allocated holds count toward the plan limit, D2).
  */
+const holdFmt = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
+
+/** Tells the member (WhatsApp, if the branch sends it) that a reserved book is waiting for them. */
+export function queueReady(tx: Transaction, orgId: string, branchId: string, memberId: string, bookTitle: string, holdUntil: Date, reservationId: string) {
+  queueWhatsApp(tx, { orgId, branchId, event: 'reservation_ready', memberId, vars: { book_title: bookTitle, hold_until: holdFmt.format(holdUntil) }, ref: { reservationId } });
+}
+
 export function allocate(
   tx: Transaction,
   orgId: string,
@@ -40,6 +48,7 @@ export function allocate(
   patch: Record<string, unknown> = {},
 ) {
   const holdUntil = Timestamp.fromMillis(Date.now() + holdHours * 3_600_000);
+  queueReady(tx, orgId, reservation.get('branchId'), reservation.get('memberId'), reservation.get('bookTitle'), holdUntil.toDate(), reservation.id);
   tx.update(reservation.ref, {
     status: 'ALLOCATED',
     allocatedCopyId: copySnap.id,

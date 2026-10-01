@@ -57,6 +57,7 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | | `copies-availability` (query) | any signed-in user |
 | | `copies-availabilityMany` (query) — per-branch counts for up to 60 titles (catalogue search) | any signed-in user |
 | | `copies-locate` (query) — which branch holds a copy, by barcode or code | `books.view` in the org (any branch) |
+| WhatsApp | `whatsapp-overview`, `whatsapp-saveConnection` (`phoneNumberId, wabaId, accessToken` write-only, `appSecret`, `language`, `enabled`), `whatsapp-saveTemplate` (`event, enabled, name, language, body`), `whatsapp-submitTemplate`, `whatsapp-syncTemplates`, `whatsapp-sendTest` (`to`, `event` or null for hello_world), `whatsapp-log` — see [WHATSAPP.md](WHATSAPP.md) | `messaging.manage` at the branch (HO, FO, BM) |
 | Members | `members-register/update/setStatus` (optional `aadhaar`: 12 digits; empty keeps the one on file), `members-revealAadhaar` (audited) | `members.manage` at the home branch |
 | | `members-indexList` (query) — one-time fill of plan/renewal date for a branch's older members | `members.view` at the branch |
 | Plans | `plans-create/update/archive` (`options[]`: 1–4 of `{duration, priceMinor}`; `discount`: `{type AMOUNT|PERCENT, value, from, to, durations[], label}` or null; see SUBSCRIPTIONS.md) | `plans.manage` |

@@ -7,11 +7,12 @@ import * as circulation from './circulation/index.js';
 import * as hr from './hr/index.js';
 import * as inventory from './inventory/index.js';
 import * as members from './members/index.js';
+import * as messaging from './messaging/index.js';
 import * as organization from './organization/index.js';
 import * as platform from './platform/index.js';
 
 export const ROUTES = {
-  admin: { ...platform.routes, ...organization.routes },
+  admin: { ...platform.routes, ...organization.routes, ...messaging.routes },
   catalogue: catalogue.routes,
   inventory: inventory.routes,
   members: members.routes,

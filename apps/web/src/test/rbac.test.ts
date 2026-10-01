@@ -54,7 +54,7 @@ describe('navigation', () => {
   });
 
   it('shows each role only what it may use, view by view', () => {
-    expect(labels(claims({}, true), 'admin')).toHaveLength(19);
+    expect(labels(claims({}, true), 'admin')).toHaveLength(20);
     expect(labels(hr, 'admin')).toEqual([
       'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Letters', 'Attendance', 'Leave', 'Payroll',
       'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Letter templates', 'Payroll settings', 'Audit log',

@@ -32,6 +32,8 @@ export interface Member {
   guardian: { memberId: string; name: string; relationship: string } | null;
   /** Last four digits; the full Aadhaar number is only on the server (members-revealAadhaar). */
   aadhaarLast4?: string | null;
+  /** The member asked not to get WhatsApp messages (replied STOP, or staff turned them off). */
+  whatsappOptOut?: boolean;
   activeSubscriptionId: string | null;
   nextSubscriptionId: string | null;
   subscriptionEndsAt: unknown;

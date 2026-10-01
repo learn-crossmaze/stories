@@ -49,6 +49,7 @@ const DocumentTypesSettingsPage = lazyPage(() => import('./people/SettingsPages'
 const LeaveTypesSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'LeaveTypesSettingsPage');
 const LetterTemplatesSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'LetterTemplatesSettingsPage');
 const PayrollSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'PayrollSettingsPage');
+const WhatsAppPage = lazyPage(() => import('./organization/WhatsApp'), 'WhatsAppPage');
 const ScheduleSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'ScheduleSettingsPage');
 const PeoplePage = lazyPage(() => import('./people/People'), 'PeoplePage');
 const OrganizationsPage = lazyPage(() => import('./organization/Organizations'), 'OrganizationsPage');
@@ -126,6 +127,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminSettingsDocuments, guard(paths.adminSettingsDocuments, <DocumentTypesSettingsPage />)],
         [paths.adminSettingsLetters, guard(paths.adminSettingsLetters, <LetterTemplatesSettingsPage />)],
         [paths.adminSettingsPayroll, guard(paths.adminSettingsPayroll, <PayrollSettingsPage />)],
+        [paths.adminSettingsWhatsApp, guard(paths.adminSettingsWhatsApp, <WhatsAppPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
       ];
   }

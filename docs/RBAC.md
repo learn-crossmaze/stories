@@ -64,6 +64,7 @@ nothing else.
 | deposits.approve / deposits.refund | ✓ | | ✓ | | | | | | | |
 | payments.view / payments.recordOffline | ✓ | ✓ | ✓ | | ✓ | ✓ | | ✓ | | self (view) |
 | payments.refund (at their branches) | ✓ | | ✓ | | ✓ | ✓ | | ✓ | | |
+| messaging.manage (WhatsApp connection, templates, log — at their branches) | ✓ | ✓ | | | ✓ | | | ✓ | | |
 | delivery.manage / delivery.assign | ✓ | | | | ✓ | ✓ | | ✓ | | |
 | delivery.execute (assigned only) | | | | | | | ✓ | | | |
 | employees.add (add employee records; branch managers at their own branches) | ✓ | ✓ | | ✓ | branch | | | ✓ | | |
