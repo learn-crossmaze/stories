@@ -101,9 +101,15 @@ ready, switch the app to **Live**: in the app dashboard, toggle *App mode*. This
    token**. Then:
    1. In Meta, go to **your app → WhatsApp → Configuration → Webhook → Edit**, paste both and click **Verify and
       save**.
-   2. Under **Webhook fields**, click **Manage** and **subscribe to `messages`**.
+   2. Under **Webhook fields**, click **Manage** and **subscribe to `messages`** and
+      **`message_template_status_update`**.
 
-   The message log then shows *Delivered* and *Read*, and a member who replies **STOP** stops getting messages.
+   The message log then shows *Delivered* and *Read*, a member who replies **STOP** stops getting messages, and
+   template approvals and rejections appear on the page by themselves (no need to press *Check approvals*).
+
+   One Meta app has **one** callback URL. If several branches share the app, paste the URL of any one of them:
+   delivery updates, STOP replies and approvals still reach the whole organization. The `whatsappWebhook` function
+   must be deployed first, or Meta's *Verify and save* fails.
 
 **Other branches:**
 - **Same number:** enter the same three values.
@@ -181,6 +187,8 @@ links them.
 |---|---|
 | "Meta rejected the access token" | The token expired or lacks permissions: create a System User token (Step 5) and save it again. |
 | "(#131030) Recipient phone number not in allowed list" | The app is in development mode: add the number under API Setup → To, or make the app Live (Step 8). |
+| Template **Rejected: INCORRECT_CATEGORY** | Meta thinks the wording is marketing rather than a transactional update (common for welcomes). Reword it as a plain account update, e.g. "Your membership at {{branch_name}} is registered. Member ID: {{member_code}}. Show it at the counter to borrow books.", save and submit again (same name is fine for a rejected template). |
+| Template stays **Waiting for Meta** | Utility reviews take minutes to 24 hours. Press **Check approvals**, or subscribe the webhook to `message_template_status_update` so it updates by itself. |
 | "Template name does not exist in the translation" (132001) | The template isn't approved yet, or the name or language differs from Meta's. Use **Check approvals**. |
 | "Number of parameters does not match" (132000) | The wording in Meta differs from Stories'. Submit again from Stories, or edit the template in Meta to match. |
 | "Message failed to send because more than 24 hours…" (131047) | Only for free-form replies; Stories always uses templates. Check the template is approved. |

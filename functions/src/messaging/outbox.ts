@@ -145,8 +145,12 @@ export async function handleWebhook(req: Request, res: { status: (n: number) => 
   const signature = req.headers['x-hub-signature-256'];
   if (conn.appSecret && !verifyMetaSignature(req.rawBody, Array.isArray(signature) ? signature[0] : signature, conn.appSecret)) return res.status(401).send('bad signature');
 
-  type Value = { statuses?: { id: string; status: string; errors?: { title?: string; message?: string }[] }[]; messages?: { from: string; text?: { body?: string } }[] };
-  let body: { entry?: { changes?: { value?: Value }[] }[] };
+  type Value = {
+    event?: string;
+    message_template_id?: number | string;
+    message_template_name?: string;
+    reason?: string | null; statuses?: { id: string; status: string; errors?: { title?: string; message?: string }[] }[]; messages?: { from: string; text?: { body?: string } }[] };
+  let body: { entry?: { changes?: { field?: string; value?: Value }[] }[] };
   try {
     body = JSON.parse(req.rawBody.toString('utf8'));
   } catch {
@@ -165,6 +169,10 @@ export async function handleWebhook(req: Request, res: { status: (n: number) => 
         ...(s.status === 'failed' ? { error: s.errors?.[0]?.message ?? s.errors?.[0]?.title ?? 'Delivery failed' } : {}),
       });
     }
+    // Meta's review of a template (field "message_template_status_update"): update every branch using it.
+    if (change.field === 'message_template_status_update' && change.value?.message_template_id) {
+      await applyTemplateStatus(orgId, String(change.value.message_template_id), change.value.event ?? '', change.value.reason ?? null);
+    }
     for (const msg of change.value?.messages ?? []) {
       if ((msg.text?.body ?? '').trim().toUpperCase() !== 'STOP') continue;
       const members = await db.collection(`orgs/${orgId}/members`).where('phone', '==', `+${msg.from}`).limit(10).get();
@@ -172,6 +180,20 @@ export async function handleWebhook(req: Request, res: { status: (n: number) => 
     }
   }
   return res.status(200).send('ok');
+}
+
+/** Records Meta's decision on a template (APPROVED, REJECTED, PAUSED…) on each branch template that uses it. */
+async function applyTemplateStatus(orgId: string, metaId: string, event: string, reason: string | null) {
+  if (!event) return;
+  const branches = await db.collection(`orgs/${orgId}/branches`).select().get();
+  for (const b of branches.docs) {
+    const found = await b.ref.collection('whatsappTemplates').where('metaId', '==', metaId).get();
+    await Promise.all(
+      found.docs.map((d) =>
+        d.ref.update({ status: event.toUpperCase(), reason: reason && reason !== 'NONE' ? reason : null, syncedAt: FieldValue.serverTimestamp() }),
+      ),
+    );
+  }
 }
 
 // ------------------------------------------------------------------ renewal reminders

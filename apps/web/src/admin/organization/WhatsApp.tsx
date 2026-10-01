@@ -254,7 +254,12 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
                 </div>
               </div>
               <p className="wa-body">{tpl.body}</p>
-              {tpl.reason && <p className="field-error">{tpl.reason}</p>}
+              {tpl.reason && (
+                <p className="field-error">
+                  {tpl.reason}
+                  {wt.reasons[tpl.reason] && <span className="wa-reason"> · {wt.reasons[tpl.reason]}</span>}
+                </p>
+              )}
               <p className="muted small mono">
                 {tpl.name} · {tpl.language}
               </p>
