@@ -4,6 +4,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
 import { type CallContext, command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db, REGION } from '../core/firebase.js';
@@ -76,6 +77,7 @@ export async function placeReservation(
       tx.update(memberSnap.ref, { ...(term.rollover ?? {}), allocatedCount: FieldValue.increment(1) });
     } else {
       tx.create(ref, { ...base, status: 'WAITING', allocatedCopyId: null, allocatedCopyCode: null, holdUntil: null });
+      queueWhatsApp(tx, { orgId: input.orgId, branchId: input.branchId, event: 'reservation_placed', memberId: input.memberId, vars: { book_title: book.get('title') as string }, ref: { reservationId: ref.id } });
       tx.update(memberSnap.ref, { ...(term.rollover ?? {}), waitingCount: FieldValue.increment(1) });
     }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
@@ -120,6 +122,7 @@ export async function cancelReservation(
       action: 'reservation.cancel', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'), memberId: res.get('memberId'),
       before: { status }, after: { status: 'CANCELLED' }, reason: input.reason,
     });
+    queueWhatsApp(tx, { orgId: input.orgId, branchId: res.get('branchId'), event: 'reservation_cancelled', memberId: res.get('memberId'), vars: { book_title: res.get('bookTitle') as string }, ref: { reservationId: res.id } });
     return { reservationId: res.id };
 }
 
@@ -157,6 +160,7 @@ export async function expireHolds(now = new Date(), batch = 300): Promise<number
         action: 'reservation.expire', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'), memberId: res.get('memberId'),
         before: { status: 'ALLOCATED' }, after: { status: 'EXPIRED', passedTo: waiting?.id ?? null },
       });
+      queueWhatsApp(tx, { orgId, branchId: res.get('branchId'), event: 'reservation_expired', memberId: res.get('memberId'), vars: { book_title: res.get('bookTitle') as string }, ref: { reservationId: res.id } });
       return true;
     });
     if (done) n++;

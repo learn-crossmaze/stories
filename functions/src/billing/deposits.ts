@@ -8,6 +8,7 @@ import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
 import { loadMember } from '../members/members.js';
+import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 import { balanceOf, depositRef, postLedger } from './ledger.js';
 
 /** Adjustments at or below this need no second person (orgs/{o}/config/deposits). Default 0: always maker-checker. */
@@ -147,6 +148,9 @@ export const refund = command(
       action: 'deposit.refund', entityType: 'depositAccount', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { status: 'SETTLING', balanceMinor: amount }, after: { status: 'CLOSED', balanceMinor: 0, paymentId: payRef.id },
     });
+    if (amount > 0) {
+      queueWhatsApp(tx, { orgId: input.orgId, branchId: member.homeBranchId, event: 'deposit_refunded', memberId: input.memberId, vars: { amount: rupeesText(amount) }, ref: { paymentId: payRef.id } });
+    }
     return { refundedMinor: amount, paymentId: payRef.id };
   },
 );

@@ -140,11 +140,28 @@ describe('WhatsApp settings', () => {
     await call(settings.syncTemplates, bm, { orgId: org, branchId: central }, null);
     const overview = await call<{ events: { key: string; template: { status: string; metaId: string } }[] }>(settings.overview, bm, { orgId: org, branchId: central }, null);
     expect(overview.events.find((e) => e.key === 'member_welcome')!.template).toMatchObject({ status: 'APPROVED', metaId: 'tpl_1' });
-    expect(overview.events).toHaveLength(9);
+    expect(overview.events).toHaveLength(17);
+    expect(overview.events.filter((e) => (e as { added?: boolean }).added).map((e) => e.key)).toEqual(['member_welcome']);
+
+    // Removing takes it off the branch's list and stops it being sent.
+    expect(await failure(call(settings.removeTemplate, lib, { orgId: org, branchId: central, event: 'member_welcome' }))).toBe('FORBIDDEN');
+    expect(await call(settings.removeTemplate, bm, { orgId: org, branchId: central, event: 'member_welcome' })).toEqual({ removed: true });
+    expect((await db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/member_welcome`).get()).exists).toBe(false);
+    expect((await db.doc(`orgs/${org}/config/whatsapp`).get()).get(`branches.${central}`)).toEqual([]);
   });
 });
 
 describe('sending', () => {
+  it('queues the newer transaction notifications (status change, waiting list)', async () => {
+    fakeMeta();
+    await connect();
+    await template('membership_status', { body: 'Hello {{member_name}}, your membership at {{branch_name}} is now {{status}}. Thank you.' });
+    const { memberId } = await call<{ memberId: string }>(members.register, lib, { orgId: org, homeBranchId: central, fullName: 'Asha Rao', dob: '1990-05-01', phone: '98765 43210' });
+    await call(members.setStatus, bm, { orgId: org, memberId, status: 'SUSPENDED', reason: 'Asked to pause for a month' });
+    const queued = (await outbox()).map((d) => d.data()).find((m) => m.event === 'membership_status')!;
+    expect(queued).toMatchObject({ branchId: central, memberId, vars: { status: 'paused' }, status: 'QUEUED' });
+  });
+
   it('queues a welcome when a member registers and sends the approved template with their details', async () => {
     const calls = fakeMeta();
     await connect();

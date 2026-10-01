@@ -32,9 +32,12 @@ export interface MessageEvent {
   key: string;
   label: string;
   audience: 'MEMBER' | 'STAFF';
+  group: 'MEMBERSHIP' | 'PAYMENTS' | 'BORROWING' | 'RESERVATIONS' | 'STAFF';
   when: string;
   variables: EventVariable[];
   body: string;
+  /** Set up for this branch (shown in its list); the rest can be added. */
+  added: boolean;
   template: Template;
 }
 
@@ -77,6 +80,7 @@ export const saveConnection = (orgId: string, branchId: string, c: { enabled: bo
   command<{ displayPhone: string | null; verifiedName: string | null }>('whatsapp-saveConnection', { ...at(orgId, branchId), ...c });
 export const saveTemplate = (orgId: string, branchId: string, t: Pick<Template, 'event' | 'enabled' | 'name' | 'language' | 'body'>) =>
   command<{ status: string }>('whatsapp-saveTemplate', { ...at(orgId, branchId), ...t });
+export const removeTemplate = (orgId: string, branchId: string, event: string) => command<{ removed: boolean }>('whatsapp-removeTemplate', { ...at(orgId, branchId), event });
 export const submitTemplate = (orgId: string, branchId: string, event: string) => call<{ status: string }>('whatsapp-submitTemplate', { ...at(orgId, branchId), event });
 export const syncTemplates = (orgId: string, branchId: string) => call<{ statuses: Record<string, string>; found: number; missing: string[] }>('whatsapp-syncTemplates', at(orgId, branchId));
 export const sendTest = (orgId: string, branchId: string, to: string, event: string | null) => call<{ wamid: string | null }>('whatsapp-sendTest', { ...at(orgId, branchId), to, event });

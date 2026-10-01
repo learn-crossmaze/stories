@@ -759,6 +759,24 @@ main h1[tabindex='-1']:focus { outline: none; }
 .wa-event-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .wa-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .wa-body { white-space: pre-wrap; background: var(--surface-dim); border-radius: var(--radius-md); padding: 8px 12px; font-size: 14px; }
+.wa-list { list-style: none; padding: 0; margin: 12px 0 0; border: 1px solid var(--outline); border-radius: var(--radius-md); background: var(--surface); }
+.wa-row { display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 4px; }
+.wa-row + .wa-row { border-top: 1px solid var(--outline); }
+.wa-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: none; border: 0; padding: 6px 8px; border-radius: var(--radius-md); color: inherit; font: inherit; cursor: pointer; }
+.wa-row-main:hover { background: var(--surface-dim); }
+.wa-row-label { font-weight: 600; }
+.wa-row-reason { color: var(--danger); }
+.switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.switch input { width: 18px; height: 18px; accent-color: var(--primary); }
+.wa-dialog-status { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; }
+.wa-dialog-actions { border-top: 1px solid var(--outline); margin-top: 16px; padding-top: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.wa-dialog-actions h3 { margin: 0; font-size: 15px; }
+.wa-add-group h3 { margin: 12px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--on-surface-variant, inherit); }
+.wa-add-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.wa-add-item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: var(--surface); border: 1px solid var(--outline); border-radius: var(--radius-md); padding: 8px 12px; color: inherit; font: inherit; cursor: pointer; }
+.wa-add-item:hover { background: var(--surface-dim); }
+.wa-add-label { font-weight: 600; }
+@media (max-width: 560px) { .wa-row { flex-wrap: wrap; } .wa-row-main { flex-basis: 100%; } }
 .wa-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
 .chip-button { border: 1px solid var(--outline); background: var(--surface-raised); color: var(--on-surface); border-radius: 999px; padding: 4px 10px; font: 500 13px ui-monospace, Menlo, monospace; cursor: pointer; min-height: 32px; }
 .chip-button:hover { border-color: var(--primary); }

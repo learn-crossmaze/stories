@@ -5,6 +5,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { recordAudit } from '../core/audit.js';
 import { db, REGION } from '../core/firebase.js';
 import { queueRenewalReminders } from '../messaging/outbox.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
 
 /**
  * Marks subscriptions whose term has ended as EXPIRED and moves members onto
@@ -43,6 +44,9 @@ export async function expireDueSubscriptions(now = new Date(), batch = 300): Pro
         action: 'subscription.expire', entityType: 'subscription', entityId: sub.id, branchId: sub.get('branchId'), memberId: sub.get('memberId'),
         before: { status: 'ACTIVE' }, after: { status: 'EXPIRED', renewedInto: next?.exists ? next.id : null },
       });
+      if (member.get('activeSubscriptionId') === sub.id && !(next?.exists && next.get('status') === 'ACTIVE')) {
+        queueWhatsApp(tx, { orgId, branchId: sub.get('branchId'), event: 'plan_ended', memberId: sub.get('memberId'), vars: { plan_name: sub.get('planSnapshot.name') as string }, ref: { subscriptionId: sub.id } });
+      }
       return true;
     });
     if (done) expired++;

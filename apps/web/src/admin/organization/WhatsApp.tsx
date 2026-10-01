@@ -10,6 +10,7 @@ import {
   type MessageEvent,
   type Overview,
   placeholders,
+  removeTemplate,
   saveConnection,
   saveTemplate,
   sendTest,
@@ -26,7 +27,8 @@ import { NeedBranch, Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 
 // Settings → WhatsApp: a branch's WhatsApp Business number (three values from
-// Meta), one editable template per message, test sends and the message log.
+// Meta), the notifications it sends (added from the list of transactions,
+// each with an editable template), test sends and the message log.
 
 const STATUS_TONE: Record<string, string> = { APPROVED: 'ok', PENDING: 'info', REJECTED: 'danger', PAUSED: 'warn', DISABLED: 'danger', NOT_SUBMITTED: 'muted' };
 const LOG_TONE: Record<string, string> = { SENT: 'info', DELIVERED: 'ok', READ: 'ok', FAILED: 'danger', SKIPPED: 'warn', QUEUED: 'muted', SENDING: 'muted' };
@@ -84,6 +86,27 @@ function ConnectionCard({ orgId, branchId, data, onSaved }: { orgId: string; bra
       setTest({ tone: 'error', text: toApiError(e).message });
     }
   };
+  const form = (
+    <form onSubmit={save.submit} noValidate className="form-grid wa-form">
+      <label className="check span-2">
+        <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} /> {wt.enabled}
+      </label>
+      <TextField label={wt.phoneNumberId} value={f.phoneNumberId} onChange={(phoneNumberId) => setF({ ...f, phoneNumberId })} hint={wt.phoneNumberIdHint} autoComplete="off" />
+      <TextField label={wt.wabaId} value={f.wabaId} onChange={(wabaId) => setF({ ...f, wabaId })} hint={wt.wabaIdHint} autoComplete="off" />
+      <div className="span-2">
+        <TextField label={wt.token} type="password" value={f.accessToken} onChange={(accessToken) => setF({ ...f, accessToken })} hint={s ? wt.tokenSaved : wt.tokenHint} autoComplete="new-password" />
+      </div>
+      <TextField label={wt.appSecret} type="password" value={f.appSecret} onChange={(appSecret) => setF({ ...f, appSecret })} hint={s?.hasAppSecret ? wt.tokenSaved : wt.appSecretHint} autoComplete="new-password" />
+      <SelectField label={wt.language} value={f.language} onChange={(language) => setF({ ...f, language })} options={LANGUAGES.map(([value, label]) => ({ value, label: `${label} (${value})` }))} />
+      <div className="span-2">
+        <FormError error={save.error} />
+        {saved && <Notice tone="ok">{wt.saved}</Notice>}
+        <button type="submit" className="btn btn-filled" disabled={save.busy}>
+          {save.busy ? t.saving : wt.saveConnection}
+        </button>
+      </div>
+    </form>
+  );
   return (
     <section className="card" aria-labelledby="wa-conn">
       <h2 id="wa-conn">{wt.connection}</h2>
@@ -91,25 +114,14 @@ function ConnectionCard({ orgId, branchId, data, onSaved }: { orgId: string; bra
         {s ? wt.connectedAs(s.verifiedName ?? '—', s.displayPhone ?? s.phoneNumberId) : wt.notConnected}
         {s && !s.enabled && <span className="muted"> · {wt.off}</span>}
       </p>
-      <form onSubmit={save.submit} noValidate className="form-grid wa-form">
-        <label className="check span-2">
-          <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} /> {wt.enabled}
-        </label>
-        <TextField label={wt.phoneNumberId} value={f.phoneNumberId} onChange={(phoneNumberId) => setF({ ...f, phoneNumberId })} hint={wt.phoneNumberIdHint} autoComplete="off" />
-        <TextField label={wt.wabaId} value={f.wabaId} onChange={(wabaId) => setF({ ...f, wabaId })} hint={wt.wabaIdHint} autoComplete="off" />
-        <div className="span-2">
-          <TextField label={wt.token} type="password" value={f.accessToken} onChange={(accessToken) => setF({ ...f, accessToken })} hint={s ? wt.tokenSaved : wt.tokenHint} autoComplete="new-password" />
-        </div>
-        <TextField label={wt.appSecret} type="password" value={f.appSecret} onChange={(appSecret) => setF({ ...f, appSecret })} hint={s?.hasAppSecret ? wt.tokenSaved : wt.appSecretHint} autoComplete="new-password" />
-        <SelectField label={wt.language} value={f.language} onChange={(language) => setF({ ...f, language })} options={LANGUAGES.map(([value, label]) => ({ value, label: `${label} (${value})` }))} />
-        <div className="span-2">
-          <FormError error={save.error} />
-          {saved && <Notice tone="ok">{wt.saved}</Notice>}
-          <button type="submit" className="btn btn-filled" disabled={save.busy}>
-            {save.busy ? t.saving : wt.saveConnection}
-          </button>
-        </div>
-      </form>
+      {s ? (
+        <details className="numbering-help">
+          <summary>{wt.changeConnection}</summary>
+          {form}
+        </details>
+      ) : (
+        form
+      )}
 
       {data.webhook && (
         <details className="numbering-help">
@@ -136,12 +148,20 @@ function ConnectionCard({ orgId, branchId, data, onSaved }: { orgId: string; bra
   );
 }
 
-/** Edit one message: wording with value chips, template name, language, live preview, test send. */
-function TemplateDialog({ orgId, branchId, event, onClose, onSaved }: { orgId: string; branchId: string; event: MessageEvent; onClose: () => void; onSaved: () => void }) {
+/**
+ * One notification in full: wording with value chips, template name,
+ * language, live preview, and (once added) Meta review, test send and remove.
+ */
+function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }: { orgId: string; branchId: string; event: MessageEvent; connected: boolean; onClose: () => void; onSaved: () => void }) {
   const tpl = event.template;
-  const [f, setF] = useState({ enabled: tpl.enabled, name: tpl.name, language: tpl.language, body: tpl.body });
+  const initial = { enabled: tpl.enabled, name: tpl.name, language: tpl.language, body: tpl.body };
+  const [f, setF] = useState(initial);
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const unknown = placeholders(f.body).filter((k) => !event.variables.some((v) => v.key === k));
+  const dirty = f.enabled !== initial.enabled || f.name !== initial.name || f.language !== initial.language || f.body !== initial.body;
   const insert = (key: string) => {
     const el = area.current;
     const token = `{{${key}}}`;
@@ -160,12 +180,40 @@ function TemplateDialog({ orgId, branchId, event, onClose, onSaved }: { orgId: s
     onSaved();
     onClose();
   });
+  const run = async (key: string, fn: () => Promise<string>, close = false) => {
+    setBusy(key);
+    setMsg(null);
+    try {
+      const text = await fn();
+      onSaved();
+      if (close) onClose();
+      else setMsg({ tone: 'ok', text });
+    } catch (e) {
+      setMsg({ tone: 'error', text: toApiError(e).message });
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <Dialog title={wt.editTitle(event.label)} onClose={onClose}>
       <form onSubmit={save.submit} noValidate>
         <p className="muted small">
-          <strong>{wt.when}:</strong> {event.when}
+          {wt.audience[event.audience]} · <strong>{wt.when}:</strong> {event.when}
         </p>
+        {event.added && (
+          <p className="wa-dialog-status">
+            <span className={`badge badge-${STATUS_TONE[tpl.status] ?? 'muted'}`}>{wt.status[tpl.status] ?? tpl.status}</span>
+            <span className="muted small mono">
+              {tpl.name} · {tpl.language}
+            </span>
+          </p>
+        )}
+        {tpl.reason && (
+          <p className="field-error">
+            {tpl.reason}
+            {wt.reasons[tpl.reason] && <span className="wa-reason"> · {wt.reasons[tpl.reason]}</span>}
+          </p>
+        )}
         <label className="check">
           <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} /> {wt.sendThis}
         </label>
@@ -195,22 +243,105 @@ function TemplateDialog({ orgId, branchId, event, onClose, onSaved }: { orgId: s
         </div>
         <p className="muted small">{wt.changedNote}</p>
         <FormError error={save.error} />
-        <DialogActions busy={save.busy} submitLabel={t.save} onCancel={onClose} />
+        <DialogActions busy={save.busy} submitLabel={event.added ? t.save : wt.addThis} onCancel={onClose} />
       </form>
+
+      {event.added && (
+        <div className="wa-dialog-actions">
+          <h3>{wt.actions}</h3>
+          {dirty && <p className="muted small">{wt.saveFirst}</p>}
+          {connected && (
+            <div className="row">
+              <button
+                type="button"
+                className="btn btn-outlined"
+                disabled={busy !== null || dirty || tpl.status === 'APPROVED'}
+                onClick={() => void run('submit', async () => wt.submitted((await submitTemplate(orgId, branchId, event.key)).status))}
+              >
+                {busy === 'submit' ? t.loading : wt.submit}
+              </button>
+            </div>
+          )}
+          {connected && (
+            <div className="row wa-test-to">
+              <TextField label={wt.testTo} type="tel" value={to} onChange={setTo} autoComplete="off" />
+              <button
+                type="button"
+                className="btn btn-outlined"
+                disabled={busy !== null || dirty || to.trim().length < 10}
+                onClick={() => void run('test', async () => (await sendTest(orgId, branchId, to, event.key), wt.testSent))}
+              >
+                {busy === 'test' ? t.loading : wt.sendTest}
+              </button>
+            </div>
+          )}
+          {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+          <button
+            type="button"
+            className="btn btn-text danger"
+            disabled={busy !== null}
+            onClick={() => {
+              if (window.confirm(wt.removeConfirm(event.label))) void run('remove', async () => (await removeTemplate(orgId, branchId, event.key), ''), true);
+            }}
+          >
+            {busy === 'remove' ? t.loading : wt.remove}
+          </button>
+        </div>
+      )}
     </Dialog>
   );
 }
 
+/** Every notification the branch can add, grouped by kind of transaction. */
+function AddDialog({ events, onPick, onClose }: { events: MessageEvent[]; onPick: (e: MessageEvent) => void; onClose: () => void }) {
+  const left = events.filter((e) => !e.added);
+  return (
+    <Dialog title={wt.addTitle} onClose={onClose}>
+      {left.length === 0 ? (
+        <p className="muted">{wt.allAdded}</p>
+      ) : (
+        GROUPS.filter((g) => left.some((e) => e.group === g)).map((g) => (
+          <section key={g} className="wa-add-group" aria-label={wt.groups[g]}>
+            <h3>{wt.groups[g]}</h3>
+            <ul className="wa-add-list">
+              {left
+                .filter((e) => e.group === g)
+                .map((e) => (
+                  <li key={e.key}>
+                    <button type="button" className="wa-add-item" onClick={() => onPick(e)}>
+                      <span className="wa-add-label">{e.label}</span>
+                      <span className="muted small">
+                        {wt.audience[e.audience]} · {e.when}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        ))
+      )}
+      <div className="dialog-actions">
+        <button type="button" className="btn btn-text" onClick={onClose}>
+          {t.cancel}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+const GROUPS = ['MEMBERSHIP', 'PAYMENTS', 'BORROWING', 'RESERVATIONS', 'STAFF'] as const;
+
 function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; branchId: string; data: Overview; onChanged: () => void }) {
   const [editing, setEditing] = useState<MessageEvent | null>(null);
+  const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [to, setTo] = useState('');
-  const run = async (key: string, fn: () => Promise<string>) => {
+  const run = async (key: string, fn: () => Promise<string | null>) => {
     setBusy(key);
     setMsg(null);
     try {
-      setMsg({ tone: 'ok', text: await fn() });
+      const text = await fn();
+      if (text) setMsg({ tone: 'ok', text });
       onChanged();
     } catch (e) {
       setMsg({ tone: 'error', text: toApiError(e).message });
@@ -219,80 +350,79 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
     }
   };
   const connected = !!data.settings;
+  const added = data.events.filter((e) => e.added);
+  const toggle = (e: MessageEvent) =>
+    run(`toggle-${e.key}`, async () => {
+      const tpl = e.template;
+      await saveTemplate(orgId, branchId, { event: e.key, enabled: !tpl.enabled, name: tpl.name, language: tpl.language, body: tpl.body });
+      return null;
+    });
   return (
     <section className="section" aria-labelledby="wa-msgs">
       <div className="page-header-row">
         <h2 id="wa-msgs">{wt.messages}</h2>
-        {connected && (
-          <button type="button" className="btn btn-outlined" disabled={busy !== null} onClick={() => void run('sync', async () => { const r = await syncTemplates(orgId, branchId); return wt.checked(r.statuses, r.missing.length); })}>
-            {busy === 'sync' ? t.loading : wt.checkApprovals}
+        <div className="row">
+          {connected && added.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-outlined"
+              disabled={busy !== null}
+              onClick={() =>
+                void run('sync', async () => {
+                  const r = await syncTemplates(orgId, branchId);
+                  return wt.checked(r.statuses, r.missing.length);
+                })
+              }
+            >
+              {busy === 'sync' ? t.loading : wt.checkApprovals}
+            </button>
+          )}
+          <button type="button" className="btn btn-filled" onClick={() => setAdding(true)} disabled={added.length === data.events.length}>
+            {wt.add}
           </button>
-        )}
+        </div>
       </div>
       <p className="muted">{wt.messagesIntro}</p>
-      {connected && (
-        <div className="row wa-test-to">
-          <TextField label={`${wt.sendTest}: ${wt.testTo}`} type="tel" value={to} onChange={setTo} autoComplete="off" />
-        </div>
-      )}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <ul className="wa-events">
-        {data.events.map((e) => {
-          const tpl = e.template;
-          return (
-            <li key={e.key} className="card wa-event">
-              <div className="wa-event-head">
-                <div>
-                  <h3>{e.label}</h3>
-                  <p className="muted small">
-                    {wt.audience[e.audience]} · {e.when}
-                  </p>
-                </div>
-                <div className="wa-badges">
-                  <span className={`badge badge-${tpl.enabled ? 'ok' : 'muted'}`}>{tpl.enabled ? wt.on : wt.off_}</span>
-                  <span className={`badge badge-${STATUS_TONE[tpl.status] ?? 'muted'}`}>{wt.status[tpl.status] ?? tpl.status}</span>
-                </div>
-              </div>
-              <p className="wa-body">{tpl.body}</p>
-              {tpl.reason && (
-                <p className="field-error">
-                  {tpl.reason}
-                  {wt.reasons[tpl.reason] && <span className="wa-reason"> · {wt.reasons[tpl.reason]}</span>}
-                </p>
-              )}
-              <p className="muted small mono">
-                {tpl.name} · {tpl.language}
-              </p>
-              <div className="row">
-                <button type="button" className="btn btn-outlined" onClick={() => setEditing(e)}>
-                  {wt.edit}
+      {added.length === 0 ? (
+        <p className="muted">{wt.noneAdded}</p>
+      ) : (
+        <ul className="wa-list">
+          {added.map((e) => {
+            const tpl = e.template;
+            return (
+              <li key={e.key} className="wa-row">
+                <button type="button" className="wa-row-main" onClick={() => setEditing(e)} aria-label={`${wt.edit}: ${e.label}`}>
+                  <span className="wa-row-label">{e.label}</span>
+                  <span className="muted small">
+                    {wt.audience[e.audience]} · {wt.groups[e.group]}
+                    {tpl.reason && <span className="wa-row-reason"> · {tpl.reason}</span>}
+                  </span>
                 </button>
-                {connected && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn-text"
-                      disabled={busy !== null || tpl.status === 'APPROVED'}
-                      onClick={() => void run(e.key, async () => wt.submitted((await submitTemplate(orgId, branchId, e.key)).status))}
-                    >
-                      {busy === e.key ? t.loading : wt.submit}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-text"
-                      disabled={busy !== null || to.trim().length < 10}
-                      onClick={() => void run(`test-${e.key}`, async () => (await sendTest(orgId, branchId, to, e.key), wt.testSent))}
-                    >
-                      {wt.sendTest}
-                    </button>
-                  </>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-      {editing && <TemplateDialog orgId={orgId} branchId={branchId} event={editing} onClose={() => setEditing(null)} onSaved={onChanged} />}
+                <span className={`badge badge-${STATUS_TONE[tpl.status] ?? 'muted'}`}>{wt.status[tpl.status] ?? tpl.status}</span>
+                <label className="switch" title={tpl.enabled ? wt.on : wt.off_}>
+                  <input type="checkbox" role="switch" checked={tpl.enabled} disabled={busy !== null} onChange={() => void toggle(e)} aria-label={`${wt.sendThis}: ${e.label}`} />
+                  <span className="small">{tpl.enabled ? wt.on : wt.off_}</span>
+                </label>
+                <button type="button" className="btn btn-text" onClick={() => setEditing(e)}>
+                  {wt.editShort}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {adding && (
+        <AddDialog
+          events={data.events}
+          onClose={() => setAdding(false)}
+          onPick={(e) => {
+            setAdding(false);
+            setEditing(e);
+          }}
+        />
+      )}
+      {editing && <TemplateDialog orgId={orgId} branchId={branchId} event={editing} connected={connected} onClose={() => setEditing(null)} onSaved={onChanged} />}
     </section>
   );
 }
