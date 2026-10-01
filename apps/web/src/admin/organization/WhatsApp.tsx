@@ -224,7 +224,7 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
       <div className="page-header-row">
         <h2 id="wa-msgs">{wt.messages}</h2>
         {connected && (
-          <button type="button" className="btn btn-outlined" disabled={busy !== null} onClick={() => void run('sync', async () => wt.checked((await syncTemplates(orgId, branchId)).found))}>
+          <button type="button" className="btn btn-outlined" disabled={busy !== null} onClick={() => void run('sync', async () => { const r = await syncTemplates(orgId, branchId); return wt.checked(r.statuses, r.missing.length); })}>
             {busy === 'sync' ? t.loading : wt.checkApprovals}
           </button>
         )}
