@@ -162,6 +162,21 @@ describe('sending', () => {
     expect((await next.ref.get()).get('error')).toMatch(/asked not to/);
   });
 
+  it("updates a template's status when Meta reviews it (webhook)", async () => {
+    fakeMeta({ [`POST /${CONN.wabaId}/message_templates`]: () => ({ json: { id: '777', status: 'PENDING' } }) });
+    await connect();
+    await template('member_welcome');
+    await call(settings.submitTemplate, bm, { orgId: org, branchId: central, event: 'member_welcome' }, null);
+    const update = (event: string, reason: string) => ({
+      entry: [{ changes: [{ field: 'message_template_status_update', value: { event, message_template_id: 777, message_template_name: 'stories_member_welcome', message_template_language: 'en', reason } }] }],
+    });
+    expect((await webhook('POST', update('REJECTED', 'INCORRECT_CATEGORY'))).status).toBe(200);
+    const ref = db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/member_welcome`);
+    expect((await ref.get()).data()).toMatchObject({ status: 'REJECTED', reason: 'INCORRECT_CATEGORY' });
+    await webhook('POST', update('APPROVED', 'NONE'));
+    expect((await ref.get()).data()).toMatchObject({ status: 'APPROVED', reason: null });
+  });
+
   it("answers Meta's webhook check with the branch's verify token", async () => {
     fakeMeta();
     await connect();

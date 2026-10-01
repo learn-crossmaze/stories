@@ -31,7 +31,8 @@ export const EVENTS: MessageEvent[] = [
     audience: 'MEMBER',
     when: 'A member is registered at the counter or signs up.',
     variables: [...MEMBER, v('member_code', 'Member ID', 'CEN-M000123')],
-    body: 'Hello {{member_name}}, welcome to {{branch_name}}! Your member ID is {{member_code}}. Show it at the counter to borrow books.',
+    // A plain account update (Meta rejects welcomes that read like marketing as INCORRECT_CATEGORY).
+    body: 'Hello {{member_name}}, your membership at {{branch_name}} is registered. Member ID: {{member_code}}. Show it at the counter to borrow books.',
   },
   {
     key: 'subscription_active',

@@ -766,3 +766,4 @@ main h1[tabindex='-1']:focus { outline: none; }
 .wa-preview p { margin: 4px 0 0; white-space: pre-wrap; }
 .wa-preview .muted { color: #44524a; }
 .field-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+.wa-reason { color: var(--on-surface); font-weight: 400; }
