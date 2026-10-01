@@ -240,10 +240,18 @@ export const syncTemplates = query('whatsapp-syncTemplates', z.strictObject(bran
   const snaps = await db.collection(`orgs/${input.orgId}/branches/${input.branchId}/whatsappTemplates`).get();
   const batch = db.batch();
   const result: Record<string, string> = {};
+  const missing: string[] = [];
   for (const e of EVENTS) {
     const t = templateOf(snaps.docs.find((d) => d.id === e.key) ?? null, e.key, conn.settings.language);
     const found = list.data.find((m) => m.name === t.name && m.language === t.language);
-    if (!found) continue;
+    if (!found) {
+      // Submitted earlier but not in this business account (sent with another token or account): submit again.
+      if (t.status !== 'NOT_SUBMITTED') {
+        missing.push(e.key);
+        batch.set(templateRef(input.orgId, input.branchId, e.key), { ...t, status: 'NOT_SUBMITTED', reason: null, metaId: null, syncedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
+      continue;
+    }
     result[e.key] = found.status;
     batch.set(
       templateRef(input.orgId, input.branchId, e.key),
@@ -252,7 +260,7 @@ export const syncTemplates = query('whatsapp-syncTemplates', z.strictObject(bran
     );
   }
   await batch.commit();
-  return { statuses: result, found: list.data.length };
+  return { statuses: result, found: list.data.length, missing };
 });
 
 /**

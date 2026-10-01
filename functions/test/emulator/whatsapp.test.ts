@@ -97,6 +97,15 @@ describe('WhatsApp settings', () => {
     expect(await failure(connect())).toBe('INVALID_INPUT');
   });
 
+  it('Check approvals resets templates Meta does not have, so they can be submitted again', async () => {
+    fakeMeta({ [`GET /${CONN.wabaId}/message_templates`]: () => ({ json: { data: [] } }) });
+    await connect();
+    await template('member_welcome');
+    await db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/member_welcome`).update({ metaId: 'tpl_elsewhere', status: 'PENDING' });
+    expect(await call(settings.syncTemplates, bm, { orgId: org, branchId: central }, null)).toMatchObject({ found: 0, missing: ['member_welcome'] });
+    expect((await db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/member_welcome`).get()).data()).toMatchObject({ status: 'NOT_SUBMITTED', metaId: null });
+  });
+
   it('submits a rejected template afresh when Meta no longer lets it be edited', async () => {
     const calls = fakeMeta({
       [`POST /tpl_old`]: () => ({ status: 400, json: { error: { code: 100, error_subcode: 33, message: 'Unsupported post request.' } } }),

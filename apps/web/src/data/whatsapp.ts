@@ -78,7 +78,7 @@ export const saveConnection = (orgId: string, branchId: string, c: { enabled: bo
 export const saveTemplate = (orgId: string, branchId: string, t: Pick<Template, 'event' | 'enabled' | 'name' | 'language' | 'body'>) =>
   command<{ status: string }>('whatsapp-saveTemplate', { ...at(orgId, branchId), ...t });
 export const submitTemplate = (orgId: string, branchId: string, event: string) => call<{ status: string }>('whatsapp-submitTemplate', { ...at(orgId, branchId), event });
-export const syncTemplates = (orgId: string, branchId: string) => call<{ statuses: Record<string, string>; found: number }>('whatsapp-syncTemplates', at(orgId, branchId));
+export const syncTemplates = (orgId: string, branchId: string) => call<{ statuses: Record<string, string>; found: number; missing: string[] }>('whatsapp-syncTemplates', at(orgId, branchId));
 export const sendTest = (orgId: string, branchId: string, to: string, event: string | null) => call<{ wamid: string | null }>('whatsapp-sendTest', { ...at(orgId, branchId), to, event });
 export const messageLog = (orgId: string, branchId: string) => call<{ messages: LoggedMessage[] }>('whatsapp-log', at(orgId, branchId));
 

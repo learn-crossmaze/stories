@@ -34,7 +34,12 @@ export const wt = {
   messages: 'Messages',
   messagesIntro: 'Each message is a WhatsApp “template”: write the wording here, submit it to Meta for approval (usually minutes), then switch it on.',
   checkApprovals: 'Check approvals',
-  checked: (n: number) => `Checked ${n} templates with Meta.`,
+  checked: (statuses: Record<string, string>, missing: number) => {
+    const n = (s: string) => Object.values(statuses).filter((v) => v === s).length;
+    const parts = [`${n('APPROVED')} approved`, `${n('PENDING')} still in review`, `${n('REJECTED')} rejected`];
+    const gone = missing ? ` ${missing} submitted earlier ${missing === 1 ? 'is' : 'are'} not in this WhatsApp account (sent with an older token or account): press Submit to Meta on ${missing === 1 ? 'it' : 'them'} again. If you deleted one in Meta, first change its template name under Edit wording (e.g. add _v2): Meta blocks a deleted name for 4 weeks.` : '';
+    return `Checked with Meta: ${parts.join(', ')}.${gone}`;
+  },
   audience: { MEMBER: 'To members', STAFF: 'To staff' } as Record<string, string>,
   status: {
     NOT_SUBMITTED: 'Not submitted',
