@@ -105,14 +105,19 @@ export async function graph<T>(token: string, method: 'GET' | 'POST', path: stri
   } catch {
     throw new MetaError(0, 'NETWORK', "WhatsApp (Meta) didn't answer. Try again in a minute.");
   }
-  const json = (await res.json().catch(() => ({}))) as { error?: { code?: number; message?: string; error_user_msg?: string } };
+  const json = (await res.json().catch(() => ({}))) as { error?: { code?: number; error_subcode?: number; message?: string; error_user_msg?: string } };
   if (!res.ok) {
     const e = json.error ?? {};
+    const id = path.split(/[/?]/)[1] ?? '';
+    // "Object does not exist or missing permissions" (100/33) and permission errors (10, 200): the token can't reach that ID.
+    const cantReach = (e.code === 100 && e.error_subcode === 33) || e.code === 10 || e.code === 200;
     const message =
       res.status === 401 || e.code === 190
         ? 'Meta rejected the access token (it may have expired). Create a permanent System User token and save it again.'
-        : (e.error_user_msg ?? e.message ?? `Meta answered ${res.status}.`);
-    throw new MetaError(res.status, e.code ?? res.status, message);
+        : cantReach
+          ? `Meta won't let this access token use ${id}. Check that the ID is right, and that in Business Settings → System users the token's user has your WhatsApp account under Assign assets (Full control) and the token has the whatsapp_business_management and whatsapp_business_messaging permissions.`
+          : (e.error_user_msg ?? e.message ?? `Meta answered ${res.status}.`);
+    throw new MetaError(res.status, cantReach ? 'NO_ACCESS' : (e.code ?? res.status), message);
   }
   return json as T;
 }

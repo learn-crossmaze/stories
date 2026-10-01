@@ -23,6 +23,7 @@ function fakeMeta(routes: Record<string, (body: Record<string, unknown>) => { st
   const real = globalThis.fetch;
   const all: Record<string, (body: Record<string, unknown>) => { status?: number; json: unknown }> = {
     [`GET /${CONN.phoneNumberId}`]: () => ({ json: { display_phone_number: '+91 98765 00000', verified_name: 'Stories Central' } }),
+    [`GET /${CONN.wabaId}/phone_numbers`]: () => ({ json: { data: [{ id: CONN.phoneNumberId }] } }),
     [`POST /${CONN.phoneNumberId}/messages`]: () => ({ json: { messages: [{ id: `wamid.${calls.length}` }] } }),
     ...routes,
   };
@@ -87,6 +88,26 @@ describe('WhatsApp settings', () => {
     vi.restoreAllMocks();
     fakeMeta({ [`GET /${CONN.phoneNumberId}`]: () => ({ status: 401, json: { error: { code: 190, message: 'Invalid OAuth access token' } } }) });
     expect(await failure(connect({ accessToken: 'bad' }))).toBe('WHATSAPP_ERROR');
+    // A business account the token can't use, or one the number isn't in, is caught when saving.
+    vi.restoreAllMocks();
+    fakeMeta({ [`GET /${CONN.wabaId}/phone_numbers`]: () => ({ status: 400, json: { error: { code: 100, error_subcode: 33, message: 'Unsupported get request.' } } }) });
+    expect(await failure(connect())).toBe('WHATSAPP_ERROR');
+    vi.restoreAllMocks();
+    fakeMeta({ [`GET /${CONN.wabaId}/phone_numbers`]: () => ({ json: { data: [{ id: '555' }] } }) });
+    expect(await failure(connect())).toBe('INVALID_INPUT');
+  });
+
+  it('submits a rejected template afresh when Meta no longer lets it be edited', async () => {
+    const calls = fakeMeta({
+      [`POST /tpl_old`]: () => ({ status: 400, json: { error: { code: 100, error_subcode: 33, message: 'Unsupported post request.' } } }),
+      [`POST /${CONN.wabaId}/message_templates`]: () => ({ json: { id: 'tpl_new', status: 'PENDING' } }),
+    });
+    await connect();
+    await template('member_welcome');
+    await db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/member_welcome`).update({ metaId: 'tpl_old', status: 'REJECTED' });
+    expect(await call(settings.submitTemplate, bm, { orgId: org, branchId: central, event: 'member_welcome' }, null)).toEqual({ status: 'PENDING' });
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toContain(`POST /${CONN.wabaId}/message_templates`);
+    expect((await db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/member_welcome`).get()).get('metaId')).toBe('tpl_new');
   });
 
   it('checks templates, submits them to Meta as {{1}}… with examples, and syncs the approval', async () => {
