@@ -105,6 +105,7 @@ await seedLibrary();
 await seedHr();
 await seedLeave();
 await seedPayroll();
+await seedDelivery();
 process.exit(0);
 
 // ---------------------------------------------------------------------------
@@ -500,3 +501,45 @@ async function seedPayroll() {
   console.log(`Seeded salaries, TDS for the branch manager, and ${lastMonth} payroll for Central waiting for Finance to approve.`);
 }
 
+
+// ---------------------------------------------------------------------------
+// Home delivery demo (docs/DELIVERY.md): Central delivers (own rider and other
+// couriers; no courier API key in the demo), and Asha has an exchange booked.
+// Runs once: guarded by seed/delivery.
+
+async function seedDelivery() {
+  if ((await db.doc('seed/delivery').get()).exists) {
+    console.log('Delivery demo data already present (seed/delivery).');
+    return;
+  }
+  const { randomUUID } = await import('node:crypto');
+  const settings = await import('../delivery/settings.js');
+  const orders = await import('../delivery/orders.js');
+  const { istDate } = await import('../delivery/model.js');
+  const saUid = (await auth.getUserByEmail('super@stories.test')).uid;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type Callable = { run: (req: any) => unknown };
+  const call = async <R>(fn: Callable, data: Record<string, unknown>): Promise<R> =>
+    (await fn.run({
+      data: { ...data, requestId: randomUUID() },
+      auth: { uid: saUid, token: { email: 'super@stories.test', email_verified: true } },
+      rawRequest: {},
+      acceptsStreaming: false,
+    })) as R;
+
+  await call(settings.saveSettings, {
+    orgId: CORP, branchId: CENTRAL, enabled: true, feeMinor: 4000, pincodes: [], slots: ['10:00–13:00', '16:00–19:00'],
+    location: { lat: 12.9716, lng: 77.5946 }, methods: { OWN: true, MANUAL: true }, couriers: {},
+  });
+  const asha = (await db.collection(`orgs/${CORP}/members`).where('email', '==', 'member@stories.test').limit(1).get()).docs[0];
+  const loan = asha && (await db.collection(`orgs/${CORP}/loans`).where('memberId', '==', asha.id).where('status', '==', 'ACTIVE').limit(1).get()).docs[0];
+  if (asha && loan) {
+    await call(orders.create, {
+      orgId: CORP, branchId: CENTRAL, memberId: asha.id, kind: 'EXCHANGE', date: istDate(1), slot: '16:00–19:00',
+      address: { line1: '21 Lavelle Road', line2: 'Ashok Nagar', landmark: 'Near the post office', city: 'Bengaluru', state: 'Karnataka', postalCode: '560001', geo: { lat: 12.9719, lng: 77.5965 } },
+      note: 'Two picture books for Kiran, please', holdIds: [], collectLoanIds: [loan.id],
+    });
+  }
+  await db.doc('seed/delivery').set({ at: FieldValue.serverTimestamp() });
+  console.log('Seeded home delivery for Central (fee Rs. 40, two slots) and an exchange booked for Asha.');
+}

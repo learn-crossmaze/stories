@@ -25,6 +25,7 @@ npm run test:web && npm run test:functions && npm run test:rules
 Docs:
 
 - [docs/LIBRARY.md](docs/LIBRARY.md), [docs/CIRCULATION.md](docs/CIRCULATION.md), [docs/SUBSCRIPTIONS.md](docs/SUBSCRIPTIONS.md), [docs/PAYMENTS.md](docs/PAYMENTS.md): Phase 1 modules
+- [docs/DELIVERY.md](docs/DELIVERY.md): home delivery — own staff, other couriers, Porter API
 - [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md): Firebase + GitHub setup, local development, secrets policy
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): hosting and backend deploys, one-time console steps
 - [docs/API.md](docs/API.md): Cloud Functions conventions and callables

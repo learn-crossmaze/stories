@@ -25,11 +25,11 @@ const barcodes = z
 // plan's limit is on books held *at the same time* (loans + allocated holds);
 // exchanges are unlimited; there is no due date and no fine — ever.
 
-interface IssuePlan {
+export interface IssuePlan {
   copies: { snap: DocumentSnapshot; copy: Copy; reservation: DocumentSnapshot | null }[];
 }
 
-async function readIssue(tx: Transaction, orgId: string, branchId: string, memberId: string, codes: string[]): Promise<IssuePlan> {
+export async function readIssue(tx: Transaction, orgId: string, branchId: string, memberId: string, codes: string[]): Promise<IssuePlan> {
   const copies = [];
   for (const code of codes) {
     const { snap, copy } = await findByBarcode(tx, orgId, code);
@@ -48,7 +48,7 @@ async function readIssue(tx: Transaction, orgId: string, branchId: string, membe
   return { copies };
 }
 
-function checkLimit(member: Member, term: Term, returning: number, plan: IssuePlan) {
+export function checkLimit(member: Member, term: Term, returning: number, plan: IssuePlan) {
   const fulfilled = plan.copies.filter((c) => c.reservation).length;
   const held = member.activeLoanCount - returning + plan.copies.length + (member.allocatedCount - fulfilled);
   if (held > term.max) {
@@ -62,9 +62,19 @@ function checkLimit(member: Member, term: Term, returning: number, plan: IssuePl
 }
 
 /** Book titles for a message: up to three, then "and N more". */
-const titles = (list: string[]) => (list.length <= 3 ? list.join(', ') : `${list.slice(0, 3).join(', ')} and ${list.length - 3} more`);
+export const titles = (list: string[]) => (list.length <= 3 ? list.join(', ') : `${list.slice(0, 3).join(', ')} and ${list.length - 3} more`);
 
-function writeIssue(tx: Transaction, orgId: string, branchId: string, member: Member, memberId: string, term: Term, plan: IssuePlan, actorUid: string, exchangeId: string | null) {
+/** Extra loan fields and whether to send the "books issued" message (home delivery sends its own). */
+export interface IssueOptions {
+  channel?: 'COUNTER' | 'DELIVERY';
+  deliveryId?: string | null;
+  notify?: boolean;
+}
+
+export function writeIssue(
+  tx: Transaction, orgId: string, branchId: string, member: Member, memberId: string, term: Term, plan: IssuePlan, actorUid: string,
+  exchangeId: string | null, opts: IssueOptions = {},
+) {
   const loanIds: string[] = [];
   for (const { snap, copy, reservation } of plan.copies) {
     const loanRef = db.collection(`orgs/${orgId}/loans`).doc();
@@ -72,7 +82,7 @@ function writeIssue(tx: Transaction, orgId: string, branchId: string, member: Me
     tx.create(loanRef, {
       memberId, memberCode: member.code, memberName: member.fullName, subscriptionId: term.snap.id,
       copyId: snap.id, copyCode: copy.code, bookId: copy.bookId, bookTitle: copy.bookTitle, branchId,
-      status: 'ACTIVE', channel: 'COUNTER', issuedAt: FieldValue.serverTimestamp(), issuedBy: actorUid,
+      status: 'ACTIVE', channel: opts.channel ?? 'COUNTER', ...(opts.deliveryId ? { deliveryId: opts.deliveryId } : {}), issuedAt: FieldValue.serverTimestamp(), issuedBy: actorUid,
       returnedAt: null, returnedBy: null, returnBranchId: null, returnCondition: null, exchangeId,
       reservationId: reservation?.id ?? null,
     });
@@ -83,20 +93,22 @@ function writeIssue(tx: Transaction, orgId: string, branchId: string, member: Me
       tx.update(reservation.ref, { status: 'FULFILLED', fulfilledLoanId: loanRef.id, updatedAt: FieldValue.serverTimestamp() });
     }
   }
-  queueWhatsApp(tx, {
-    orgId, branchId, event: 'books_issued', memberId,
-    vars: { book_titles: titles(plan.copies.map((c) => c.copy.bookTitle)) }, ref: { loanIds },
-  });
+  if (opts.notify !== false) {
+    queueWhatsApp(tx, {
+      orgId, branchId, event: 'books_issued', memberId,
+      vars: { book_titles: titles(plan.copies.map((c) => c.copy.bookTitle)) }, ref: { loanIds },
+    });
+  }
   return loanIds;
 }
 
-interface ReturnItem {
+export interface ReturnItem {
   snap: DocumentSnapshot;
   copy: Copy;
   loan: DocumentSnapshot;
 }
 
-async function readReturns(tx: Transaction, orgId: string, codes: string[], memberId?: string): Promise<ReturnItem[]> {
+export async function readReturns(tx: Transaction, orgId: string, codes: string[], memberId?: string): Promise<ReturnItem[]> {
   const items = [];
   for (const code of codes) {
     const { snap, copy } = await findByBarcode(tx, orgId, code);
@@ -109,7 +121,7 @@ async function readReturns(tx: Transaction, orgId: string, codes: string[], memb
 }
 
 /** Returned copies go to inspection at the branch that received them; ownership never changes. */
-function writeReturns(tx: Transaction, orgId: string, branchId: string, items: ReturnItem[], actorUid: string, exchangeId: string | null) {
+export function writeReturns(tx: Transaction, orgId: string, branchId: string, items: ReturnItem[], actorUid: string, exchangeId: string | null, opts: { notify?: boolean } = {}) {
   for (const { snap, loan } of items) {
     tx.update(loan.ref, {
       status: 'RETURNED', returnedAt: FieldValue.serverTimestamp(), returnedBy: actorUid, returnBranchId: branchId,
@@ -119,6 +131,7 @@ function writeReturns(tx: Transaction, orgId: string, branchId: string, items: R
       type: 'RETURNED', actorUid, ref: { loanId: loan.id, memberId: loan.get('memberId') },
     });
   }
+  if (opts.notify === false) return;
   // One message per member (a return can include books of several members).
   const byMember = new Map<string, string[]>();
   for (const { copy, loan } of items) byMember.set(loan.get('memberId'), [...(byMember.get(loan.get('memberId')) ?? []), copy.bookTitle]);

@@ -1,4 +1,5 @@
 import { call, command } from './api';
+import type { Delivery } from './delivery';
 import type { AgeGroup, Duration } from './common';
 import type { SubscriptionUpgrade, UpgradeOption, UpgradeQuote } from './billing';
 
@@ -22,7 +23,7 @@ export interface MySubscription {
   status: 'PENDING_PAYMENT' | 'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'UPGRADED';
   upgrade?: SubscriptionUpgrade;
   endedAt?: string | null;
-  planSnapshot: { name: string; duration: Duration; maxSimultaneousBooks: number; priceMinor: number; depositMinor: number };
+  planSnapshot: { name: string; duration: Duration; maxSimultaneousBooks: number; priceMinor: number; depositMinor: number; deliveryEligible?: boolean };
   amountDue: { subscriptionMinor: number; depositMinor: number; totalMinor: number };
   startAt: string | null;
   endAt: string | null;
@@ -107,7 +108,11 @@ export interface Membership {
     address: { line1: string; line2?: string; city: string; state: string; postalCode: string } | null;
     operatingHours: { day: string; open: string; close: string }[];
     onlinePayments: boolean;
+    /** Home delivery from this branch (Settings → Delivery). */
+    delivery?: { enabled: boolean; feeMinor: number; pincodes: string[]; slots: string[]; maxDaysAhead: number };
   };
+  /** Latest home deliveries, newest first. */
+  deliveries?: Delivery[];
   subscriptions: MySubscription[];
   payments: MyPayment[];
   paymentRequests: { id: string; url: string | null; amountMinor: number; expiresAt: string }[];

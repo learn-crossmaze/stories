@@ -759,6 +759,17 @@ main h1[tabindex='-1']:focus { outline: none; }
 .wa-event-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .wa-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .wa-body { white-space: pre-wrap; background: var(--surface-dim); border-radius: var(--radius-md); padding: 8px 12px; font-size: 14px; }
+.dl-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); }
+.dl-card { display: flex; flex-direction: column; gap: 6px; }
+.dl-card h2 { margin: 0; font-size: 16px; }
+.dl-card p { margin: 0; }
+.dl-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.dl-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.dl-contact { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.map-pin { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.map-pin .field { width: 100%; margin-bottom: 0; }
+.form-section { margin: 16px 0 8px; font-size: 15px; }
+.field-note { align-self: end; margin: 0 0 12px; }
 .wa-list { list-style: none; padding: 0; margin: 12px 0 0; border: 1px solid var(--outline); border-radius: var(--radius-md); background: var(--surface); }
 .wa-row { display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 4px; }
 .wa-row + .wa-row { border-top: 1px solid var(--outline); }

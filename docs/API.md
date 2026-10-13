@@ -74,6 +74,12 @@ machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `U
 | Circulation | `circulation-issue/return/exchange/declareLost` | `loans.issue` / `loans.return` / `exchanges.process` / `copies.writeOff` |
 | Reservations | `reservations-place/cancel` | `reservations.manage` |
 | Transfers | `transfers-create/dispatch/cancel` (sending branch), `transfers-receive` (destination) | `books.transfer` |
+| Home delivery | `deliveries-settings` (query), `deliveries-saveSettings` (fee, PIN codes, slots, location, ways, courier keys write-only) — see [DELIVERY.md](DELIVERY.md) | `delivery.configure` (HO, FO, BM); settings read also `delivery.manage` |
+| | `deliveries-create` (`branchId, memberId, kind DELIVER\|PICKUP\|EXCHANGE, date, slot, address{…, geo}, note, holdIds, collectLoanIds`), `deliveries-list`/`-get` (queries), `deliveries-receive`, `deliveries-cancel` (`reason`), `deliveries-recordFee` (`method` OFFLINE_* or WAIVED), `deliveries-sync` (query: courier statuses) | `delivery.manage` at the branch |
+| | `deliveries-dispatch` (`barcodes, method OWN\|MANUAL\|PORTER, riderUid, courier{name, reference, trackingUrl}, waiveFee`; books are issued, a courier app is booked after commit), `deliveries-quote` (query: `courier`), `deliveries-book` (query: book the courier again) | `delivery.assign` at the branch |
+| | `deliveries-mine` (query), `deliveries-report` (`outcome DELIVERED\|FAILED, collectedLoanIds, failReason, handedTo, fee{method, reference}`) | the assigned rider (`delivery.execute`), or `delivery.manage` |
+| | `me-requestDelivery`, `me-cancelDelivery` (members router) | the member's account holder or guardian; plan must include home delivery |
+| | `deliveryWebhook` (HTTPS, courier status updates) | the branch's token in `?o=&b=&t=` |
 
 ## HRMS callables (`hr` router, docs/HRMS.md)
 

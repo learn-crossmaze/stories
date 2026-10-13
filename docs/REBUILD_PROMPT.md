@@ -69,7 +69,7 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
 - Scheduled (all idempotent): `scheduled-expireHolds` (every 15 min: expired reservation holds pass on),
   `scheduled-expireSubscriptions` (hourly: ended terms EXPIRED, pre-paid renewals take over, WhatsApp renewal
   reminders 7 and 1 days ahead), `scheduled-expireDocuments` (employee document expiry reminders) and
-  `scheduled-accrueLeave` (monthly/yearly leave credits). HTTP: `razorpayWebhook`, `whatsappWebhook`. Firestore
+  `scheduled-accrueLeave` (monthly/yearly leave credits). HTTP: `razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`. Firestore
   trigger: `whatsapp-send` (one run per queued WhatsApp message).
 - `Actor.require(perm, orgId, branchId?, tx?)` reads `users/{uid}/memberships/{orgId}` (roles, branchIds, status);
   `requireCatalog(perm)` needs the permission in a **CORPORATE** org (or Super Admin). Errors are typed
@@ -211,14 +211,22 @@ shown masked with an audited *Show*, and a *Send WhatsApp updates* switch). Memb
     branch's WhatsApp Business number with three values from Meta (Phone number ID, WABA ID, permanent System User
     token; optional app secret) — saving checks the number and that it belongs to the WABA. **Notifications** list
     (compact rows: name, Meta status, On/Off; full editor on click) with **Add notification** grouped by
-    Membership, Payments, Borrowing, Reservations, Staff — 17 events: welcome, plan activated/upgraded/ended,
-    renewal reminder, membership paused/resumed/closed, books issued/returned, book declared lost, waiting list,
-    reservation ready/cancelled/not collected, payment link, refund, deposit refunded, staff notification. Each is
+    Membership, Payments, Borrowing, Reservations, Home delivery, Staff — 22 events: welcome, plan
+    activated/upgraded/ended, renewal reminder, membership paused/resumed/closed, books issued/returned, book declared
+    lost, waiting list, reservation ready/cancelled/not collected, payment link, refund, deposit refunded, home
+    delivery booked, books/pickup on the way, delivery completed/not completed, staff notification. Each is
     a Meta template (`{{named}}` values → `{{1}}…`, category UTILITY, ≥ 3 fixed words per value, can't start/end
     with a value) submitted from Stories; approvals arrive by webhook or *Check approvals*; test sends; message log
     (sent, delivered, read, failed, not sent with reason); STOP replies opt the member out. Messages are queued
     with `queueWhatsApp(tx, …)` in the same transaction as the change (a cached per-branch switchboard skips
     events that are off) and sent by the `whatsapp-send` trigger.
+
+13. **Home delivery** (Operations → Circulation → Deliveries; Settings → Delivery; Staff → My deliveries;
+    docs/DELIVERY.md): branch fee, PIN codes, slots, map location; visits (delivery, pickup, exchange) booked by staff
+    or members whose plan includes delivery; dispatch issues the books (desk rules) and sends them with own staff,
+    any courier entered by hand, or a **courier app booked by API** (Porter: quote, book, track, cancel; webhook with
+    a per-branch token; one adapter per courier in `functions/src/delivery/couriers.ts`); riders report delivered or
+    failed (books collected, fee collected); returned books are received back through the desk's return code.
 
 ### 0.7 Features — member app (`/`, `/explore`, `/my-books`, `/membership`, `/profile`)
 
@@ -314,4 +322,5 @@ payroll run waiting for Finance to approve).
 | Environments, deployment, testing | [ENVIRONMENTS.md](ENVIRONMENTS.md), [DEPLOYMENT.md](DEPLOYMENT.md), [TESTING.md](TESTING.md) |
 | Staff HRMS (employees, documents, attendance, leave, payroll, letters, self-onboarding) | [HRMS.md](HRMS.md) |
 | WhatsApp setup, templates, troubleshooting | [WHATSAPP.md](WHATSAPP.md) |
+| Home delivery, courier apps (Porter) | [DELIVERY.md](DELIVERY.md) |
 | Phases and what is still planned (tasks, delivery, reports) | [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) |

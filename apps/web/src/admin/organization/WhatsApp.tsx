@@ -335,7 +335,7 @@ function AddDialog({ events, onPick, onClose }: { events: MessageEvent[]; onPick
   );
 }
 
-const GROUPS = ['MEMBERSHIP', 'PAYMENTS', 'BORROWING', 'RESERVATIONS', 'STAFF'] as const;
+const GROUPS = ['MEMBERSHIP', 'PAYMENTS', 'BORROWING', 'RESERVATIONS', 'DELIVERY', 'STAFF'] as const;
 
 function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; branchId: string; data: Overview; onChanged: () => void }) {
   const [editing, setEditing] = useState<MessageEvent | null>(null);

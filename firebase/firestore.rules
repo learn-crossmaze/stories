@@ -48,6 +48,7 @@ service cloud.firestore {
         'delivery.manage': ['FO', 'BM', 'LIB'],
         'delivery.assign': ['FO', 'BM', 'LIB'],
         'delivery.execute': ['DEL'],
+        'delivery.configure': ['HO', 'FO', 'BM'],
         'employees.view': ['HO', 'HR', 'FO', 'BM'],
         'employees.edit': ['HO', 'HR', 'FO'],
         'employees.add': ['HO', 'HR', 'FO', 'BM'],

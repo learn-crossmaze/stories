@@ -5,6 +5,7 @@ import { t } from '../strings';
 import { ht } from '../strings/hr';
 import { lt } from '../strings/library';
 import { wt } from '../strings/messaging';
+import { dt } from '../strings/delivery';
 import type { IconName } from '../shared/ui';
 
 /** Permission needed in the current organization (any of a list); `superAdmin` for platform pages; null for everyone. */
@@ -51,6 +52,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminDesk, label: t.navDesk, icon: 'scan', requires: 'loans.issue' },
         { to: paths.adminReservations, label: t.navReservations, icon: 'bookmark', requires: 'reservations.manage' },
         { to: paths.adminTransfers, label: t.navTransfers, icon: 'truck', requires: 'books.transfer' },
+        { to: paths.opsDeliveries, label: dt.nav, icon: 'parcel', requires: 'delivery.manage' },
       ],
     },
     {
@@ -135,6 +137,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminSettingsLetters, label: ht.navLetterTemplates, icon: 'folder', requires: 'hr.config' },
         { to: paths.adminSettingsPayroll, label: ht.navPayrollSettings, icon: 'payments', requires: 'salary.edit' },
         { to: paths.adminSettingsWhatsApp, label: wt.nav, icon: 'chat', requires: 'messaging.manage' },
+        { to: paths.adminSettingsDelivery, label: dt.navSettings, icon: 'parcel', requires: 'delivery.configure' },
       ],
     },
     { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
@@ -144,6 +147,7 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
     { to: paths.adminMyAttendance, label: ht.navAttendanceShort, icon: 'clock', requires: null },
     { to: paths.adminMyLeave, label: ht.navLeave, icon: 'calendar', requires: null },
     { to: paths.adminMyPayslips, label: ht.navMyPayslips, icon: 'payments', requires: null },
+    { to: paths.adminMyDeliveries, label: dt.navMine, icon: 'parcel', requires: ['delivery.execute', 'delivery.manage'] },
     { to: paths.adminMyOnboarding, label: ht.obNav, icon: 'badge', requires: null },
   ],
 };
