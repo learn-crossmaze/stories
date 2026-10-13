@@ -32,7 +32,7 @@ export interface MessageEvent {
   key: string;
   label: string;
   audience: 'MEMBER' | 'STAFF';
-  group: 'MEMBERSHIP' | 'PAYMENTS' | 'BORROWING' | 'RESERVATIONS' | 'STAFF';
+  group: 'MEMBERSHIP' | 'PAYMENTS' | 'BORROWING' | 'RESERVATIONS' | 'DELIVERY' | 'STAFF';
   when: string;
   variables: EventVariable[];
   body: string;

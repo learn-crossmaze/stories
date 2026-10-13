@@ -12,6 +12,7 @@ import { ADULT_AGE, ageOn, type Member } from './model.js';
 import { createMember, profile } from './members.js';
 import { requestOnlinePayment, settleOpenRequests } from '../billing/online.js';
 import { type Plan, pricesFor } from '../billing/plans.js';
+import { publicSettings, settingsOf } from '../delivery/model.js';
 import { cancelPendingSubscription, createSchema, startSubscription } from '../billing/subscriptions.js';
 import { quoteSchema, startUpgrade, upgradeQuote, upgradeSchema } from '../billing/upgrade.js';
 
@@ -71,7 +72,7 @@ async function myMembers(actor: Actor) {
 }
 
 /** Throws unless the caller holds this member's account or is the guardian's account holder. */
-async function requireOwner(actor: Actor, member: Pick<Member, 'accountHolderUid' | 'guardian'>, orgId: string, tx?: Transaction) {
+export async function requireOwner(actor: Actor, member: Pick<Member, 'accountHolderUid' | 'guardian'>, orgId: string, tx?: Transaction) {
   if (member.accountHolderUid && member.accountHolderUid === actor.uid) return;
   if (member.guardian?.memberId) {
     const ref = db.doc(`orgs/${orgId}/members/${member.guardian.memberId}`);
@@ -117,7 +118,7 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
       const orgId = m.ref.parent.parent!.id;
       const member = m.data() as Member & { address: unknown };
       const o = (path: string) => db.collection(`orgs/${orgId}/${path}`);
-      const [org, branch, subs, payments, loans, reservations, deposit, ledger, plans] = await Promise.all([
+      const [org, branch, subs, payments, loans, reservations, deposit, ledger, plans, deliveries] = await Promise.all([
         once(`orgs/${orgId}`, () => db.doc(`orgs/${orgId}`).get()),
         once(`branches/${orgId}/${member.homeBranchId}`, () => db.doc(`orgs/${orgId}/branches/${member.homeBranchId}`).get()),
         o('subscriptions').where('memberId', '==', m.id).orderBy('createdAt', 'desc').limit(12).get(),
@@ -127,6 +128,7 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
         db.doc(`orgs/${orgId}/depositAccounts/${m.id}`).get(),
         db.collection(`orgs/${orgId}/depositAccounts/${m.id}/transactions`).orderBy('at', 'desc').limit(30).get(),
         once(`plans/${orgId}`, () => o('plans').where('status', '==', 'ACTIVE').get()),
+        o('deliveries').where('memberId', '==', m.id).orderBy('requestedAt', 'desc').limit(5).get(),
       ]);
       const pending = subs.docs.find((s) => s.get('status') === 'PENDING_PAYMENT');
       const requests = pending
@@ -150,7 +152,9 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
           id: branch.id, name: (branch.get('name') as string) ?? '', phone: (branch.get('contact.phone') as string) ?? '',
           email: (branch.get('contact.email') as string) ?? '', address: plain(branch.get('address') ?? null),
           operatingHours: plain(branch.get('operatingHours') ?? []), onlinePayments: !!razorpay?.enabled,
+          delivery: publicSettings(settingsOf(branch)),
         },
+        deliveries: rows(deliveries),
         subscriptions: rows(subs),
         payments: rows(payments),
         paymentRequests: requests ? rows(requests) : [],

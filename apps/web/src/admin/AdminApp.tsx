@@ -29,6 +29,9 @@ const PaymentsPage = lazyPage(() => import('./members/Payments'), 'PaymentsPage'
 const PlansPage = lazyPage(() => import('./members/Plans'), 'PlansPage');
 const ReservationsPage = lazyPage(() => import('./circulation/Reservations'), 'ReservationsPage');
 const TransfersPage = lazyPage(() => import('./circulation/Transfers'), 'TransfersPage');
+const DeliveriesPage = lazyPage(() => import('./circulation/Deliveries'), 'DeliveriesPage');
+const MyDeliveriesPage = lazyPage(() => import('./circulation/Deliveries'), 'MyDeliveriesPage');
+const DeliverySettingsPage = lazyPage(() => import('./organization/DeliverySettings'), 'DeliverySettingsPage');
 const BranchesPage = lazyPage(() => import('./organization/Branches'), 'BranchesPage');
 const DashboardPage = lazyPage(() => import('./dashboard/Dashboard'), 'DashboardPage');
 const DepartmentsPage = lazyPage(() => import('./organization/Departments'), 'DepartmentsPage');
@@ -81,6 +84,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminLabels, guard(paths.adminInventory, <LabelsPage />)],
         [paths.adminReservations, guard(paths.adminReservations, <ReservationsPage />)],
         [paths.adminTransfers, guard(paths.adminTransfers, <TransfersPage />)],
+        [paths.opsDeliveries, guard(paths.opsDeliveries, <DeliveriesPage />)],
         [paths.adminMembers, guard(paths.adminMembers, <MembersPage />)],
         [paths.adminMember(':memberId'), guard(paths.adminMembers, <MemberDetailPage />)],
         [paths.adminPlans, guard(paths.adminPlans, <PlansPage />)],
@@ -96,6 +100,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminMyOnboarding, <MyOnboardingPage />],
         [paths.adminMyLeave, <MyLeavePage />],
         [paths.adminMyPayslips, <MyPayslipsPage />],
+        [paths.adminMyDeliveries, guard(paths.adminMyDeliveries, <MyDeliveriesPage />)],
         [
           paths.adminAppearance,
           <>
@@ -128,6 +133,7 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminSettingsLetters, guard(paths.adminSettingsLetters, <LetterTemplatesSettingsPage />)],
         [paths.adminSettingsPayroll, guard(paths.adminSettingsPayroll, <PayrollSettingsPage />)],
         [paths.adminSettingsWhatsApp, guard(paths.adminSettingsWhatsApp, <WhatsAppPage />)],
+        [paths.adminSettingsDelivery, guard(paths.adminSettingsDelivery, <DeliverySettingsPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
       ];
   }

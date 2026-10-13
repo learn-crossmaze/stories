@@ -15,7 +15,7 @@ export interface MessageEvent {
   /** Who receives it. */
   audience: 'MEMBER' | 'STAFF';
   /** Kind of transaction, for grouping in the "Add notification" list. */
-  group: 'MEMBERSHIP' | 'PAYMENTS' | 'BORROWING' | 'RESERVATIONS' | 'STAFF';
+  group: 'MEMBERSHIP' | 'PAYMENTS' | 'BORROWING' | 'RESERVATIONS' | 'DELIVERY' | 'STAFF';
   /** When it is sent. */
   when: string;
   variables: EventVariable[];
@@ -171,6 +171,51 @@ export const EVENTS: MessageEvent[] = [
     when: 'A book set aside was not collected in time and the hold ends.',
     variables: [...MEMBER, v('book_title', 'Book title', 'The Jungle Book')],
     body: 'Hello {{member_name}}, your hold on {{book_title}} at {{branch_name}} has ended as it was not collected in time. You can reserve it again in the Stories app.',
+  },
+  {
+    key: 'delivery_requested',
+    group: 'DELIVERY',
+    label: 'Home delivery booked',
+    audience: 'MEMBER',
+    when: 'A home delivery, pickup or exchange is requested (by the member or at the branch).',
+    variables: [...MEMBER, v('delivery_date', 'Date and time', '14 Oct 2026, 10:00–13:00')],
+    body: 'Hello {{member_name}}, we have your home delivery request at {{branch_name}} for {{delivery_date}}. We will message you when it is on the way.',
+  },
+  {
+    key: 'delivery_out',
+    group: 'DELIVERY',
+    label: 'Books on the way',
+    audience: 'MEMBER',
+    when: 'Books leave the branch for the member (own rider, courier or Porter).',
+    variables: [...MEMBER, v('book_titles', 'Book titles', 'The Jungle Book, Panchatantra'), v('delivery_by', 'Delivered by', 'Ravi (98765 43210)')],
+    body: 'Hello {{member_name}}, your books from {{branch_name}} are on the way: {{book_titles}}. Delivery by {{delivery_by}}. Please keep your library ID handy.',
+  },
+  {
+    key: 'pickup_out',
+    group: 'DELIVERY',
+    label: 'Pickup on the way',
+    audience: 'MEMBER',
+    when: 'Someone is on the way to collect books from the member.',
+    variables: [...MEMBER, v('delivery_by', 'Collected by', 'Ravi (98765 43210)')],
+    body: 'Hello {{member_name}}, someone from {{branch_name}} is coming to collect your books. Pickup by {{delivery_by}}. Please keep the books ready.',
+  },
+  {
+    key: 'delivery_completed',
+    group: 'DELIVERY',
+    label: 'Delivery completed',
+    audience: 'MEMBER',
+    when: 'The rider or courier completes the visit.',
+    variables: [...MEMBER, v('delivery_summary', 'What was done', '2 books delivered, 1 collected')],
+    body: 'Hello {{member_name}}, your home delivery from {{branch_name}} is complete: {{delivery_summary}}. Thank you for reading with us!',
+  },
+  {
+    key: 'delivery_failed',
+    group: 'DELIVERY',
+    label: 'Delivery not completed',
+    audience: 'MEMBER',
+    when: 'The rider or courier could not complete the visit.',
+    variables: [...MEMBER, v('reason', 'Reason', 'nobody was at home')],
+    body: 'Hello {{member_name}}, we could not complete your home delivery from {{branch_name}} today ({{reason}}). Please contact the branch to choose another time.',
   },
   {
     key: 'staff_alert',

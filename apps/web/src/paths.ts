@@ -28,6 +28,7 @@ export const paths = {
   adminShelve: '/ops/inventory/shelve',
   adminReservations: '/ops/reservations',
   adminTransfers: '/ops/transfers',
+  opsDeliveries: '/ops/deliveries',
   adminMembers: '/ops/members',
   adminMember: (id: string) => `/ops/members/${id}`,
   adminPlans: '/ops/plans',
@@ -46,6 +47,7 @@ export const paths = {
   adminSettingsLetters: '/admin/settings/letters',
   adminSettingsPayroll: '/admin/settings/payroll',
   adminSettingsWhatsApp: '/admin/settings/whatsapp',
+  adminSettingsDelivery: '/admin/settings/delivery',
   adminDocuments: '/admin/documents',
   adminOffers: '/admin/offer-letters',
   adminAttendance: '/admin/attendance',
@@ -54,6 +56,7 @@ export const paths = {
   adminMyLeave: '/me/leave',
   adminPayroll: '/admin/payroll',
   adminMyPayslips: '/me/payslips',
+  adminMyDeliveries: '/me/deliveries',
 } as const;
 
 export const viewHome = { admin: paths.admin, ops: paths.ops, staff: paths.staff } as const;

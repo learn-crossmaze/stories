@@ -142,7 +142,7 @@ describe('WhatsApp settings', () => {
     await call(settings.syncTemplates, bm, { orgId: org, branchId: central }, null);
     const overview = await call<{ events: { key: string; template: { status: string; metaId: string } }[] }>(settings.overview, bm, { orgId: org, branchId: central }, null);
     expect(overview.events.find((e) => e.key === 'member_welcome')!.template).toMatchObject({ status: 'APPROVED', metaId: 'tpl_1' });
-    expect(overview.events).toHaveLength(17);
+    expect(overview.events).toHaveLength(22);
     expect(overview.events.filter((e) => (e as { added?: boolean }).added).map((e) => e.key)).toEqual(['member_welcome']);
 
     // Removing takes it off the branch's list and stops it being sent.

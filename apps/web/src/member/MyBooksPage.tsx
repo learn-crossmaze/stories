@@ -9,6 +9,7 @@ import { paths } from '../paths';
 import { t } from '../strings';
 import { useMemberData } from './memberData';
 import { Page, WithMembership, LoanList } from './common';
+import { HomeDelivery } from './HomeDelivery';
 
 // Books on loan, reservations and reading history.
 export function MyBooksPage() {
@@ -75,6 +76,7 @@ function MyBooksBody({ m }: { m: Membership }) {
           </ul>
         )}
       </section>
+      <HomeDelivery m={m} />
       <section className="section">
         <h2>{t.meHistory}</h2>
         {!past.length && !closed.length ? (

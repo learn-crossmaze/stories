@@ -54,12 +54,12 @@ describe('navigation', () => {
   });
 
   it('shows each role only what it may use, view by view', () => {
-    expect(labels(claims({}, true), 'admin')).toHaveLength(20);
+    expect(labels(claims({}, true), 'admin')).toHaveLength(21);
     expect(labels(hr, 'admin')).toEqual([
       'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Letters', 'Attendance', 'Leave', 'Payroll',
       'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Letter templates', 'Payroll settings', 'Audit log',
     ]);
-    expect(labels(lib, 'ops')).toEqual(['Today', 'Circulation desk', 'Reservations', 'Transfers', 'Catalogue', 'Receive books', 'Inventory', 'Shelve books', 'Members', 'Payments & refunds']);
+    expect(labels(lib, 'ops')).toEqual(['Today', 'Circulation desk', 'Reservations', 'Transfers', 'Deliveries', 'Catalogue', 'Receive books', 'Inventory', 'Shelve books', 'Members', 'Payments & refunds']);
     expect(labels(fin, 'ops')).toEqual(['Today', 'Catalogue', 'Inventory', 'Members', 'Payments & refunds', 'Deposit approvals']);
     expect(labels(fin, 'admin')).toEqual(['Dashboard', 'Payroll', 'Audit log']);
     expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }), 'ops')).toEqual(['Today', 'Catalogue', 'Inventory']);
@@ -70,6 +70,9 @@ describe('navigation', () => {
     expect(labels(bm, 'admin')).toEqual(expect.arrayContaining(['Branches', 'Departments', 'Employees']));
     expect(labels(bm, 'admin')).not.toContain('Job titles & checklists');
     expect(labels(emp, 'staff')).toEqual(['Home', 'Attendance', 'Leave', 'My payslips', 'Complete my profile']);
+    // Riders see their run in the Staff view; branch managers also set up delivery.
+    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }), 'staff')).toContain('My deliveries');
+    expect(labels(bm, 'admin')).toContain('Delivery');
   });
 
   it('drops a group when nothing in it is visible', () => {

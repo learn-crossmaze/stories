@@ -14,6 +14,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { expireSubscriptions, handleRazorpayWebhook } from './billing/index.js';
 import { expireHolds } from './circulation/index.js';
 import { REGION } from './core/firebase.js';
+import { handleDeliveryWebhook } from './delivery/index.js';
 import { router } from './core/router.js';
 import { accrueLeave, expireDocuments } from './hr/index.js';
 import { handleWhatsAppWebhook, sendWhatsApp } from './messaging/index.js';
@@ -31,7 +32,7 @@ export const inventory = router(ROUTES.inventory);
 export const members = router(ROUTES.members);
 /** Plans, subscriptions, counter and online payments, the deposit ledger. */
 export const billing = router(ROUTES.billing);
-/** Issue, return, exchange, reservations and transfers. */
+/** Issue, return, exchange, reservations, transfers and home delivery. */
 export const circulation = router(ROUTES.circulation);
 /** Staff HRMS (docs/HRMS.md). */
 export const hr = router(ROUTES.hr);
@@ -41,6 +42,9 @@ export const razorpayWebhook = onRequest({ region: REGION }, (req, res) => handl
 
 /** WhatsApp (Meta) webhook: delivery updates and STOP replies; URL per branch: …/whatsappWebhook?o=<orgId>&b=<branchId>. */
 export const whatsappWebhook = onRequest({ region: REGION }, (req, res) => handleWhatsAppWebhook(req, res).then(() => undefined));
+
+/** Courier status updates for home delivery (Porter…); URL per branch: …/deliveryWebhook?o=<orgId>&b=<branchId>&t=<token>. */
+export const deliveryWebhook = onRequest({ region: REGION }, (req, res) => handleDeliveryWebhook(req, res).then(() => undefined));
 
 /** Sends each queued WhatsApp message (orgs/{o}/whatsappOutbox). */
 export const whatsapp = { send: sendWhatsApp };

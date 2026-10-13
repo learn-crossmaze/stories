@@ -12,6 +12,8 @@ import { submittedRuns } from '../../data/payroll';
 import { CheckInCard } from '../people/MyAttendance';
 import { memberCounts, RENEWAL_DUE_DAYS, type RenewalFilter } from '../../data/members';
 import { unshelvedCount } from '../../data/inventory';
+import { listDeliveries } from '../../data/delivery';
+import { dt } from '../../strings/delivery';
 import { listStaff } from '../../data/org';
 import { ht } from '../../strings/hr';
 import { useAsync } from '../../shared/useAsync';
@@ -59,6 +61,17 @@ export function DashboardPage() {
   const shelver = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
   const unshelved = useAsync(() => (org && branch && shelver ? unshelvedCount(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, shelver]);
 
+  // Home deliveries waiting to go out or to be received back.
+  const dispatcher = !!org && !!branch && can(claims, 'delivery.manage', org.id, branch.id);
+  const deliveries = useAsync(
+    async () => {
+      if (!org || !branch || !dispatcher) return null;
+      const { open } = await listDeliveries(org.id, branch.id);
+      return { requested: open.filter((d) => d.status === 'REQUESTED').length, returning: open.filter((d) => d.status === 'RETURNING').length };
+    },
+    [org?.id, branch?.id, dispatcher],
+  );
+
   const verifier = !!org && can(claims, 'documents.verify', org.id);
   const docs = useAsync(async () => {
     if (!org || !verifier) return null;
@@ -91,7 +104,7 @@ export function DashboardPage() {
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   // "All clear" only once everything has loaded; a part that fails says so instead of hiding its items.
-  const parts = [staff, counts, members, unshelved, catalogue, docs, att];
+  const parts = [staff, counts, members, unshelved, deliveries, catalogue, docs, att];
   const loading = parts.some((p) => p.loading);
   const failed = parts.some((p) => p.error);
   const retry = () => parts.filter((p) => p.error).forEach((p) => p.reload());
@@ -114,6 +127,8 @@ export function DashboardPage() {
   if (c?.inspection) todos.push({ label: `${c.inspection} ${lt.awaitingInspection.toLowerCase()}`, to: paths.adminDesk });
   if (unshelved.data) todos.push({ label: lt.todoUnshelved(unshelved.data), to: paths.adminShelve });
   if (c?.incoming) todos.push({ label: `${c.incoming} ${lt.incomingTransfers.toLowerCase()}`, to: paths.adminTransfers });
+  if (deliveries.data?.requested) todos.push({ label: dt.todoDispatch(deliveries.data.requested), to: paths.opsDeliveries });
+  if (deliveries.data?.returning) todos.push({ label: dt.todoReceive(deliveries.data.returning), to: paths.opsDeliveries });
   const d = docs.data;
   if (d?.pending.length) todos.push({ label: ht.todoDocsPending(d.pending.length), to: paths.adminDocuments });
   if (d?.expired.length) todos.push({ label: ht.todoDocsExpired(d.expired.length), to: paths.adminDocuments });

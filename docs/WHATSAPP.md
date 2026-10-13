@@ -141,6 +141,11 @@ template per message, and each branch has its own copy:
 | Added to waiting list | a book is reserved and no copy is free yet | member_name, branch_name, book_title |
 | Reservation cancelled | a reservation is cancelled (staff or member) | member_name, branch_name, book_title |
 | Reservation not collected | a held book wasn't collected in time | member_name, branch_name, book_title |
+| Home delivery booked | a delivery, pickup or exchange is booked (DELIVERY.md) | member_name, branch_name, delivery_date |
+| Books on the way | books leave the branch for the member | member_name, branch_name, book_titles, delivery_by |
+| Pickup on the way | someone is coming to collect books | member_name, branch_name, delivery_by |
+| Delivery completed | the rider or courier completes the visit | member_name, branch_name, delivery_summary |
+| Delivery not completed | the visit could not be done | member_name, branch_name, reason |
 | Staff notification | any in-app staff notification (leave decided, payslip ready, documents verified…) | employee_name, title, details |
 
 The **Notifications** list shows only the messages this branch has added, one line each: name, Meta's review

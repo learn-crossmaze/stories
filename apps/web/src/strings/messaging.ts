@@ -39,7 +39,7 @@ export const wt = {
   addThis: 'Add notification',
   allAdded: 'Every notification is already added.',
   noneAdded: 'No notifications yet. Use “Add notification” to choose the transactions this branch messages members and staff about.',
-  groups: { MEMBERSHIP: 'Membership', PAYMENTS: 'Payments', BORROWING: 'Borrowing', RESERVATIONS: 'Reservations', STAFF: 'Staff' } as Record<string, string>,
+  groups: { MEMBERSHIP: 'Membership', PAYMENTS: 'Payments', BORROWING: 'Borrowing', RESERVATIONS: 'Reservations', DELIVERY: 'Home delivery', STAFF: 'Staff' } as Record<string, string>,
   editShort: 'Edit',
   actions: 'Meta and testing',
   saveFirst: 'Save your changes first.',

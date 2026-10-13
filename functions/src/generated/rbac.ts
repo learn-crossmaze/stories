@@ -248,6 +248,11 @@ export const PERMISSIONS = {
   "delivery.execute": [
     "DEL"
   ],
+  "delivery.configure": [
+    "HO",
+    "FO",
+    "BM"
+  ],
   "employees.view": [
     "HO",
     "HR",

@@ -44,7 +44,7 @@ const ROUTERS: Record<string, string> = {
   copies: 'inventory', locations: 'inventory',
   members: 'members', me: 'members',
   plans: 'billing', subscriptions: 'billing', payments: 'billing', deposits: 'billing',
-  circulation: 'circulation', reservations: 'circulation', transfers: 'circulation',
+  circulation: 'circulation', reservations: 'circulation', transfers: 'circulation', deliveries: 'circulation',
   employees: 'hr', designations: 'hr', hr: 'hr', documents: 'hr', documentTypes: 'hr', offers: 'hr', letters: 'hr', letterTemplates: 'hr', shifts: 'hr', holidays: 'hr', attendance: 'hr', leave: 'hr', leaveTypes: 'hr',
   payroll: 'hr', payrollSettings: 'hr', salary: 'hr', payslips: 'hr',
 };

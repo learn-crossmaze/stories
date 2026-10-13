@@ -133,6 +133,11 @@ checkout, HMAC webhook, idempotent activation, refunds · M2.5 Profile: subscrip
 M2.6 Notification center + FCM + preferences · M2.7 Analytics events & Crashlytics.
 
 ## PHASE 3 — Delivery (outline)
+
+> Built (2026-10-13): see docs/DELIVERY.md — requests (staff and member app), dispatch with own staff, other couriers
+> or Porter's API, rider reports, returns at the branch, fees, WhatsApp updates. Still to come: zones beyond PIN codes,
+> OTP handover and photo proof, route planning.
+
 M3.1 Zones, postal-code serviceability, slots, versioned charges · M3.2 Delivery/return-pickup/exchange orders with
 upfront charge + payment · M3.3 Dispatcher board & assignment · M3.4 Delivery-person app: route list, OTP handover,
 photo proof, failed-delivery flow; handover performs issue/return via circulation functions.

@@ -4,6 +4,7 @@
 import * as billing from './billing/index.js';
 import * as catalogue from './catalogue/index.js';
 import * as circulation from './circulation/index.js';
+import * as delivery from './delivery/index.js';
 import * as hr from './hr/index.js';
 import * as inventory from './inventory/index.js';
 import * as members from './members/index.js';
@@ -15,9 +16,9 @@ export const ROUTES = {
   admin: { ...platform.routes, ...organization.routes, ...messaging.routes },
   catalogue: catalogue.routes,
   inventory: inventory.routes,
-  members: members.routes,
+  members: { ...members.routes, ...delivery.memberRoutes },
   billing: billing.routes,
-  circulation: circulation.routes,
+  circulation: { ...circulation.routes, ...delivery.routes },
   hr: hr.routes,
 };
 
