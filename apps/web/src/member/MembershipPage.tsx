@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { toApiError } from '../data/api';
+import { errorText } from '../data/api';
 import { DURATION_LABELS, type Duration, label, PER_PERIOD, planWithOption } from '../data/common';
 import {
   cancelUnpaid,
@@ -69,7 +69,7 @@ function MembershipBody({ m }: { m: Membership }) {
       if (ok) setMsg({ tone: 'ok', text: ok });
       overview.reload();
     } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
+      setMsg({ tone: 'error', text: errorText(e) });
     } finally {
       setBusy(null);
     }
@@ -91,7 +91,7 @@ function MembershipBody({ m }: { m: Membership }) {
       setMsg(r.paid ? { tone: 'ok', text: t.mePaid } : { tone: 'error', text: t.meNotPaidYet });
       if (r.paid) overview.reload();
     } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
+      setMsg({ tone: 'error', text: errorText(e) });
     } finally {
       setBusy(null);
     }

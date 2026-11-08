@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { call, command, toApiError } from '../../data/api';
+import { call, command } from '../../data/api';
 import { type Book, getBook } from '../../data/catalogue';
 import { CONDITIONS, type Condition, label, LANGUAGES } from '../../data/common';
 import { copiesOfBook, listLocations } from '../../data/inventory';
@@ -12,7 +12,7 @@ import { money, toMinor } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextArea, TextField, useAction, useSubmit } from '../components/Dialog';
 import { CoverEditor } from './CoverEditor';
 import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -79,8 +79,7 @@ export function BookDetailPage() {
   );
   const copies = useAsync(() => (org && branch ? copiesOfBook(org.id, branch.id, bookId) : Promise.resolve([])), [org?.id, branch?.id, bookId]);
   const [dialog, setDialog] = useState<'edit' | 'acquire' | 'archive' | 'delete' | null>(null);
-  const [restoring, setRestoring] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const restore = useAction();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
   // For an archived title, what in any library still refers to it (then it can't be deleted).
@@ -154,21 +153,15 @@ export function BookDetailPage() {
               <button
                 type="button"
                 className="btn btn-text"
-                disabled={restoring}
-                onClick={async () => {
-                  setRestoring(true);
-                  setActionError(null);
-                  try {
+                disabled={restore.busy}
+                onClick={() =>
+                  void restore.run(async () => {
                     await command('books-restore', { bookId: b.id });
                     book.reload();
-                  } catch (e) {
-                    setActionError(toApiError(e).message);
-                  } finally {
-                    setRestoring(false);
-                  }
-                }}
+                  })
+                }
               >
-                {restoring ? t.saving : lt.restoreBook}
+                {restore.busy ? t.saving : lt.restoreBook}
               </button>
             )}
             {canDelete && b.status === 'ARCHIVED' && (
@@ -182,9 +175,9 @@ export function BookDetailPage() {
               {!canDelete ? lt.archivedHint : inUse ? lt.archivedInUse(usage.data!.summary!) : lt.archivedHintDelete}
             </p>
           )}
-          {actionError && (
+          {restore.error && (
             <p className="field-error" role="alert">
-              {actionError}
+              {restore.error}
             </p>
           )}
         </div>

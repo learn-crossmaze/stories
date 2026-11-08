@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { ApiError } from '../../data/api';
+import { errorText } from '../../data/api';
 import { branchPayments, checkRefund, depositAccount, depositLeft, type Payment, type PaymentView, refundable, type RefundInput, refundPayment } from '../../data/billing';
 import { label } from '../../data/common';
 import { paths } from '../../paths';
@@ -72,7 +72,7 @@ export function RefundDialog({ orgId, payment, memberName, onClose, onDone }: { 
       onDone(r.status === 'PENDING' ? lt.refundPending(money(r.amountMinor), who) : lt.refundDone(money(r.amountMinor), who, r.gatewayRefundId));
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -162,7 +162,7 @@ function BranchPayments({ orgId, branchId }: { orgId: string; branchId: string }
       setNotice(lt.refundChecked(lt.refundStatus[r.status] ?? r.status));
       list.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setChecking(null);
     }

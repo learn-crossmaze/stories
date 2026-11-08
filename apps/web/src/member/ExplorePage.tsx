@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { BookCover } from '../shared/BookCover';
-import { call, toApiError } from '../data/api';
+import { call, errorText } from '../data/api';
 import { type Book, searchBooks } from '../data/catalogue';
 import { label } from '../data/common';
 import { type Membership, reserveBook } from '../data/me';
@@ -95,7 +95,7 @@ function BookPanel({ m, book, onReserved }: { m: Membership; book: Book; onReser
       setMsg({ tone: 'ok', text: r.status === 'ALLOCATED' ? t.meReservedHeld : t.meReservedWaiting });
       onReserved();
     } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
+      setMsg({ tone: 'error', text: errorText(e) });
     } finally {
       setBusy(null);
     }

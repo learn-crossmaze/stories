@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
-import { ApiError } from '../data/api';
+import { errorText } from '../data/api';
 import { addChild, joinLibrary, loadJoinOptions, type Membership } from '../data/me';
 import { ErrorState, SkeletonRows } from '../shared/ui';
 import { useAsync } from '../shared/useAsync';
@@ -59,7 +59,7 @@ export function JoinMembership() {
       select(res.memberId);
       overview.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -135,7 +135,7 @@ export function AddChild({ member }: { member: Membership }) {
       select(res.memberId);
       overview.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }

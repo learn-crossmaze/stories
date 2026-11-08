@@ -2,12 +2,12 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 
-import { call, command, toApiError } from '../../data/api';
+import { call, command, errorText } from '../../data/api';
 import type { Branch } from '../../data/org';
 import { services } from '../../data/services';
 import { money, when } from '../../shared/format';
 import { t } from '../../strings';
-import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
+import { Dialog, DialogActions, FormError, TextField, useAction, useSubmit } from '../components/Dialog';
 import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
 
@@ -62,7 +62,7 @@ export function PaymentGatewayDialog({ orgId, branch, onClose, onSaved }: { orgI
       const r = await call<{ mode: string }>('branches-testPaymentGateway', { orgId, branchId: branch.id });
       setTest({ tone: 'ok', text: lt.pgTestOk(r.mode) });
     } catch (e) {
-      setTest({ tone: 'error', text: toApiError(e).message || lt.pgTestFailed });
+      setTest({ tone: 'error', text: errorText(e, lt.pgTestFailed) });
     }
   };
   const live = f.keyId.startsWith('rzp_live_');
@@ -169,8 +169,9 @@ export function CollectOnlineDialog({
   const [req, setReq] = useState<PaymentRequest | null>(null);
   const [status, setStatus] = useState<string>('OPEN');
   const [needsAttention, setNeedsAttention] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // One request at a time: creating a link twice would message the member twice.
+  const action = useAction();
+  const { pending: busy, error, setError } = action;
   const [qr, setQr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -198,17 +199,7 @@ export function CollectOnlineDialog({
     if (req?.channel === 'QR_LINK' && req.url) void QRCode.toDataURL(req.url, { margin: 1, width: 280 }).then(setQr);
   }, [req]);
 
-  const run = async (label: string, fn: () => Promise<void>) => {
-    setBusy(label);
-    setError(null);
-    try {
-      await fn();
-    } catch (e) {
-      setError(toApiError(e).message);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const run = (label: string, fn: () => Promise<void>) => action.run(fn, label);
   const create = (channel: 'LINK' | 'QR') =>
     run(channel, async () => {
       const r = await call<PaymentRequest>('payments-createRequest', { orgId, subscriptionId, channel, requestId: crypto.randomUUID() });

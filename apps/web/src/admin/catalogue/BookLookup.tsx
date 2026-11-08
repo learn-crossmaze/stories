@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router';
 
-import { call, toApiError } from '../../data/api';
+import { call, errorText } from '../../data/api';
 import { label } from '../../data/common';
 import { paths } from '../../paths';
 import { Icon } from '../../shared/ui';
@@ -43,7 +43,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
       const res = await call<{ candidates: Candidate[] }>('books-lookup', { q: term.trim() });
       setResults(res.candidates);
     } catch (err) {
-      setError(toApiError(err).message || lt.lookupFailed);
+      setError(errorText(err, lt.lookupFailed));
       setResults(null);
     } finally {
       setBusy(false);
@@ -57,7 +57,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
       await onPick(c);
       setResults(null);
     } catch (err) {
-      setError(toApiError(err).message || lt.lookupFailed);
+      setError(errorText(err, lt.lookupFailed));
     } finally {
       setApplying(null);
     }

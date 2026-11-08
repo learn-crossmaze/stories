@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
-import { ApiError, command } from '../data/api';
+import { command, errorText } from '../data/api';
 import { paths } from '../paths';
 import { t } from '../strings';
 
@@ -25,7 +25,7 @@ export function SetupPage() {
       await action();
       if (success) setNotice(success);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : t.errorGeneric);
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Dialog, DialogActions, FormError, useSubmit } from '../../shared/Dialog';
+import { Dialog, DialogActions, FormError, useAction, useSubmit } from '../../shared/Dialog';
 import { TextField } from '../../shared/fields';
 import { t } from '../../strings';
 
@@ -61,7 +61,7 @@ export function MultiPick({
   onAdd?: (name: string) => Promise<void>;
 }) {
   const [filter, setFilter] = useState('');
-  const [adding, setAdding] = useState(false);
+  const add = useAction();
   const shown = options.filter((o) => value.includes(o.value) || o.label.toLowerCase().includes(filter.toLowerCase())).slice(0, 60);
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : max && value.length >= max ? value : [...value, v]);
   return (
@@ -73,16 +73,13 @@ export function MultiPick({
           <button
             type="button"
             className="btn btn-text"
-            disabled={adding}
-            onClick={async () => {
-              setAdding(true);
-              try {
+            disabled={add.busy}
+            onClick={() =>
+              void add.run(async () => {
                 await onAdd(filter.trim());
                 setFilter('');
-              } finally {
-                setAdding(false);
-              }
-            }}
+              })
+            }
           >
             + {filter.trim()}
           </button>
@@ -96,6 +93,7 @@ export function MultiPick({
           </label>
         ))}
       </div>
+      {add.error && <span className="field-error">{add.error}</span>}
       {error && <span className="field-error">{error}</span>}
     </fieldset>
   );

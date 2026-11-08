@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 
-import { toApiError } from '../../data/api';
 import { services } from '../../data/services';
 import {
   fillSamples,
@@ -24,7 +23,7 @@ import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { wt } from '../../strings/messaging';
-import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 
@@ -71,7 +70,9 @@ function ConnectionCard({ orgId, branchId, data, onSaved }: { orgId: string; bra
   const [f, setF] = useState({ enabled: s?.enabled ?? true, phoneNumberId: s?.phoneNumberId ?? '', wabaId: s?.wabaId ?? '', accessToken: '', appSecret: '', language: s?.language ?? 'en' });
   const [saved, setSaved] = useState(false);
   const [to, setTo] = useState('');
-  const [test, setTest] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [testSent, setTestSent] = useState(false);
+  // A test send is a paid message: one at a time, never twice for a double click.
+  const test = useAction();
   const save = useSubmit(async () => {
     setSaved(false);
     await saveConnection(orgId, branchId, { ...f, phoneNumberId: f.phoneNumberId.trim(), wabaId: f.wabaId.trim(), accessToken: f.accessToken.trim(), appSecret: f.appSecret.trim() });
@@ -79,14 +80,12 @@ function ConnectionCard({ orgId, branchId, data, onSaved }: { orgId: string; bra
     setSaved(true);
     onSaved();
   });
-  const runTest = async () => {
-    setTest(null);
-    try {
+  const runTest = () => {
+    setTestSent(false);
+    return test.run(async () => {
       await sendTest(orgId, branchId, to, null);
-      setTest({ tone: 'ok', text: wt.testSent });
-    } catch (e) {
-      setTest({ tone: 'error', text: toApiError(e).message });
-    }
+      setTestSent(true);
+    });
   };
   const form = (
     <form onSubmit={save.submit} noValidate className="form-grid wa-form">
@@ -139,11 +138,12 @@ function ConnectionCard({ orgId, branchId, data, onSaved }: { orgId: string; bra
           <h3>{wt.testTitle}</h3>
           <div className="row">
             <TextField label={wt.testTo} type="tel" value={to} onChange={setTo} autoComplete="off" />
-            <button type="button" className="btn btn-outlined" disabled={to.trim().length < 10} onClick={() => void runTest()}>
-              {wt.testHello}
+            <button type="button" className="btn btn-outlined" disabled={test.busy || to.trim().length < 10} onClick={() => void runTest()}>
+              {test.busy ? t.loading : wt.testHello}
             </button>
           </div>
-          {test && <Notice tone={test.tone}>{test.text}</Notice>}
+          {testSent && <Notice tone="ok">{wt.testSent}</Notice>}
+          {test.error && <Notice tone="error">{test.error}</Notice>}
         </div>
       )}
     </section>
@@ -159,8 +159,9 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
   const initial = { enabled: tpl.enabled, name: tpl.name, language: tpl.language, body: tpl.body };
   const [f, setF] = useState(initial);
   const [to, setTo] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const action = useAction();
+  const busy = action.pending;
+  const [done, setDone] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const unknown = placeholders(f.body).filter((k) => !event.variables.some((v) => v.key === k));
   const values = placeholders(f.body).length;
@@ -185,19 +186,14 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
     onSaved();
     onClose();
   });
-  const run = async (key: string, fn: () => Promise<string>, close = false) => {
-    setBusy(key);
-    setMsg(null);
-    try {
+  const run = (key: string, fn: () => Promise<string>, close = false) => {
+    setDone(null);
+    return action.run(async () => {
       const text = await fn();
       onSaved();
       if (close) onClose();
-      else setMsg({ tone: 'ok', text });
-    } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
-    } finally {
-      setBusy(null);
-    }
+      else setDone(text);
+    }, key);
   };
   return (
     <Dialog title={wt.editTitle(event.label)} onClose={onClose}>
@@ -281,7 +277,8 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
               </button>
             </div>
           )}
-          {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+          {done && <Notice tone="ok">{done}</Notice>}
+          {action.error && <Notice tone="error">{action.error}</Notice>}
           <button
             type="button"
             className="btn btn-text danger"
@@ -340,20 +337,16 @@ const GROUPS = ['MEMBERSHIP', 'PAYMENTS', 'BORROWING', 'RESERVATIONS', 'DELIVERY
 function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; branchId: string; data: Overview; onChanged: () => void }) {
   const [editing, setEditing] = useState<MessageEvent | null>(null);
   const [adding, setAdding] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const run = async (key: string, fn: () => Promise<string | null>) => {
-    setBusy(key);
-    setMsg(null);
-    try {
+  const action = useAction();
+  const busy = action.pending;
+  const [done, setDone] = useState<string | null>(null);
+  const run = (key: string, fn: () => Promise<string | null>) => {
+    setDone(null);
+    return action.run(async () => {
       const text = await fn();
-      if (text) setMsg({ tone: 'ok', text });
+      if (text) setDone(text);
       onChanged();
-    } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
-    } finally {
-      setBusy(null);
-    }
+    }, key);
   };
   const connected = !!data.settings;
   const added = data.events.filter((e) => e.added);
@@ -389,7 +382,8 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
         </div>
       </div>
       <p className="muted">{wt.messagesIntro}</p>
-      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {done && <Notice tone="ok">{done}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       {added.length === 0 ? (
         <p className="muted">{wt.noneAdded}</p>
       ) : (

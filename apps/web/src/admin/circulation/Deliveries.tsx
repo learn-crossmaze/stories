@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { toApiError } from '../../data/api';
 import { memberLoans, memberReservations } from '../../data/circulation';
 import {
   bookCourier,
@@ -31,7 +30,7 @@ import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { dt } from '../../strings/delivery';
 import { lt } from '../../strings/library';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice, ScanInput, Tabs } from '../components/kit';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
@@ -246,7 +245,7 @@ function DispatchDialog({ orgId, delivery, view, onClose, onSaved }: { orgId: st
   const [codes, setCodes] = useState<string[]>([]);
   const [waive, setWaive] = useState(false);
   const [fares, setFares] = useState<string | null>(null);
-  const [farePending, setFarePending] = useState(false);
+  const quote = useAction();
   const sends = delivery.kind !== 'PICKUP';
   useEffect(() => {
     if (info.data) setCodes(info.data.holds.map((h) => h.copyCode).filter((c): c is string => !!c));
@@ -338,23 +337,20 @@ function DispatchDialog({ orgId, delivery, view, onClose, onSaved }: { orgId: st
                   <button
                     type="button"
                     className="btn btn-outlined"
-                    disabled={farePending}
-                    onClick={async () => {
-                      setFarePending(true);
-                      try {
+                    disabled={quote.busy}
+                    onClick={() => {
+                      setFares(null);
+                      void quote.run(async () => {
                         const r = await quoteCourier(orgId, delivery.id, method);
                         setFares(r.fares.length ? r.fares.map((f) => dt.fare(f.vehicle, money(f.fareMinor), f.etaMinutes)).join(' · ') : dt.noFares);
-                      } catch (e) {
-                        setFares(toApiError(e).message);
-                      } finally {
-                        setFarePending(false);
-                      }
+                      });
                     }}
                   >
-                    {farePending ? t.loading : dt.getQuote}
+                    {quote.busy ? t.loading : dt.getQuote}
                   </button>
                 )}
                 {fares && <span className="small">{fares}</span>}
+                {quote.error && <span className="small field-error">{quote.error}</span>}
               </div>
             )}
             {delivery.fee.status === 'DUE' && (
@@ -523,20 +519,13 @@ type Open = {
 } | null;
 
 function DeliveryCard({ orgId, branchId, d, onAct, onChanged }: { orgId: string; branchId: string; d: Delivery; onAct: (o: Open) => void; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    setMsg(null);
-    try {
+  const action = useAction();
+  const busy = action.busy;
+  const run = (fn: () => Promise<unknown>) =>
+    action.run(async () => {
       await fn();
       onChanged();
-    } catch (e) {
-      setMsg(toApiError(e).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const p = d.provider;
   return (
     <li className="card dl-card">
@@ -563,7 +552,7 @@ function DeliveryCard({ orgId, branchId, d, onAct, onChanged }: { orgId: string;
       <Books d={d} />
       <HowItGoes d={d} />
       {d.failReason && <p className="small field-error">{d.failReason}</p>}
-      {msg && <Notice tone="error">{msg}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       <div className="row">
         {d.status === 'REQUESTED' && (
           <button type="button" className="btn btn-filled" onClick={() => onAct({ kind: 'dispatch', d })}>

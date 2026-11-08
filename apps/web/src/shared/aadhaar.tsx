@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { toApiError } from '../data/api';
+import { errorText } from '../data/api';
 
 // Aadhaar numbers (functions/src/core/aadhaar.ts): checked here as people type,
 // stored in full only where no page can read it, shown as the last four digits.
@@ -73,7 +73,7 @@ export function AadhaarValue({ last4, reveal }: { last4?: string | null; reveal?
             try {
               setFull(await reveal());
             } catch (e) {
-              setError(toApiError(e).message);
+              setError(errorText(e));
             } finally {
               setBusy(false);
             }
