@@ -6,12 +6,11 @@ import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, name, reason, weekday } from '../core/schemas.js';
+import { auditCtx, date, time } from './common.js';
 import { loadEmployee, requireFor } from './model.js';
 
 /** Shifts, holidays and each employee's shift and weekly offs (docs/HRMS.md §8). */
 
-const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM');
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
 const minutes = (max: number) => z.number().int().min(0).max(max);
 
 export const saveShift = command(
@@ -38,7 +37,7 @@ export const saveShift = command(
     if (shiftId && !before?.exists) throw errors.notFound('Shift');
     const data = { ...fields, orgId, status: 'ACTIVE' };
     tx.set(ref, { ...data, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, orgId, {
+    recordAudit(tx, auditCtx(actor, requestId), orgId, {
       action: shiftId ? 'shift.update' : 'shift.create',
       entityType: 'shift',
       entityId: ref.id,
@@ -60,7 +59,7 @@ export const archiveShift = command(
     if (snap.get('status') === 'ARCHIVED') throw errors.conflict('ARCHIVED', 'This shift is already archived.');
     // Employees keep the shift until they are moved; it just can't be assigned any more.
     tx.update(ref, { status: 'ARCHIVED', updatedAt: FieldValue.serverTimestamp() });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+    recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'shift.archive',
       entityType: 'shift',
       entityId: input.shiftId,
@@ -82,7 +81,7 @@ export const saveHoliday = command(
     const before = await tx.get(ref);
     const data = { orgId: input.orgId, date: input.date, year: input.date.slice(0, 4), name: input.name, branchIds: input.branchIds };
     tx.set(ref, { ...data, updatedAt: FieldValue.serverTimestamp() });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+    recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'holiday.save',
       entityType: 'holiday',
       entityId: input.date,
@@ -102,7 +101,7 @@ export const removeHoliday = command(
     const snap = await tx.get(ref);
     if (!snap.exists) throw errors.notFound('Holiday');
     tx.delete(ref);
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+    recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'holiday.remove',
       entityType: 'holiday',
       entityId: input.date,
@@ -130,7 +129,7 @@ export const assignShift = command(
     }
     const weeklyOffs = input.weeklyOffs ? [...new Set(input.weeklyOffs)] : null;
     tx.update(employee.ref, { shiftId: input.shiftId, shiftName, weeklyOffs, updatedAt: FieldValue.serverTimestamp() });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+    recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'employee.assignShift',
       entityType: 'employee',
       entityId: input.employeeId,
