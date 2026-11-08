@@ -13,10 +13,23 @@ const TRANSIENT = new Set([4, 10, 14]);
 
 export const requestIdSchema = z.uuid();
 
-export interface CallContext<I> {
+export interface CallContext<I, P = unknown> {
   actor: Actor;
   input: I;
   requestId?: string;
+  /** What the command's `prepare` step returned (network checks done before the transaction). */
+  prepared?: P;
+}
+
+export interface CommandOptions<I, P> {
+  /**
+   * Work that must not run inside the transaction, which re-runs on contention
+   * and stays open while it waits: calls to other services, slow lookups. Runs
+   * once before the transaction (skipped when the request is a replay) and
+   * must do its own permission check before touching anything private; the
+   * handler receives the result as `ctx.prepared` and re-checks in the transaction.
+   */
+  prepare?: (ctx: CallContext<I>) => Promise<P>;
 }
 
 async function loadActor(req: CallableRequest): Promise<Actor> {
@@ -48,7 +61,7 @@ interface LogContext {
   uid?: string;
   orgId?: unknown;
   requestId?: string;
-  phase?: 'handler' | 'after';
+  phase?: 'prepare' | 'handler' | 'after';
 }
 
 const orgOf = (data: unknown) => (data && typeof data === 'object' ? (data as { orgId?: unknown }).orgId : undefined);
@@ -106,11 +119,12 @@ export function query<S extends z.ZodType, R>(
  * stays `afterPending`, and a retry with the same requestId runs it again (the
  * web retries automatically on the `AFTER_PENDING` reason).
  */
-export function command<S extends z.ZodObject, R>(
+export function command<S extends z.ZodObject, R, P = unknown>(
   name: string,
   schema: S,
-  handler: (ctx: CallContext<z.infer<S>>, tx: Transaction) => Promise<R>,
-  after?: (result: R, ctx: CallContext<z.infer<S>>) => Promise<void>,
+  handler: (ctx: CallContext<z.infer<S>, P>, tx: Transaction) => Promise<R>,
+  after?: ((result: R, ctx: CallContext<z.infer<S>, P>) => Promise<void>) | null,
+  options: CommandOptions<z.infer<S>, P> = {},
 ) {
   const withRequestId = schema.extend({ requestId: requestIdSchema });
   return onCall({ region: REGION, enforceAppCheck: ENFORCE_APP_CHECK }, async (req) => {
@@ -120,8 +134,13 @@ export function command<S extends z.ZodObject, R>(
       const actor = await loadActor(req);
       const { requestId, ...input } = parse(withRequestId, req.data) as z.infer<S> & { requestId: string };
       log.requestId = requestId;
-      const ctx: CallContext<z.infer<S>> = { actor, input: input as z.infer<S>, requestId };
+      const ctx: CallContext<z.infer<S>, P> = { actor, input: input as z.infer<S>, requestId };
       const idemRef = db.doc(`idempotency/${name}:${actor.uid}:${requestId}`);
+      if (options.prepare && !(await idemRef.get()).exists) {
+        log.phase = 'prepare';
+        ctx.prepared = await options.prepare(ctx);
+        log.phase = 'handler';
+      }
 
       const { result, replayed, afterPending } = await db.runTransaction(async (tx) => {
         const prior = await tx.get(idemRef);

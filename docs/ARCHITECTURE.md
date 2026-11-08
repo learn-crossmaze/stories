@@ -272,30 +272,35 @@ stories/
 
 ## 5. Cloud Functions architecture
 
-- **Runtime:** 2nd-gen functions, Node 22, TypeScript strict, region `asia-south1` (Mumbai) for data residency and
-  latency (confirm).
-- **Every callable follows one pipeline** (implemented once in `core/`):
+- **Runtime:** 2nd-gen functions, Node 22, TypeScript strict, region `asia-south1` (Mumbai), `maxInstances: 5`.
+  Actions are grouped behind 7 router functions (docs/API.md); 16 services in all (docs/DEPLOYMENT.md).
+- **Every command follows one pipeline** (`core/callable.ts`, details in docs/API.md):
 
 ```text
-App Check verified → authenticated → zod-validate input → load actor (memberships)
-→ requirePermission(perm, {orgId, branchId}) → idempotency check (requestId)
-→ db.runTransaction(business logic + audit entry + idempotency record)
-→ post-commit side effects (notifications) → typed result
+App Check (when enforced) → authenticated → load actor → zod-validate input (+ requestId)
+→ prepare (optional: calls to other services, outside the transaction; skipped on a replay)
+→ db.runTransaction(idempotency lookup → permission checks → business rules → writes → audit → idempotency record)
+→ after (optional, idempotent: claims sync, notifications; retried with the same requestId until it succeeds)
+→ result, plus one structured log line (fn, uid, orgId, requestId, phase, ms)
 ```
 
-- **Idempotency:** each mutating callable takes a client-generated `requestId` (UUIDv4). The transaction creates
-  `orgs/{orgId}/idempotency/{fn}:{requestId}` storing the result; a retry returns the stored result. Webhooks
-  dedupe on the gateway event id. Scheduled generators use deterministic document IDs.
-- **Audit:** `audit.record(tx, {...})` is called *inside* the same transaction as the change, so an audited change can
+- **Idempotency:** each command takes a client-generated `requestId`; the transaction creates
+  `idempotency/{fn}:{uid}:{requestId}` with the result (TTL 30 days); a retry returns it. The web retries transient
+  failures with the same id. Webhooks dedupe on the gateway's own ids; scheduled jobs use deterministic ids (e.g.
+  one renewal reminder per plan and threshold).
+- **Audit:** `recordAudit(tx, …)` is called *inside* the same transaction as the change, so an audited change can
   never commit without its audit entry.
-- **Callable vs HTTPS:** callables for app operations; HTTPS only for Razorpay webhooks (HMAC-verified) and future
-  third-party integrations.
-- **Scheduled jobs** (Cloud Scheduler): subscription expiry sweep (hourly), task generation (every 15 min, generating
-  the next 48h window), reminder/escalation dispatcher (every 5 min), daily summaries (branch-local midnight),
-  missing-checkout marker (after branch closing). All retry-safe.
-- **Triggers:** membership → custom-claims sync; copy/loan changes → availability counters; notification docs →
-  FCM send.
-- **Secrets:** Razorpay keys, email provider keys in **Secret Manager** (`defineSecret`), never in the repo.
+- **Callable vs HTTPS:** callables for app operations; HTTPS only for the Razorpay, WhatsApp (Meta) and courier
+  webhooks, each verified (HMAC signature or per-branch token, compared in constant time via `core/crypto.ts`).
+- **Scheduled jobs** (`core/sweep.ts`: paged, one failing document never blocks the rest, 540 s timeout, one summary
+  log line): subscription expiry and renewal reminders (hourly), reservation holds (15 min), maintenance (15 min:
+  stale claims, stuck WhatsApp messages), document expiry and leave accrual (daily). All idempotent.
+- **Triggers:** one Firestore trigger, `whatsapp-send` (each queued message). Custom claims are synced by the
+  role-changing commands after commit; users stay `claimsStale` until the token is updated, and the maintenance job
+  finishes any sync that failed.
+- **Secrets:** per-branch payment, WhatsApp and courier keys live in `branches/{b}/private/*` documents that Security
+  Rules deny to every client; function settings (`BOOTSTRAP_SUPER_ADMIN_EMAIL`, `GOOGLE_BOOKS_API_KEY`,
+  `ENFORCE_APP_CHECK`) in `functions/.env.<project>` (git-ignored; the `FUNCTIONS_ENV` secret for CI deploys).
 - **Testing:** unit tests on pure domain functions (state machines, payroll math, recurrence) with Vitest;
   integration tests against the emulators (including concurrency tests that fire parallel callables).
 

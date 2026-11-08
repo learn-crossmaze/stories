@@ -84,6 +84,13 @@ export const overview = query('whatsapp-overview', z.strictObject(branchInput), 
  * plus the app secret for verifying webhooks. The values are checked with Meta
  * first; the number's display name and phone are stored for the page.
  */
+/** What Meta confirmed before the save (saveConnection's prepare step). */
+interface VerifiedConnection {
+  accessToken: string;
+  appSecret: string;
+  number: { display_phone_number?: string; verified_name?: string };
+}
+
 export const saveConnection = command(
   'whatsapp-saveConnection',
   z.strictObject({
@@ -95,25 +102,11 @@ export const saveConnection = command(
     appSecret: z.string().trim().max(100).default(''),
     language: LANGUAGE.default('en'),
   }),
-  async ({ actor, input, requestId }, tx) => {
+  async ({ actor, input, requestId, prepared }, tx) => {
     const branch = await requireBranch(actor, input.orgId, input.branchId, tx);
     const secret = await tx.get(privateRef(input.orgId, input.branchId));
-    const accessToken = input.accessToken || ((secret.get('accessToken') as string | undefined) ?? '');
-    if (!accessToken) throw errors.invalid('Paste the permanent access token (System User token) from Meta Business Settings.');
-    const appSecret = input.appSecret || ((secret.get('appSecret') as string | undefined) ?? '');
+    const { accessToken, appSecret, number } = prepared as VerifiedConnection;
     const switchboard = await planSwitchboard(tx, input.orgId, input.branchId, { enabled: input.enabled });
-
-    let number: { display_phone_number?: string; verified_name?: string };
-    try {
-      number = await graph(accessToken, 'GET', `/${input.phoneNumberId}?fields=display_phone_number,verified_name`);
-      // Templates are managed through the business account: check the token can use it and the number belongs to it.
-      const numbers = await graph<{ data?: { id: string }[] }>(accessToken, 'GET', `/${input.wabaId}/phone_numbers?fields=id`);
-      if (!numbers.data?.some((n) => n.id === input.phoneNumberId)) {
-        throw errors.invalid('This Phone number ID is not in that WhatsApp Business Account. Copy both IDs from WhatsApp → API Setup in your Meta app.');
-      }
-    } catch (e) {
-      metaError(e);
-    }
     const before = (branch.get('whatsapp') as WhatsAppSettings | undefined) ?? null;
     const settings: WhatsAppSettings & Record<string, unknown> = {
       enabled: input.enabled,
@@ -144,6 +137,28 @@ export const saveConnection = command(
       after: { enabled: input.enabled, phoneNumberId: input.phoneNumberId, wabaId: input.wabaId, tokenChanged: !!input.accessToken, appSecretChanged: !!input.appSecret },
     });
     return { displayPhone: settings.displayPhone, verifiedName: settings.verifiedName };
+  },
+  null,
+  {
+    // Meta is asked before the transaction (it can take seconds and must not repeat on contention).
+    prepare: async ({ actor, input }) => {
+      await requireBranch(actor, input.orgId, input.branchId);
+      const secret = await privateRef(input.orgId, input.branchId).get();
+      const accessToken = input.accessToken || ((secret.get('accessToken') as string | undefined) ?? '');
+      if (!accessToken) throw errors.invalid('Paste the permanent access token (System User token) from Meta Business Settings.');
+      const appSecret = input.appSecret || ((secret.get('appSecret') as string | undefined) ?? '');
+      try {
+        const number = await graph<{ display_phone_number?: string; verified_name?: string }>(accessToken, 'GET', `/${input.phoneNumberId}?fields=display_phone_number,verified_name`);
+        // Templates are managed through the business account: check the token can use it and the number belongs to it.
+        const numbers = await graph<{ data?: { id: string }[] }>(accessToken, 'GET', `/${input.wabaId}/phone_numbers?fields=id`);
+        if (!numbers.data?.some((n) => n.id === input.phoneNumberId)) {
+          throw errors.invalid('This Phone number ID is not in that WhatsApp Business Account. Copy both IDs from WhatsApp → API Setup in your Meta app.');
+        }
+        return { accessToken, appSecret, number } satisfies VerifiedConnection;
+      } catch (e) {
+        return metaError(e);
+      }
+    },
   },
 );
 

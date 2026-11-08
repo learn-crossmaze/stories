@@ -5,19 +5,27 @@ All app operations are **actions** named `<group>-<name>` (e.g. `branches-create
 `admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr` (`functions/src/index.ts`) — plus the
 scheduled jobs listed at the end. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
 action prefix). Each Cloud Function is its own Cloud Run service reserving CPU; ~60 separate functions exceeded the
-project's regional CPU quota, eight services stay well inside it. Routing doesn't change behaviour: the router
+project's regional CPU quota; the 16 services listed in docs/DEPLOYMENT.md stay well inside it. Routing doesn't change behaviour: the router
 passes the request to the action's own handler, so every check below applies unchanged; unknown actions are rejected.
 
 ## Two kinds of callable
 
 | Kind | Helper | Pipeline |
 |---|---|---|
-| **Command** (changes data) | `command(name, schema, handler, after?)` | auth → zod validation (strict: unknown fields rejected) → **one Firestore transaction**: idempotency lookup → handler (permission check via `actor.require`, business rules, writes, `recordAudit`) → store result under `idempotency/{name}:{uid}:{requestId}` → commit → `after` side effects (e.g. claims sync) |
+| **Command** (changes data) | `command(name, schema, handler, after?, { prepare? })` | auth → zod validation (strict: unknown fields rejected) → optional `prepare` (network calls, outside the transaction; skipped on a replay) → **one Firestore transaction**: idempotency lookup → handler (permission check via `actor.require`, business rules, writes, `recordAudit`) → store result under `idempotency/{name}:{uid}:{requestId}` → commit → `after` side effects (e.g. claims sync) |
 | **Query / idempotent op** | `query(name, schema, handler)` | auth → validation → handler |
 
 - **`requestId`** (UUID, required on commands): the web client generates one per user action (`data/api.ts`
   `command()`); a retry with the same id returns the stored result instead of repeating the change. Records expire
   via Firestore TTL on `expireAt` (30 days).
+- **`after` must be idempotent.** Until it succeeds the stored record stays `afterPending`; the caller gets
+  `aborted`/`AFTER_PENDING` and a retry with the same requestId runs `after` again (the web retries automatically).
+- **Never call another service inside the transaction** (it re-runs on contention and holds the transaction open):
+  use `prepare`, which must check permissions itself before reading anything private.
+- **The web client retries** `aborted`, `unavailable`, `deadline-exceeded` and dropped connections with the same
+  requestId, and remembers the requestId of a command whose outcome stayed unknown, so a second click replays it.
+- **Don't return secrets from a command**: its result is stored in `idempotency/*` for 30 days. Reveal private
+  values with a `query` plus `recordAuditNow`.
 - **Permissions** are checked against the *authoritative* membership documents inside the transaction, not token
   claims (claims can lag a revocation).
 - **Audit**: `recordAudit(tx, …)` writes `orgs/{o}/auditLogs` (or `platformAuditLogs`) in the same transaction, so a
@@ -27,8 +35,17 @@ passes the request to the action's own handler, so every check below applies unc
 
 Domain failures throw `AppError(code, reason, message)`: `message` is written for end users, `reason` is a stable
 machine code (`FORBIDDEN`, `INVALID_INPUT`, `NOT_FOUND`, `BRANCH_CODE_TAKEN`, `USER_NOT_FOUND`,
-`EMAIL_NOT_VERIFIED`, `ALREADY_BOOTSTRAPPED`, …). Unexpected errors are logged server-side and returned as a generic
-"Something went wrong" — internals never reach the client.
+`EMAIL_NOT_VERIFIED`, `ALREADY_BOOTSTRAPPED`, …). Firestore contention or overload returns `aborted`/`BUSY`
+(retryable). Unexpected errors are logged server-side and returned as a generic "Something went wrong" — internals
+never reach the client.
+
+## Logs
+
+Every call writes one structured line (`fn`, `uid`, `orgId`, `requestId`, `phase`, `ms`, `replayed`); domain errors
+are logged at info level with their `reason`, unexpected ones at error level with the stack. Inputs are never
+logged. Scheduled jobs log one summary per run (`job`, `processed`, `changed`, `failed`, `complete`) and one error
+line per failed document (`path`). Useful Cloud Logging filters: `jsonPayload.fn="copies-receive"`,
+`severity>=WARNING AND jsonPayload.job:*`.
 
 ## Phase 0 callables
 

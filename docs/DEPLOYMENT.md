@@ -52,11 +52,12 @@ Later deploys need only `git pull` and `npm run deploy:backend`: the functions p
 installs any new function dependencies before building.
 
 The first deploy enables the Cloud Functions, Cloud Build, Artifact Registry and Cloud Run APIs (a few minutes).
-Scheduled functions also enable Cloud Scheduler. The backend deploys as **15 services** (`maxInstances: 5` each) to
+Scheduled functions also enable Cloud Scheduler. The backend deploys as **16 services** (`maxInstances: 5` each) to
 stay inside the project's Cloud Run CPU quota: 7 routers (`admin`, `catalogue`, `inventory`, `members`, `billing`,
 `circulation`, `hr`), 3 webhooks (`razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`), the `whatsapp-send`
-trigger and 4 scheduled jobs (`expireSubscriptions` hourly, `expireHolds` every 15 minutes, `expireDocuments` and
-`accrueLeave` daily). Don't split actions back into separate exported functions: add them to a router
+trigger and 5 scheduled jobs (`expireSubscriptions` hourly, `expireHolds` and `maintenance` every 15 minutes,
+`expireDocuments` and `accrueLeave` daily). `maintenance` finishes interrupted work: token updates after role changes
+(users marked `claimsStale`) and WhatsApp messages whose send never ran or was cut off. Don't split actions back into separate exported functions: add them to a router
 (`functions/src/routes.ts`). When a deploy removes
 functions that no longer exist in the code, the CLI asks to delete them: answer **yes**. New Firestore indexes build in the background for a few minutes after deploy; until then the affected
 screens show "couldn't load" and recover on their own.
@@ -82,6 +83,18 @@ Without a key Google Books' shared anonymous quota is usually exhausted, and the
 3. **App Check (before launch):** register the web app with reCAPTCHA Enterprise, put the site key in
    `apps/web/.env.production`, then set `ENFORCE_APP_CHECK=true` in `functions/.env.stories-by-crossmaze` (and in the
    `FUNCTIONS_ENV` secret, §1) and redeploy.
+
+## Monitoring
+
+Create these log-based alerts once (Cloud Logging → Logs Explorer → *Create alert*), sending to the owner's email:
+
+| Alert | Query |
+|---|---|
+| Unexpected errors in actions | `resource.type="cloud_run_revision" severity>=ERROR jsonPayload.fn:*` |
+| A scheduled job skipped documents or ran out of time | `severity>=WARNING jsonPayload.job:*` |
+| WhatsApp webhook signature failures | `jsonPayload.message="whatsapp webhook: bad signature"` |
+
+Also set a **budget alert** (Billing → Budgets) if not done yet.
 
 ## Backups
 
