@@ -273,7 +273,9 @@ export async function planNewBooks(tx: Transaction, input: BulkBook[]) {
       tx.create(db.doc(`books/${bookId}`), { ...derived(fields, code, it.isbn, names), code, number, status: 'ACTIVE', createdAt: now, updatedAt: now });
     });
   }
-  return { created, existing, bookIds, newRefs, write };
+  /** Documents `write()` writes: new authors/publishers, the code counter, and each new title with its ISBN index entry. */
+  const writes = newRefs.length + (counter ? 1 : 0) + created.length * 2;
+  return { created, existing, bookIds, newRefs, writes, write };
 }
 
 /**

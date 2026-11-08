@@ -9,11 +9,10 @@ import { type CallContext, command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db, REGION } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
-import { logEvent } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { requireActiveTerm } from '../billing/term.js';
-import { makeAvailable, nextWaiting, readCirculationConfig, queueReady } from './allocation.js';
+import { allocate, copyOf, makeAvailable, nextWaiting, readCirculationConfig } from './allocation.js';
 
 /**
  * Reserves a title for a member at a branch. If a copy is on the shelf it is
@@ -63,20 +62,13 @@ export async function placeReservation(
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
     };
     const copy = shelf.docs[0];
+    tx.create(ref, { ...base, status: 'WAITING', allocatedCopyId: null, allocatedCopyCode: null, holdUntil: null });
     if (copy) {
-      tx.create(ref, {
-        ...base, status: 'ALLOCATED', allocatedCopyId: copy.id, allocatedCopyCode: copy.get('code'),
-        allocatedAt: FieldValue.serverTimestamp(), holdUntil: Timestamp.fromMillis(Date.now() + holdHours * 3_600_000),
+      // A copy is on the shelf: set it aside at once (the reservation never joins the queue).
+      allocate(tx, input.orgId, { ref, memberId: input.memberId, branchId: input.branchId, bookTitle: book.get('title') as string, waiting: false }, copyOf(copy), holdHours, actor.uid, {
+        memberPatch: term.rollover ?? {},
       });
-      tx.update(copy.ref, { status: 'RESERVED', activeReservationId: ref.id, updatedAt: FieldValue.serverTimestamp() });
-      queueReady(tx, input.orgId, input.branchId, input.memberId, book.get('title') as string, new Date(Date.now() + holdHours * 3_600_000), ref.id);
-      logEvent(tx, copy.ref.path, {
-        type: 'RESERVATION_ALLOCATED', actorUid: actor.uid, fromStatus: 'AVAILABLE', toStatus: 'RESERVED',
-        condition: copy.get('condition'), ref: { reservationId: ref.id, memberId: input.memberId },
-      });
-      tx.update(memberSnap.ref, { ...(term.rollover ?? {}), allocatedCount: FieldValue.increment(1) });
     } else {
-      tx.create(ref, { ...base, status: 'WAITING', allocatedCopyId: null, allocatedCopyCode: null, holdUntil: null });
       queueWhatsApp(tx, { orgId: input.orgId, branchId: input.branchId, event: 'reservation_placed', memberId: input.memberId, vars: { book_title: book.get('title') as string }, ref: { reservationId: ref.id } });
       tx.update(memberSnap.ref, { ...(term.rollover ?? {}), waitingCount: FieldValue.increment(1) });
     }

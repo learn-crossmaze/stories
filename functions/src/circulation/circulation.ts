@@ -69,8 +69,16 @@ export interface IssueOptions {
   channel?: 'COUNTER' | 'DELIVERY';
   deliveryId?: string | null;
   notify?: boolean;
+  /** An exchange: books coming back in the same step (their loans are closed by writeReturns) and exchanges to count. */
+  returning?: number;
+  exchanges?: number;
 }
 
+/**
+ * Write phase: issues the planned copies — a loan per copy, copies ISSUED,
+ * held reservations FULFILLED — and updates the member's counters once
+ * (books out, holds used, lifetime loans/exchanges, a pending term rollover).
+ */
 export function writeIssue(
   tx: Transaction, orgId: string, branchId: string, member: Member, memberId: string, term: Term, plan: IssuePlan, actorUid: string,
   exchangeId: string | null, opts: IssueOptions = {},
@@ -93,6 +101,16 @@ export function writeIssue(
       tx.update(reservation.ref, { status: 'FULFILLED', fulfilledLoanId: loanRef.id, updatedAt: FieldValue.serverTimestamp() });
     }
   }
+  const issued = plan.copies.length;
+  const fulfilled = plan.copies.filter((c) => c.reservation).length;
+  tx.update(db.doc(`orgs/${orgId}/members/${memberId}`), {
+    ...(term.rollover ?? {}),
+    activeLoanCount: FieldValue.increment(issued - (opts.returning ?? 0)),
+    allocatedCount: FieldValue.increment(-fulfilled),
+    lifetimeLoans: FieldValue.increment(issued),
+    ...(opts.exchanges ? { lifetimeExchanges: FieldValue.increment(opts.exchanges) } : {}),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
   if (opts.notify !== false) {
     queueWhatsApp(tx, {
       orgId, branchId, event: 'books_issued', memberId,
@@ -148,20 +166,12 @@ export const issue = command(
   z.strictObject({ orgId: id, branchId: id, memberId: id, barcodes }),
   async ({ actor, input, requestId }, tx) => {
     await actor.require('loans.issue', input.orgId, input.branchId, tx);
-    const { snap: memberSnap, member } = await loadMember(tx, input.orgId, input.memberId);
+    const { member } = await loadMember(tx, input.orgId, input.memberId);
     const term = await requireActiveTerm(tx, input.orgId, member);
     const plan = await readIssue(tx, input.orgId, input.branchId, input.memberId, input.barcodes);
     checkLimit(member, term, 0, plan);
 
     const loanIds = writeIssue(tx, input.orgId, input.branchId, member, input.memberId, term, plan, actor.uid, null);
-    const fulfilled = plan.copies.filter((c) => c.reservation).length;
-    tx.update(memberSnap.ref, {
-      ...(term.rollover ?? {}),
-      activeLoanCount: FieldValue.increment(plan.copies.length),
-      allocatedCount: FieldValue.increment(-fulfilled),
-      lifetimeLoans: FieldValue.increment(plan.copies.length),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'circulation.issue', entityType: 'member', entityId: input.memberId, branchId: input.branchId, memberId: input.memberId,
       after: { loanIds, copies: plan.copies.map((c) => c.copy.code), titles: plan.copies.map((c) => c.copy.bookTitle) },
@@ -205,30 +215,21 @@ export const exchange = command(
   z.strictObject({ orgId: id, branchId: id, memberId: id, returnBarcodes: barcodes, issueBarcodes: barcodes }),
   async ({ actor, input, requestId }, tx) => {
     await actor.require('exchanges.process', input.orgId, input.branchId, tx);
-    const { snap: memberSnap, member } = await loadMember(tx, input.orgId, input.memberId);
+    const { member } = await loadMember(tx, input.orgId, input.memberId);
     const term = await requireActiveTerm(tx, input.orgId, member);
     const returns = await readReturns(tx, input.orgId, input.returnBarcodes, input.memberId);
     const plan = await readIssue(tx, input.orgId, input.branchId, input.memberId, input.issueBarcodes);
     checkLimit(member, term, returns.length, plan);
 
     const exRef = db.collection(`orgs/${input.orgId}/exchanges`).doc();
-    writeReturns(tx, input.orgId, input.branchId, returns, actor.uid, exRef.id);
-    const loanIds = writeIssue(tx, input.orgId, input.branchId, member, input.memberId, term, plan, actor.uid, exRef.id);
     const count = Math.min(returns.length, plan.copies.length);
-    const fulfilled = plan.copies.filter((c) => c.reservation).length;
+    writeReturns(tx, input.orgId, input.branchId, returns, actor.uid, exRef.id);
+    const loanIds = writeIssue(tx, input.orgId, input.branchId, member, input.memberId, term, plan, actor.uid, exRef.id, { returning: returns.length, exchanges: count });
     tx.create(exRef, {
       memberId: input.memberId, memberCode: member.code, branchId: input.branchId, subscriptionId: term.snap.id,
       returnedLoanIds: returns.map((r) => r.loan.id), issuedLoanIds: loanIds, count, by: actor.uid, at: FieldValue.serverTimestamp(),
     });
     tx.update(term.snap.ref, { exchangesThisTerm: FieldValue.increment(count) });
-    tx.update(memberSnap.ref, {
-      ...(term.rollover ?? {}),
-      activeLoanCount: FieldValue.increment(plan.copies.length - returns.length),
-      allocatedCount: FieldValue.increment(-fulfilled),
-      lifetimeLoans: FieldValue.increment(plan.copies.length),
-      lifetimeExchanges: FieldValue.increment(count),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'circulation.exchange', entityType: 'member', entityId: input.memberId, branchId: input.branchId, memberId: input.memberId,
       after: { exchangeId: exRef.id, returned: returns.map((r) => r.copy.code), issued: plan.copies.map((c) => c.copy.code) },

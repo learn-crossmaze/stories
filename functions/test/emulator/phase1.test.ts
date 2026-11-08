@@ -24,6 +24,7 @@ import * as plans from '../../src/billing/plans.js';
 import * as subs from '../../src/billing/subscriptions.js';
 import { prorate, quoteValidUntil } from '../../src/billing/upgrade.js';
 import { expireDueSubscriptions } from '../../src/billing/sweep.js';
+import { clearSwitchboardCache } from '../../src/messaging/whatsapp.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
 let sa: TestUser, lib: TestUser, lib2: TestUser, fin: TestUser, fin2: TestUser, bm: TestUser;
@@ -678,6 +679,53 @@ describe('M1.6 reservations and transfers', () => {
     await issue(b, [code]);
     const resB = await db.collection(`orgs/${org}/reservations`).where('memberId', '==', b).get();
     expect(resB.docs[0].get('status')).toBe('FULFILLED');
+  });
+
+  it('new copies go to members already waiting, who are told the book is ready', async () => {
+    await db.doc(`orgs/${org}/config/whatsapp`).set({ branches: { [central]: ['reservation_ready'] } });
+    clearSwitchboardCache();
+    const a = await register('Ava Rao');
+    await subscribe(a);
+    const r = await call<{ reservationId: string; status: string }>(res.place, lib, { orgId: org, memberId: a, bookId, branchId: central });
+    expect(r.status).toBe('WAITING');
+    const [code] = await acquire(bookId, 1);
+    expect(await get(`reservations/${r.reservationId}`)).toMatchObject({ status: 'ALLOCATED', allocatedCopyCode: code });
+    expect(await get(`members/${a}`)).toMatchObject({ allocatedCount: 1, waitingCount: 0 });
+    const copyId = (await db.doc(`orgs/${org}/barcodes/${code}`).get()).get('copyId') as string;
+    expect(await get(`copies/${copyId}`)).toMatchObject({ status: 'RESERVED', activeReservationId: r.reservationId });
+    const ready = await db.collection(`orgs/${org}/whatsappOutbox`).where('event', '==', 'reservation_ready').get();
+    expect(ready.docs.map((d) => d.get('ref.reservationId'))).toEqual([r.reservationId]);
+
+    // A reservation that finds a copy on the shelf is set aside the same way.
+    const b = await register('Ben Das');
+    await subscribe(b);
+    await acquire(bookId, 1);
+    const rb = await call<{ reservationId: string; status: string }>(res.place, lib, { orgId: org, memberId: b, bookId, branchId: central });
+    expect(rb.status).toBe('ALLOCATED');
+    expect(await get(`members/${b}`)).toMatchObject({ allocatedCount: 1, waitingCount: 0 });
+    expect(await get(`reservations/${rb.reservationId}`)).toMatchObject({ status: 'ALLOCATED', memberId: b });
+  });
+
+  it('records inspections, repairs and shelf changes in the audit log', async () => {
+    const [code] = await acquire(bookId, 1);
+    const a = await register('Ava Rao');
+    await subscribe(a);
+    const copyId = (await db.doc(`orgs/${org}/barcodes/${code}`).get()).get('copyId') as string;
+    await issue(a, [code]);
+    await giveBack([code]);
+    await call(copies.inspect, lib, { orgId: org, copyId, outcome: 'DAMAGED', condition: 'POOR', note: 'Torn spine' });
+    await call(copies.repair, lib, { orgId: org, copyId, condition: 'FAIR', note: 'Taped' });
+    await issue(a, [code]);
+    await giveBack([code]);
+    await call(copies.inspect, lib, { orgId: org, copyId, outcome: 'PASS', condition: 'FAIR', note: '' });
+    expect(await get(`copies/${copyId}`)).toMatchObject({ status: 'AVAILABLE', condition: 'FAIR' });
+    const { locationId } = await call<{ locationId: string }>(locations.create, lib, { orgId: org, branchId: central, code: 'KID-1', label: 'Children, bay 1', kind: 'SHELF' });
+    await call(locations.archive, lib, { orgId: org, branchId: central, locationId });
+    const audit = (await db.collection(`orgs/${org}/auditLogs`).get()).docs.map((d) => d.data());
+    expect(audit.find((e) => e.action === 'copy.repair')).toMatchObject({ entityId: copyId, after: { status: 'AVAILABLE', condition: 'FAIR' } });
+    expect(audit.find((e) => e.action === 'copy.inspected')).toMatchObject({ entityId: copyId, after: { status: 'AVAILABLE' } });
+    expect(audit.find((e) => e.action === 'location.create')).toMatchObject({ entityId: locationId, after: { code: 'KID-1' } });
+    expect(audit.find((e) => e.action === 'location.archive')).toMatchObject({ entityId: locationId, after: { status: 'ARCHIVED' } });
   });
 
   it('transfers move location but never ownership; foreign copies are rejected on receipt', async () => {

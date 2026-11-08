@@ -36,7 +36,11 @@ Every transition not drawn is rejected (`functions/src/inventory/copyState.ts`, 
 | `circulation-return` | `loans.return` | Loans → RETURNED; copies → UNDER_INSPECTION at the receiving branch |
 | `circulation-exchange` | `exchanges.process` | Returns + issues in one transaction; exchange count = min(returned, issued) |
 | `circulation-declareLost` | `copies.writeOff` | Loan and copy → LOST, slot freed, **deposit deduction proposed** (D5: replacement price, else copy cost; capped at the balance, remainder recorded as `uncoveredMinor`) |
-| `copies-inspect` | `copies.manage` | UNDER_INSPECTION → AVAILABLE (or straight to the next waiting member) / DAMAGED |
+| `copies-inspect` | `copies.manage` | UNDER_INSPECTION → AVAILABLE (or straight to the next waiting member) / DAMAGED; audited either way (`copy.inspected` / `copy.damaged`) |
+| `copies-repair` | `copies.manage` | DAMAGED → AVAILABLE (or to the next waiting member); audited (`copy.repair`) |
+
+Issuing at the desk, in an exchange and on a home-delivery dispatch all go through `writeIssue`, which also updates
+the member's counters once (books out, holds used, lifetime loans and exchanges, a pending term rollover).
 
 Concurrency: two librarians issuing the same copy — both transactions read the copy; Firestore retries the loser,
 which then sees ISSUED and fails with "not available". Tested.
@@ -48,8 +52,10 @@ which then sees ISSUED and fails with "not available". Tested.
 - **Place** (`reservations.manage`): needs an active term; one open reservation per member per title;
   `waitingCount + allocatedCount < plan limit` (D2). If a copy is on the shelf it is **allocated immediately**
   (copy → RESERVED, held `reservationHoldHours`, default 48 — D3, `orgs/{o}/config/circulation`); otherwise WAITING.
-- **Allocation** happens atomically whenever a copy becomes available at the branch (acquired, passed inspection,
-  repaired, transfer received, hold released): the oldest WAITING reservation for the title gets it.
+- **Allocation** happens atomically whenever a copy becomes available at the branch (acquired or received,
+  passed inspection, repaired, transfer received, hold released): the oldest WAITING reservation for the title gets
+  it. Every path uses the one helper `allocate()` (`circulation/allocation.ts`), so the copy, reservation and member
+  counters always change together and the member is always told the book is ready (`reservation_ready`).
 - **Hold expiry** (`reservations-expireHolds`, every 15 min, idempotent): expired holds pass to the next member
   waiting, else back to the shelf.
 - Two members racing for the last copy: one ALLOCATED, one WAITING (tested).

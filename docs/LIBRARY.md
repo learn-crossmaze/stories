@@ -52,7 +52,10 @@ the catalogue) takes a delivery in one pass, for staff who look after copies at 
   (copies of several titles sharing one counter get consecutive numbers), barcodes, `ACQUIRED` events, and members
   already waiting for a title get the new copies first. An ISBN that turns out to be in the catalogue just gets
   copies; the same title listed twice is one line. Then covers are imported and **Print N labels** opens the label
-  sheet for exactly the new copies.
+  sheet for exactly the new copies. Firestore takes at most 500 writes per transaction: the writes a batch needs
+  (three per copy, about five more per copy handed to a waiting member, plus new titles, authors and publishers) are
+  counted first, and a batch that would go over is refused whole with "Receive it in two or more parts"
+  (`RECEIVE_TOO_LARGE`) instead of failing half-way.
 - `copies-receive` shares its code with `books-bulkCreate` (planning new titles) and `copies-acquire` (planning
   copies), so receiving, "Add by ISBN" and *Add copies* on a book page number and record copies the same way.
 
@@ -80,9 +83,9 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 - **Acquire** (`copies-acquire`, `copies.manage` at the branch): 1–50 copies of an active title. Codes are
   `COPY-<book number>-NN` per organization by default (each branch can set its own pattern, see [NUMBERING.md](NUMBERING.md)); the barcode defaults to the code, or pre-printed barcodes can be scanned in.
   Barcodes are unique per organization via `orgs/{o}/barcodes/{barcode}`. New copies go straight to members waiting
-  for that title at the branch.
+  for that title at the branch, who are told the book is ready (as when any copy comes back to the shelf).
 - **Shelf locations:** `orgs/{o}/branches/{b}/locations` (code, label, kind). Leave the code blank to number it with the
-  branch's shelf pattern.
+  branch's shelf pattern. Creating and archiving a shelf are audited (`location.create` / `location.archive`).
 - **Shelve books** (Collection → *Shelve books*, `/ops/inventory/shelve`, `copies-shelve`, `copies.manage` at the
   branch): lists every copy at the branch that is **available but not on a shelf** (`locationId == null`): new stock
   received without a shelf, and returned books that passed inspection (issuing clears a copy's shelf). Pick the shelf,

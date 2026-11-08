@@ -1,6 +1,6 @@
-import { type DocumentSnapshot, FieldValue, Timestamp, type Transaction } from 'firebase-admin/firestore';
+import { type DocumentSnapshot, FieldValue, type Transaction } from 'firebase-admin/firestore';
 
-import { nextWaiting, readCirculationConfig } from '../circulation/allocation.js';
+import { allocate, ALLOCATION_WRITES, nextWaiting, queued, readCirculationConfig } from '../circulation/allocation.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { branchPatterns, existingCodes, reserveCodeBatch } from '../core/numbering.js';
@@ -83,22 +83,20 @@ export async function planAcquisition(
       });
       // Hand new copies to members already waiting for this title here.
       waiting[i].forEach((res, k) => {
-        const ref = db.doc(`orgs/${orgId}/copies/${copyIds[k]}`);
-        tx.update(res.ref, {
-          status: 'ALLOCATED', allocatedCopyId: ref.id, allocatedCopyCode: codes[k], allocatedAt: FieldValue.serverTimestamp(),
-          holdUntil: Timestamp.fromMillis(Date.now() + holdHours * 3_600_000), updatedAt: FieldValue.serverTimestamp(),
-        });
-        tx.update(db.doc(`orgs/${orgId}/members/${res.get('memberId')}`), {
-          allocatedCount: FieldValue.increment(1),
-          waitingCount: FieldValue.increment(-1),
-        });
-        tx.update(ref, { status: 'RESERVED', activeReservationId: res.id });
-        tx.create(db.collection(`${ref.path}/events`).doc(), {
-          type: 'RESERVATION_ALLOCATED', actorUid: opts.actorUid, fromStatus: 'AVAILABLE', toStatus: 'RESERVED', condition: opts.condition,
-          note: null, ref: { reservationId: res.id, memberId: res.get('memberId') }, at: FieldValue.serverTimestamp(),
-        });
+        allocate(tx, orgId, queued(res), { ref: db.doc(`orgs/${orgId}/copies/${copyIds[k]}`), code: codes[k], condition: opts.condition }, holdHours, opts.actorUid);
       });
     });
   }
-  return { results, allocated: waiting.reduce((n, w) => n + w.length, 0), write };
+  const copies = opts.lines.reduce((n, l) => n + l.quantity, 0);
+  const allocated = waiting.reduce((n, w) => n + w.length, 0);
+  return {
+    results,
+    allocated,
+    /** Documents `write()` writes at most: per copy its barcode, record and first event, per allocation ALLOCATION_WRITES, and the code counters. */
+    writes: copies * COPY_WRITES + allocated * ALLOCATION_WRITES + opts.lines.length,
+    write,
+  };
 }
+
+/** Writes per new copy: barcode index, copy record, ACQUIRED event. */
+export const COPY_WRITES = 3;

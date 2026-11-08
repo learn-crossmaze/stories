@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
+import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
@@ -20,7 +21,7 @@ export const create = command(
     label: z.string().trim().min(2).max(80),
     kind: z.enum(['SHELF', 'DISPLAY', 'DESK', 'BACKROOM']),
   }),
-  async ({ actor, input }, tx) => {
+  async ({ actor, input, requestId }, tx) => {
     await actor.require('copies.manage', input.orgId, input.branchId, tx);
     const branchRef = db.doc(`orgs/${input.orgId}/branches/${input.branchId}`);
     const branch = await tx.get(branchRef);
@@ -42,6 +43,10 @@ export const create = command(
     auto?.commit();
     const ref = col.doc();
     tx.create(ref, { code, label: input.label, kind: input.kind, status: 'ACTIVE', createdAt: FieldValue.serverTimestamp() });
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'location.create', entityType: 'location', entityId: ref.id, branchId: input.branchId,
+      after: { code, label: input.label, kind: input.kind },
+    });
     return { locationId: ref.id, code };
   },
 );
@@ -49,11 +54,16 @@ export const create = command(
 export const archive = command(
   'locations-archive',
   z.strictObject({ orgId: id, branchId: id, locationId: id }),
-  async ({ actor, input }, tx) => {
+  async ({ actor, input, requestId }, tx) => {
     await actor.require('copies.manage', input.orgId, input.branchId, tx);
     const ref = db.doc(`orgs/${input.orgId}/branches/${input.branchId}/locations/${input.locationId}`);
-    if (!(await tx.get(ref)).exists) throw errors.notFound('Location');
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw errors.notFound('Location');
     tx.update(ref, { status: 'ARCHIVED' });
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'location.archive', entityType: 'location', entityId: input.locationId, branchId: input.branchId,
+      before: { code: snap.get('code'), status: snap.get('status') }, after: { status: 'ARCHIVED' },
+    });
     return { locationId: input.locationId };
   },
 );
