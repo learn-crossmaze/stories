@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import * as branches from '../../src/organization/branches.js';
 import * as departments from '../../src/organization/departments.js';
 import { db } from '../../src/core/firebase.js';
+import * as priv from '../../src/hr/employeePrivate.js';
 import * as emp from '../../src/hr/employees.js';
+import * as backfill from '../../src/hr/employeesBackfill.js';
 import * as hrSettings from '../../src/hr/settings.js';
 import * as numbering from '../../src/organization/numbering.js';
 import * as orgs from '../../src/organization/orgs.js';
@@ -110,8 +112,8 @@ describe('employee records', () => {
       orgId: org, orgName: 'Stories Corporate', orgType: 'CORPORATE', uid: northie.uid, email: northie.email, displayName: 'North Person',
       roles: ['EMPLOYEE'], branchIds: [north], status: 'ACTIVE',
     });
-    expect(await failure(call(emp.backfill, bm, { orgId: org }))).toBe('FORBIDDEN');
-    expect(await call(emp.backfill, hr, { orgId: org })).toEqual({ created: 3, linked: 0, remaining: 0 });
+    expect(await failure(call(backfill.backfill, bm, { orgId: org }))).toBe('FORBIDDEN');
+    expect(await call(backfill.backfill, hr, { orgId: org })).toEqual({ created: 3, linked: 0, remaining: 0 });
     const recs = await employees();
     const legacy = recs.find((d) => d.get('uid') === old.uid)!;
     expect(legacy.get('code')).toBe('LEGACY-7');
@@ -122,7 +124,7 @@ describe('employee records', () => {
     expect((await employees()).find((d) => d.get('uid') === northie.uid)!.get('code')).toBe('NTH-E0001');
     expect(fresh.get('branchId')).toBeNull();
     expect((await db.doc(`users/${noCode.uid}/memberships/${org}`).get()).get('employeeId')).toBe(fresh.get('code'));
-    expect(await call(emp.backfill, hr, { orgId: org })).toEqual({ created: 0, linked: 0, remaining: 0 });
+    expect(await call(backfill.backfill, hr, { orgId: org })).toEqual({ created: 0, linked: 0, remaining: 0 });
     expect(await employees()).toHaveLength(6);
   });
 
@@ -218,18 +220,22 @@ describe('lifecycle', () => {
 describe('private and bank details', () => {
   it('keeps the account number out of client reach; revealing it is audited', async () => {
     const { employeeId } = await hire('Divya Nair');
-    await call(emp.setPrivate, hr, { orgId: org, employeeId, pan: 'abcde1234f', dob: '1994-02-03', emergencyName: 'Suresh Nair', emergencyPhone: '9812345678' });
-    expect(await failure(call(emp.setPrivate, hr, { orgId: org, employeeId, pan: 'BAD' }))).toBe('INVALID_INPUT');
-    expect(await failure(call(emp.setPrivate, bm, { orgId: org, employeeId, pan: 'ABCDE1234F' }))).toBe('FORBIDDEN');
-    await call(emp.setBank, fin, { orgId: org, employeeId, accountHolder: 'Divya Nair', accountNumber: '001234567890', ifsc: 'hdfc0001234', bankName: 'HDFC Bank' });
+    await call(priv.setPrivate, hr, { orgId: org, employeeId, pan: 'abcde1234f', dob: '1994-02-03', emergencyName: 'Suresh Nair', emergencyPhone: '9812345678' });
+    expect(await failure(call(priv.setPrivate, hr, { orgId: org, employeeId, pan: 'BAD' }))).toBe('INVALID_INPUT');
+    expect(await failure(call(priv.setPrivate, bm, { orgId: org, employeeId, pan: 'ABCDE1234F' }))).toBe('FORBIDDEN');
+    await call(priv.setBank, fin, { orgId: org, employeeId, accountHolder: 'Divya Nair', accountNumber: '001234567890', ifsc: 'hdfc0001234', bankName: 'HDFC Bank' });
     const profile = (await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).data()!;
     expect(profile).toMatchObject({ pan: 'ABCDE1234F', dob: '1994-02-03', bank: { last4: '7890', ifsc: 'HDFC0001234' } });
     expect(JSON.stringify(profile)).not.toContain('001234567890');
 
-    expect(await failure(call(emp.revealBank, bm, { orgId: org, employeeId }))).toBe('FORBIDDEN');
-    expect(await call(emp.revealBank, hr, { orgId: org, employeeId })).toEqual({ accountNumber: '001234567890' });
+    expect(await failure(call(priv.revealBank, bm, { orgId: org, employeeId }, null))).toBe('FORBIDDEN');
+    expect(await call(priv.revealBank, hr, { orgId: org, employeeId }, null)).toEqual({ accountNumber: '001234567890' });
     const log = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'employee.revealBank').get();
     expect(log.docs.map((d) => d.get('actorUid'))).toEqual([hr.uid]);
+    // Revealing is a read: nothing keeps the number for replays (which would skip the checks and the audit).
+    const kept = await db.collection('idempotency').get();
+    expect(JSON.stringify(kept.docs.map((d) => d.data()))).not.toContain('001234567890');
+    expect(await failure(call(priv.revealBank, hr, { orgId: org, employeeId }))).toBe('INVALID_INPUT');
   });
 });
 
@@ -243,8 +249,8 @@ describe('self-onboarding', () => {
     expect(linked).toBe(true);
     await move(employeeId, 'START_ONBOARDING');
 
-    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details });
-    await call(emp.setBank, newcomer, { orgId: org, employeeId, ...bank });
+    await call(priv.setPrivate, newcomer, { orgId: org, employeeId, ...details });
+    await call(priv.setBank, newcomer, { orgId: org, employeeId, ...bank });
     const profile = (await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).data()!;
     expect(profile).toMatchObject({ pan: 'ABCDE1234F', gender: 'FEMALE', emergencyName: 'Suresh Nair', bank: { last4: '7890' } });
     const done = ((await employee(employeeId)).onboarding as { key: string; done: boolean; doneBy: string }[]).filter((i) => i.done);
@@ -252,20 +258,20 @@ describe('self-onboarding', () => {
     expect(done[0].doneBy).toBe(newcomer.email);
 
     // Aadhaar: only the last four digits are readable; the employee and HR can see the full number (audited).
-    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details, aadhaar: '2341 2341 2346' });
+    await call(priv.setPrivate, newcomer, { orgId: org, employeeId, ...details, aadhaar: '2341 2341 2346' });
     const withAadhaar = (await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).data()!;
     expect(withAadhaar.aadhaarLast4).toBe('2346');
     expect(JSON.stringify(withAadhaar)).not.toContain('234123412346');
-    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details });
+    await call(priv.setPrivate, newcomer, { orgId: org, employeeId, ...details });
     expect((await db.doc(`orgs/${org}/employees/${employeeId}/private/profile`).get()).get('aadhaarLast4')).toBe('2346');
-    expect(await call(emp.revealAadhaar, newcomer, { orgId: org, employeeId })).toEqual({ aadhaar: '234123412346' });
-    expect(await call(emp.revealAadhaar, hr, { orgId: org, employeeId })).toEqual({ aadhaar: '234123412346' });
-    expect(await failure(call(emp.revealAadhaar, bm, { orgId: org, employeeId }))).toBe('FORBIDDEN');
-    expect(await failure(call(emp.setPrivate, newcomer, { orgId: org, employeeId, aadhaar: '123412341234' }))).toBe('INVALID_INPUT');
+    expect(await call(priv.revealAadhaar, newcomer, { orgId: org, employeeId }, null)).toEqual({ aadhaar: '234123412346' });
+    expect(await call(priv.revealAadhaar, hr, { orgId: org, employeeId }, null)).toEqual({ aadhaar: '234123412346' });
+    expect(await failure(call(priv.revealAadhaar, bm, { orgId: org, employeeId }, null))).toBe('FORBIDDEN');
+    expect(await failure(call(priv.setPrivate, newcomer, { orgId: org, employeeId, aadhaar: '123412341234' }))).toBe('INVALID_INPUT');
 
     // A second bank change goes through HR; HR can still change it.
-    expect(await failure(call(emp.setBank, newcomer, { orgId: org, employeeId, ...bank, accountNumber: '999999999999' }))).toBe('BANK_ON_FILE');
-    await call(emp.setBank, fin, { orgId: org, employeeId, ...bank, accountNumber: '111122223333' });
+    expect(await failure(call(priv.setBank, newcomer, { orgId: org, employeeId, ...bank, accountNumber: '999999999999' }))).toBe('BANK_ON_FILE');
+    await call(priv.setBank, fin, { orgId: org, employeeId, ...bank, accountNumber: '111122223333' });
     const audit = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'employee.setBank').get();
     expect(audit.docs.map((d) => d.get('after.self')).sort()).toEqual([false, true]);
   });
@@ -274,9 +280,9 @@ describe('self-onboarding', () => {
     const newcomer = await createUser('divya@stories.test');
     const { employeeId } = await hire('Divya Nair', { email: newcomer.email });
     const { employeeId: other } = await hire('Someone Else');
-    expect(await failure(call(emp.setPrivate, newcomer, { orgId: org, employeeId: other, ...details }))).toBe('FORBIDDEN');
-    expect(await failure(call(emp.setBank, newcomer, { orgId: org, employeeId: other, ...bank }))).toBe('FORBIDDEN');
-    await call(emp.setPrivate, newcomer, { orgId: org, employeeId, ...details });
+    expect(await failure(call(priv.setPrivate, newcomer, { orgId: org, employeeId: other, ...details }))).toBe('FORBIDDEN');
+    expect(await failure(call(priv.setBank, newcomer, { orgId: org, employeeId: other, ...bank }))).toBe('FORBIDDEN');
+    await call(priv.setPrivate, newcomer, { orgId: org, employeeId, ...details });
 
     await call(hrSettings.setSelfOnboarding, hr, { orgId: org, requiredFields: ['dob', 'pan', 'bank'] });
     expect((await db.doc(`orgs/${org}/config/hr`).get()).get('selfOnboardingFields')).toEqual(['dob', 'pan', 'bank']);
@@ -294,7 +300,7 @@ describe('profile pictures', () => {
     const { employeeId } = await hire('Divya Nair', { email: newcomer.email });
     await move(employeeId, 'START_ONBOARDING');
 
-    const first = await call<{ photoUrl: string }>(emp.setPhoto, newcomer, { orgId: org, employeeId, image: jpeg });
+    const first = await call<{ photoUrl: string }>(priv.setPhoto, newcomer, { orgId: org, employeeId, image: jpeg });
     const rec = await employee(employeeId);
     expect(rec.photoUrl).toBe(first.photoUrl);
     expect(rec.photoPath).toMatch(new RegExp(`^employee-photos/${org}/${employeeId}/`));
@@ -302,13 +308,13 @@ describe('profile pictures', () => {
     const [exists] = await bucket().file(rec.photoPath).exists();
     expect(exists).toBe(true);
 
-    await call(emp.setPhoto, hr, { orgId: org, employeeId, image: jpeg });
+    await call(priv.setPhoto, hr, { orgId: org, employeeId, image: jpeg });
     const replaced = await employee(employeeId);
     expect(replaced.photoPath).not.toBe(rec.photoPath);
     await new Promise((r) => setTimeout(r, 300));
     expect((await bucket().file(rec.photoPath).exists())[0]).toBe(false);
 
-    await call(emp.setPhoto, hr, { orgId: org, employeeId, image: null });
+    await call(priv.setPhoto, hr, { orgId: org, employeeId, image: null });
     expect(await employee(employeeId)).toMatchObject({ photoUrl: null, photoPath: null });
   });
 
@@ -316,8 +322,8 @@ describe('profile pictures', () => {
     const newcomer = await createUser('divya@stories.test');
     const { employeeId } = await hire('Divya Nair', { email: newcomer.email });
     const { employeeId: other } = await hire('Someone Else');
-    expect(await failure(call(emp.setPhoto, newcomer, { orgId: org, employeeId: other, image: jpeg }))).toBe('FORBIDDEN');
-    expect(await failure(call(emp.setPhoto, bm, { orgId: org, employeeId, image: jpeg }))).toBe('FORBIDDEN');
-    expect(await failure(call(emp.setPhoto, newcomer, { orgId: org, employeeId, image: Buffer.from('%PDF-1.4 hello').toString('base64') }))).toBe('INVALID_INPUT');
+    expect(await failure(call(priv.setPhoto, newcomer, { orgId: org, employeeId: other, image: jpeg }))).toBe('FORBIDDEN');
+    expect(await failure(call(priv.setPhoto, bm, { orgId: org, employeeId, image: jpeg }))).toBe('FORBIDDEN');
+    expect(await failure(call(priv.setPhoto, newcomer, { orgId: org, employeeId, image: Buffer.from('%PDF-1.4 hello').toString('base64') }))).toBe('INVALID_INPUT');
   });
 });

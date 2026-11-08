@@ -8,10 +8,11 @@ import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { LINKS, notify } from '../core/notify.js';
 import { db, REGION } from '../core/firebase.js';
-import type { Actor } from '../core/rbac.js';
 import { id, name, reason } from '../core/schemas.js';
-import { dayContext, ensureWorking, lockRef, ms, ownEmployee, recordFor, recordRef } from './attendance.js';
-import { businessDate, datesOfMonth, type DayLeave, monthOf, type Weekday } from './attendanceRules.js';
+import { inChunks, JOB_OPTIONS, sweep } from '../core/sweep.js';
+import { dayContext, ensureWorking, isClosed, lockRef, ms, ownEmployee, recordFor, recordRef } from './attendance.js';
+import { businessDate, datesOfMonth, type DayLeave, monthOf } from './attendanceRules.js';
+import { auditCtx, date, holidayApplies, month, WORKING, weeklyOffsOf, year } from './common.js';
 import { DEFAULT_LEAVE_TYPES, days2, type LeaveType, leaveDays, monthlyCredit, yearlyCredit } from './leaveRules.js';
 import { canFor, employeesCol, loadEmployee, requireFor } from './model.js';
 
@@ -22,15 +23,12 @@ import { canFor, employeesCol, loadEmployee, requireFor } from './model.js';
  * pending days per type) backed by an append-only ledger
  * (orgs/{o}/leaveLedger). Requests (orgs/{o}/leaveRequests) reserve days while
  * pending; approval uses them and marks the days on attendance, cancelling
- * gives them back.
+ * gives them back. Days carried into a new year leave the old year's balance
+ * (`carriedOut`), so they can be spent only once.
  */
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
-const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be a month (YYYY-MM)');
-const year = z.string().regex(/^\d{4}$/, 'must be a year');
 const note = z.string().trim().max(500).default('');
 
-const auditCtx = (actor: Actor, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 const typeRef = (orgId: string, typeId: string) => db.doc(`orgs/${orgId}/leaveTypes/${typeId}`);
 export const balanceRef = (orgId: string, employeeId: string, y: string) => db.doc(`orgs/${orgId}/leaveBalances/${employeeId}_${y}`);
 const ledgerRef = (orgId: string, entryId: string) => db.doc(`orgs/${orgId}/leaveLedger/${entryId}`);
@@ -38,7 +36,6 @@ const requestsCol = (orgId: string) => db.collection(`orgs/${orgId}/leaveRequest
 
 /** Longest request, in calendar days (a request touches each of its days on approval). */
 const MAX_SPAN = 45;
-const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
 const span_ = (from: string, to: string) => (from === to ? from : `${from} – ${to}`);
 
 /** The org's leave types: defaults, overridden or added to by its own. */
@@ -69,15 +66,15 @@ const balanceBase = (orgId: string, employee: DocumentSnapshot, y: string) => ({
 });
 
 /** Adds to a type's numbers in a balance (created on first use). */
-function bump(tx: Transaction, orgId: string, employee: DocumentSnapshot, y: string, typeId: string, delta: Partial<Record<'credited' | 'adjusted' | 'used' | 'pending', number>>) {
+function bump(tx: Transaction, orgId: string, employee: DocumentSnapshot, y: string, typeId: string, delta: Partial<Record<'credited' | 'adjusted' | 'used' | 'pending' | 'carriedOut', number>>) {
   const inc = Object.fromEntries(Object.entries(delta).map(([k, v]) => [k, FieldValue.increment(v)]));
   tx.set(balanceRef(orgId, employee.id, y), { ...balanceBase(orgId, employee, y), types: { [typeId]: inc } }, { merge: true });
 }
 
-/** Days available of a type: credited + adjusted − used − pending. */
+/** Days available of a type: credited + adjusted − used − pending − carried into the next year. */
 export function available(balance: DocumentSnapshot, typeId: string): number {
   const t = (balance.get(`types.${typeId}`) as Record<string, number> | undefined) ?? {};
-  return days2((t.credited ?? 0) + (t.adjusted ?? 0) - (t.used ?? 0) - (t.pending ?? 0));
+  return days2((t.credited ?? 0) + (t.adjusted ?? 0) - (t.used ?? 0) - (t.pending ?? 0) - (t.carriedOut ?? 0));
 }
 
 function ledger(tx: Transaction, entryId: string, orgId: string, employee: DocumentSnapshot, entry: { year: string; typeId: string; kind: string; days: number; by: string; note?: string | null; requestId?: string | null; period?: string | null }) {
@@ -177,7 +174,12 @@ export const adjust = command(
   },
 );
 
-/** The credits due to one employee for a month (idempotent: ledger ids are fixed per period). */
+/**
+ * The credits due to one employee for a month (idempotent: ledger ids are
+ * fixed per period). Someone still joining without a joining date gets
+ * nothing yet: a yearly credit is worked out from the joining date, and its
+ * ledger entry is written once.
+ */
 async function accrueEmployee(orgId: string, employeeId: string, m: string, types: Record<string, LeaveType>): Promise<number> {
   const y = m.slice(0, 4);
   const prevYear = String(Number(y) - 1);
@@ -185,6 +187,7 @@ async function accrueEmployee(orgId: string, employeeId: string, m: string, type
     const employee = await tx.get(db.doc(`orgs/${orgId}/employees/${employeeId}`));
     if (!employee.exists) return 0;
     const joined = (employee.get('joiningDate') as string | null) ?? null;
+    if (!joined && employee.get('status') === 'ONBOARDING') return 0;
     const due: { entryId: string; typeId: string; kind: string; period: string; days: (prev: DocumentSnapshot) => number }[] = [];
     for (const [typeId, t] of Object.entries(types)) {
       if (t.status !== 'ACTIVE' || t.unlimited || t.accrual === 'MANUAL') continue;
@@ -202,26 +205,46 @@ async function accrueEmployee(orgId: string, employeeId: string, m: string, type
       // A zero entry still marks the period done, so a later run doesn't recompute it.
       ledger(tx, d.entryId, orgId, employee, { year: y, typeId: d.typeId, kind: d.kind, days, by: 'system', period: d.period });
       if (days) bump(tx, orgId, employee, y, d.typeId, { credited: days });
+      if (days && d.kind === 'CARRY') {
+        // The carried days leave last year's balance, so a backdated request there can't spend them again.
+        ledger(tx, `${employeeId}_${d.typeId}_${prevYear}_carryout`, orgId, employee, { year: prevYear, typeId: d.typeId, kind: 'CARRY_OUT', days: -days, by: 'system', period: y });
+        bump(tx, orgId, employee, prevYear, d.typeId, { carriedOut: days });
+      }
       credited += days;
     });
     return credited;
   });
 }
 
-/** Credits leave for a month to everyone employed that month; returns employees credited. */
-export async function accrueMonth(orgId: string, m: string): Promise<{ employees: number; days: number }> {
+/** Employees accrued at the same time within one organization. */
+const ACCRUAL_CONCURRENCY = 8;
+
+/**
+ * Credits leave for a month to everyone employed that month. One employee's
+ * failure is logged and skipped (the next run retries it). Returns employees
+ * credited, days credited and employees that failed.
+ */
+export async function accrueMonth(orgId: string, m: string): Promise<{ employees: number; days: number; failed: number }> {
   const [types, staff] = await Promise.all([leaveTypes(orgId), employeesCol(orgId).where('status', 'in', WORKING).get()]);
   const last = datesOfMonth(m).at(-1)!;
+  const due = staff.docs.filter((e) => {
+    const joined = (e.get('joiningDate') as string | null) ?? null;
+    return !joined || joined <= last;
+  });
   let employees = 0;
   let days = 0;
-  for (const e of staff.docs) {
-    const joined = (e.get('joiningDate') as string | null) ?? null;
-    if (joined && joined > last) continue;
-    const credited = await accrueEmployee(orgId, e.id, m, types);
-    if (credited) employees += 1;
-    days += credited;
-  }
-  return { employees, days: days2(days) };
+  let failed = 0;
+  await inChunks(due, ACCRUAL_CONCURRENCY, async (e) => {
+    try {
+      const credited = await accrueEmployee(orgId, e.id, m, types);
+      if (credited) employees += 1;
+      days += credited;
+    } catch (err) {
+      failed += 1;
+      logger.error(`leave accrual: ${e.ref.path} failed`, { job: 'leave-accrual', orgId, employeeId: e.id, month: m, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+  return { employees, days: days2(days), failed };
 }
 
 /** HR runs accrual for a month by hand (a past month, or after adding staff); safe to repeat. */
@@ -233,18 +256,33 @@ export const accrue = query('leave-accrue', z.strictObject({ orgId: id, month })
   return result;
 });
 
-/** Daily: credits the current month (and year) to every organization's staff; new joiners are picked up the next day. */
-export async function accrueAll(now = Date.now()): Promise<number> {
+/**
+ * Daily: credits the current month (and year) to the staff of every active
+ * organization; new joiners are picked up the next day. Organizations are
+ * swept a couple at a time; one that fails is logged and retried the next day.
+ */
+export async function accrueAll(now = Date.now()): Promise<{ orgs: number; employees: number; days: number; failedEmployees: number; failedOrgs: number }> {
   const m = monthOf(businessDate(now));
-  const orgs = await db.collection('orgs').get();
-  let n = 0;
-  for (const o of orgs.docs) n += (await accrueMonth(o.id, m)).employees;
-  return n;
+  const total = { employees: 0, days: 0, failedEmployees: 0 };
+  const swept = await sweep(
+    'leave-accrual',
+    db.collection('orgs').where('status', '==', 'ACTIVE'),
+    async (org) => {
+      const r = await accrueMonth(org.id, m);
+      total.employees += r.employees;
+      total.days += r.days;
+      total.failedEmployees += r.failed;
+      return r.employees > 0;
+    },
+    { concurrency: 2 },
+  );
+  const summary = { month: m, orgs: swept.processed, ...total, days: days2(total.days), failedOrgs: swept.failed };
+  (summary.failedEmployees || summary.failedOrgs ? logger.warn : logger.info)(`leave-accrual: credited ${summary.employees} employees in ${summary.orgs} organizations`, { job: 'leave-accrual', ...summary });
+  return summary;
 }
 
-export const accrueSweep = onSchedule({ schedule: 'every day 00:45', timeZone: 'Asia/Kolkata', region: REGION }, async () => {
-  const n = await accrueAll();
-  logger.info(`Credited leave to ${n} employees`);
+export const accrueSweep = onSchedule({ schedule: 'every day 00:45', timeZone: 'Asia/Kolkata', region: REGION, ...JOB_OPTIONS }, async () => {
+  await accrueAll();
 });
 
 // ---------------------------------------------------------------- requests
@@ -252,20 +290,14 @@ export const accrueSweep = onSchedule({ schedule: 'every day 00:45', timeZone: '
 /** Holidays that apply to an employee's branch between two dates (reads only). */
 async function holidaysBetween(tx: Transaction, orgId: string, branchId: string | null, from: string, to: string): Promise<Set<string>> {
   const snap = await tx.get(db.collection(`orgs/${orgId}/holidays`).where('date', '>=', from).where('date', '<=', to));
-  return new Set(
-    snap.docs
-      .filter((h) => {
-        const b = (h.get('branchIds') as string[] | undefined) ?? [];
-        return b.length === 0 || (!!branchId && b.includes(branchId));
-      })
-      .map((h) => h.id),
-  );
+  return new Set(snap.docs.filter((h) => holidayApplies(h.get('branchIds') as string[] | undefined, branchId)).map((h) => h.id));
 }
 
+/** Refuses dates in a month that is finalized (or being finalized). */
 async function ensureOpen(tx: Transaction, orgId: string, branchId: string | null, dates: string[]) {
   const months = [...new Set(dates.map(monthOf))];
   const locks = await Promise.all(months.map((mm) => tx.get(lockRef(orgId, mm, branchId))));
-  const shut = locks.find((l) => l.exists && l.get('status') === 'FINALIZED');
+  const shut = locks.find(isClosed);
   if (shut) throw errors.conflict('MONTH_FINALIZED', `Attendance for ${shut.get('month')} is finalized. Ask HR to reopen it.`);
 }
 
@@ -302,8 +334,7 @@ export const apply = command(
       tx.get(balanceRef(input.orgId, employee.id, y)),
       tx.get(requestsCol(input.orgId).where('employeeId', '==', employee.id).where('year', '==', y)),
     ]);
-    const offs = ((employee.get('weeklyOffs') as Weekday[] | null | undefined) ?? (branch?.get('weeklyOffs') as Weekday[] | undefined) ?? []) as Weekday[];
-    const { dates, days } = leaveDays(input.from, input.to, offs, holidays, input.halfDay !== 'NONE');
+    const { dates, days } = leaveDays(input.from, input.to, weeklyOffsOf(employee, branch), holidays, input.halfDay !== 'NONE');
     if (!days) throw errors.invalid('Those dates are all weekly offs or holidays.');
     const clash = mine.docs.find((r) => ['PENDING', 'APPROVED'].includes(r.get('status')) && (r.get('dates') as string[]).some((d) => dates.includes(d)));
     if (clash) throw errors.conflict('OVERLAPS', `Leave from ${clash.get('from')} to ${clash.get('to')} already covers some of these dates.`);

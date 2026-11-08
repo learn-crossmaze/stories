@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
-import { command } from '../../data/api';
+import { call, command } from '../../data/api';
 import { type ChecklistItem, type Employee, type PrivateProfile } from '../../data/hr';
 import { listStaff, type Org } from '../../data/org';
 import { useAsync } from '../../shared/useAsync';
@@ -108,7 +108,7 @@ export function BankPanel({
   const [editing, setEditing] = useState(false);
   const [full, setFull] = useState<string | null>(null);
   const reveal = useSubmit(async () => {
-    const res = await command<{ accountNumber: string }>('employees-revealBank', { orgId, employeeId: employee.id });
+    const res = await call<{ accountNumber: string }>('employees-revealBank', { orgId, employeeId: employee.id });
     setFull(res.accountNumber);
   });
   const bank = profile.bank;

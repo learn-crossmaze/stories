@@ -50,7 +50,7 @@ export function PayrollPage() {
   const status = run?.status ?? 'NONE';
   const canRun = perm('payroll.run');
   const canApprove = perm('payroll.approve');
-  const ownRun = !!run && (run.preparedBy === user?.uid || run.submittedBy === user?.uid);
+  const ownRun = !!run && (run.preparedBy === user?.uid || run.submittedBy === user?.uid || (!!user && !!run.contributors?.includes(user.uid)));
   const editable = status === 'NONE' || status === 'DRAFT';
   const whereLabel = choices.find((c) => c.value === where)?.label ?? '';
   const act = async (fn: () => Promise<string | null>) => {

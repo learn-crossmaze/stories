@@ -11,10 +11,12 @@ import { LINKS, notify } from '../core/notify.js';
 import type { Actor } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
 import { dateKeyIST } from '../core/time.js';
+import { auditCtx, date } from './common.js';
 import { ROLES, type Permission, type Role } from '../generated/rbac.js';
 import { letterPdf } from './letterPdf.js';
 import { fill, fillBody, type LetterInputs, type LetterKind, type LetterTemplate, placeholderValues, requireValues, resolveTemplate } from './letterTemplates.js';
 import { EMPLOYMENT_TYPES, canFor, employeesCol, loadEmployee } from './model.js';
+import { deleteFile, type Staged, stagedCommand, storeNew } from './staged.js';
 
 /**
  * Letters to employees (docs/HRMS.md §12–13): offer letters, appointment
@@ -37,8 +39,6 @@ const PREFIX: Record<LetterKind, string> = { OFFER: 'OL', APPOINTMENT: 'AL', CUS
 const OFFERABLE = ['DRAFT', 'ONBOARDING', 'ACTIVE'];
 
 const offersCol = (orgId: string) => db.collection(`orgs/${orgId}/offerLetters`);
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
-const auditCtx = (actor: Actor, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 const kindOf = (letter: DocumentSnapshot) => ((letter.get('kind') as LetterKind | undefined) ?? 'OFFER');
 const permissionFor = (kind: LetterKind): Permission => (kind === 'OFFER' ? 'offers.release' : 'letters.issue');
 
@@ -176,27 +176,48 @@ async function previewPdf(actor: Actor, kind: LetterKind, input: OfferTerms | Le
   return { fileName: `${PREFIX[kind].toLowerCase()}-${p.employee.get('code')}-preview.pdf`, contentType: 'application/pdf', content: Buffer.from(pdf).toString('base64') };
 }
 
-/**
- * Issues a letter: numbers it, generates the PDF, files it in the employee's
- * documents (verified), replaces the earlier letter of the same kind (and
- * template, for custom letters), and tells the employee.
- */
-async function issue(tx: Transaction, actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput, requestId?: string) {
+/** Everything the letter says, numbered after the earlier letters of its kind (reads only). */
+async function compose(tx: Transaction, actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput) {
   const p = await prepare(tx, actor, kind, input);
-  const { employee, template, inputs, today } = p;
   const earlier = await tx.get(offersCol(input.orgId).where('employeeId', '==', input.employeeId));
-  const sameKind = earlier.docs.filter((d) => kindOf(d) === kind && (kind !== 'CUSTOM' || d.get('templateId') === template.id));
-  const number = `${PREFIX[kind]}/${employee.get('code')}/${today.slice(0, 4)}/${sameKind.length + 1}`;
-  const content = render(p, number);
-  const pdf = Buffer.from(await letterPdf(content, { orgName: p.ctx.orgName, branchLines: p.ctx.branchLines, preview: false }));
+  const sameKind = earlier.docs.filter((d) => kindOf(d) === kind && (kind !== 'CUSTOM' || d.get('templateId') === p.template.id));
+  const number = `${PREFIX[kind]}/${p.employee.get('code')}/${p.today.slice(0, 4)}/${sameKind.length + 1}`;
+  return { ...p, sameKind, number, content: render(p, number) };
+}
+
+interface StagedLetter {
+  /** Id of the new letter and of its document (fresh, so never an existing record). */
+  id: string;
+  /** The content the PDF was generated from. */
+  content: string;
+  size: number;
+  storagePath: string;
+  storageBucket: string;
+}
+
+/** Before the transaction: checks, generates the PDF and stores it under a new random id. */
+async function stageLetter(actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput): Promise<Staged<StagedLetter>> {
+  const c = await db.runTransaction((tx) => compose(tx, actor, kind, input), { readOnly: true });
+  const pdf = Buffer.from(await letterPdf(c.content, { orgName: c.ctx.orgName, branchLines: c.ctx.branchLines, preview: false }));
+  const letterId = offersCol(input.orgId).doc().id;
+  const file = await storeNew(`hr/${input.orgId}/${input.employeeId}/${letterId}.pdf`, pdf, 'application/pdf');
+  return { value: { id: letterId, content: JSON.stringify(c.content), size: pdf.length, storagePath: file.name, storageBucket: file.bucket.name }, discard: () => deleteFile(file) };
+}
+
+/**
+ * Issues a letter: numbers it, files the PDF (generated and stored before the
+ * transaction, see stageLetter) in the employee's documents (verified),
+ * replaces the earlier letter of the same kind (and template, for custom
+ * letters), and tells the employee.
+ */
+async function issue(tx: Transaction, actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput, staged: StagedLetter, requestId?: string) {
+  const c = await compose(tx, actor, kind, input);
+  const { employee, template, inputs, today, sameKind, number, content } = c;
+  if (JSON.stringify(content) !== staged.content) throw errors.conflict('LETTER_CHANGED', 'Something this letter depends on changed while it was being prepared. Please try again.');
   const docType = kind === 'CUSTOM' ? { id: `letter-${template.id}`, name: template.name } : DOCUMENT_TYPES[kind];
 
-  // One letter and one file per request (a retried request overwrites the same file).
-  const letterRef = offersCol(input.orgId).doc(requestId ?? offersCol(input.orgId).doc().id);
-  const docRef = db.collection(`orgs/${input.orgId}/employees/${input.employeeId}/documents`).doc(letterRef.id);
-  const storagePath = `hr/${input.orgId}/${input.employeeId}/${docRef.id}.pdf`;
-  const b = bucket();
-  await b.file(storagePath).save(pdf, { resumable: false, contentType: 'application/pdf', metadata: { cacheControl: 'private, no-store' } });
+  const letterRef = offersCol(input.orgId).doc(staged.id);
+  const docRef = db.collection(`orgs/${input.orgId}/employees/${input.employeeId}/documents`).doc(staged.id);
 
   const copies = {
     orgId: input.orgId,
@@ -211,16 +232,16 @@ async function issue(tx: Transaction, actor: Actor, kind: LetterKind, input: Off
     tx.update(old.ref, { status: 'SUPERSEDED', supersededBy: letterRef.id, updatedAt: FieldValue.serverTimestamp() });
     tx.update(db.doc(`orgs/${input.orgId}/employees/${input.employeeId}/documents/${old.get('documentId')}`), { status: 'SUPERSEDED', supersededBy: docRef.id, updatedAt: FieldValue.serverTimestamp() });
   }
-  tx.set(docRef, {
+  tx.create(docRef, {
     ...copies,
     typeId: docType.id,
     typeName: docType.name,
     category: 'CONTRACT',
     fileName: `${docType.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${employee.get('code')}-${sameKind.length + 1}.pdf`,
     contentType: 'application/pdf',
-    size: pdf.length,
-    storagePath,
-    storageBucket: b.name,
+    size: staged.size,
+    storagePath: staged.storagePath,
+    storageBucket: staged.storageBucket,
     number,
     issuedOn: today,
     expiresOn: null,
@@ -236,7 +257,7 @@ async function issue(tx: Transaction, actor: Actor, kind: LetterKind, input: Off
     uploadedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
-  tx.set(letterRef, {
+  tx.create(letterRef, {
     ...copies,
     kind,
     templateId: template.id,
@@ -254,9 +275,9 @@ async function issue(tx: Transaction, actor: Actor, kind: LetterKind, input: Off
     acceptBy: inputs.acceptBy || null,
     reportingTo: inputs.reportingTo || null,
     terms: inputs.terms ?? '',
-    workLocation: p.ctx.workLocation,
-    signatoryName: p.ctx.signatoryName,
-    signatoryTitle: p.ctx.signatoryTitle,
+    workLocation: c.ctx.workLocation,
+    signatoryName: c.ctx.signatoryName,
+    signatoryTitle: c.ctx.signatoryTitle,
     status: 'RELEASED',
     documentId: docRef.id,
     releasedBy: actor.uid,
@@ -292,13 +313,13 @@ async function issue(tx: Transaction, actor: Actor, kind: LetterKind, input: Off
 export const preview = query('offers-preview', offerTerms, ({ actor, input }) => previewPdf(actor, 'OFFER', input));
 
 /** Releases an offer letter, worded by the offer template in force at the employee's branch. */
-export const release = command('offers-release', offerTerms, ({ actor, input, requestId }, tx) => issue(tx, actor, 'OFFER', input, requestId));
+export const release = stagedCommand('offers-release', offerTerms, ({ actor, input }) => stageLetter(actor, 'OFFER', input), ({ actor, input, requestId }, tx, staged) => issue(tx, actor, 'OFFER', input, staged, requestId));
 
 /** Another letter (appointment or custom) as it would be issued, marked PREVIEW. */
 export const previewLetter = query('letters-preview', letterInput, ({ actor, input }) => previewPdf(actor, input.kind, input));
 
 /** Issues an appointment letter or a custom letter. */
-export const issueLetter = command('letters-issue', letterInput, ({ actor, input, requestId }, tx) => issue(tx, actor, input.kind, input, requestId));
+export const issueLetter = stagedCommand('letters-issue', letterInput, ({ actor, input }) => stageLetter(actor, input.kind, input), ({ actor, input, requestId }, tx, staged) => issue(tx, actor, input.kind, input, staged, requestId));
 
 /** Withdraws a released letter: it leaves the employee's documents (kept for the record). */
 export const withdraw = command('offers-withdraw', z.strictObject({ orgId: id, offerId: id, reason }), async ({ actor, input, requestId }, tx) => {

@@ -28,6 +28,11 @@ audited.
 | `…/employees/{e}/private/profile` | date of birth, gender, blood group, personal contact, addresses, emergency contact, PAN, `aadhaarLast4`, UAN, ESI number, `bank` (masked: holder, bank, IFSC, last 4 digits) | `employees.privateData` at the branch; the employee |
 | `…/employees/{e}/private/aadhaar` | the full Aadhaar number (12 digits, Verhoeff-checked) | nobody (functions only; `employees-revealAadhaar` shows it to HR with `employees.privateData` or to the employee, and is audited) |
 | `…/employees/{e}/private/bank` | full account number, IFSC, holder, bank | nobody (functions only; `employees-revealBank` is audited) |
+
+Both reveals are queries, not commands: a command's result is kept for 30 days to answer retries, which would keep
+the full number and hand it back without the permission check or the audit entry. Each reveal is checked and
+audited (`recordAuditNow`) every time. Code: `functions/src/hr/employees.ts` (records and lifecycle),
+`employeePrivate.ts` (personal details, bank, Aadhaar, photo), `employeesBackfill.ts` (§3).
 | `orgs/{o}/designations/{d}` | `name`, `nameLower`, `status` | anyone in the org |
 | `orgs/{o}/config/hr` | `onboarding[]`, `offboarding[]` checklist templates (`key`, `label`, `required`) | anyone in the org |
 | `orgs/{o}/employeeIds/{code}` | `{uid, employeeDocId}`, which keeps employee IDs unique | nobody (functions only) |
@@ -138,6 +143,9 @@ expiry dates. HR changes or adds types under **Settings → Document types**.
 
 - **Upload** (`documents-upload`): the file is a PDF, JPEG or PNG of 5 MB at most. The server checks the file's
   real type from its first bytes, not its name.
+  - The server picks the document id: the file is stored under a new random id before the transaction (never over
+    an existing file), and the record is created with that id (never over an existing record). If the record is
+    not created, the file is deleted. A retried request returns the first result without storing anything.
   - A verifier uploading for someone else: the document is **verified** at once.
   - An employee uploading a self-upload type, or HR staff uploading about themselves: it is **awaiting
     verification**.
@@ -149,8 +157,8 @@ expiry dates. HR changes or adds types under **Settings → Document types**.
   `employee.document.open` audit entry. There are no signed URLs, so no extra Google Cloud permission is needed.
 - **Remove** (`documents-remove`): HR can remove any document; employees can withdraw their own upload while it
   is pending or rejected. The record and file are kept.
-- **Expiry:** the daily job `scheduled-expireDocuments` (00:30 IST) marks verified documents past their expiry
-  date as **expired**. The Documents page and the dashboard list documents expiring within each type's reminder
+- **Expiry:** the daily job `scheduled-expireDocuments` (00:30 IST, a failure-isolated sweep: a document that
+  fails is logged and retried the next day) marks verified documents past their expiry date as **expired**. The Documents page and the dashboard list documents expiring within each type's reminder
   window, and those that have expired.
 
 **Screens**
@@ -174,7 +182,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 | `orgs/{o}/attendance/{employeeId}_{date}` | `checkIn`, `checkOut` (server times), `status` (PRESENT, HALF_DAY, ABSENT, WEEKLY_OFF, HOLIDAY, ON_LEAVE; IN_PROGRESS until check-out), `workedMinutes`, `lateMinutes`, `late`, `earlyExit`, `missedCheckout`, `source` (SELF, DESK, ADJUSTED, CORRECTION, FINALIZE, LEAVE), `leave` (approved leave on the day, §9), `payable`, `finalized`, plus copies of the employee's name, code, uid and branch | attendance viewers at the branch; the employee |
 | `orgs/{o}/attendanceCorrections/{employeeId}_{date}` | requested times, reason, `status` (PENDING, APPROVED, REJECTED), decision | as above |
 | `orgs/{o}/attendanceSummaries/{employeeId}_{month}` | present, half days, absent, weekly offs, holidays, leave days and paid leave days, late days, missed check-outs, worked minutes, **payableDays**, `stale` | as above |
-| `orgs/{o}/attendanceLocks/{month}_{branchId or HO}` | `status` (FINALIZED, REOPENED), who and when | anyone in the org |
+| `orgs/{o}/attendanceLocks/{month}_{branchId or HO}` | `status` (FINALIZING while finalization runs, FINALIZED, REOPENED), `finalizeId`, who and when | anyone in the org |
 
 **Rules** (`functions/src/hr/attendanceRules.ts`, unit tested):
 
@@ -203,13 +211,20 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
     `attendance-decideCorrection`; approving applies the times.
   - Nobody decides their own correction, and rejecting one needs a reason.
 - **Finalize** (`attendance-finalize`, `attendance.finalize`) runs per branch and month, or for head office staff.
-  It only works on a month that is over, and never while corrections are waiting.
-  - Every employed day gets a final record: days without a record become absent, weekly off or holiday, and a
-    missing check-out counts as a half day.
-  - Each employee gets a summary with payable days, and the month is locked. Punches, adjustments and corrections
-    are then refused.
+  It only works on a month that is over, and never while corrections or leave requests are waiting.
+  - It closes the month first: one transaction checks nothing is waiting and sets the lock to FINALIZING. From then
+    on punches, adjustments, corrections and leave decisions for the month are refused, exactly as for a finalized
+    month. A last transaction sets FINALIZED. If finalizing fails, the lock goes back to what it was; a run that
+    never finished (a crash) is taken over by finalizing again after 15 minutes.
+  - It covers the people at the branch now (employed at some point in the month) and reads each one's days by
+    employee, so someone who moved branch during the month keeps the days recorded at their old branch.
+  - Every employed day gets its final evaluation: days without a record become absent, weekly off or holiday, and a
+    missing check-out counts as a half day. Finalizing only writes evaluation fields (status, payable, worked
+    minutes…), never the punches or the leave on a day.
+  - Each employee gets a summary with payable days. Summaries of people the branch's month no longer covers (they
+    moved away) are deleted.
 - **Reopen** (`attendance-reopen`): unlocks the month with a reason and marks the summaries out of date until the
-  month is finalized again.
+  month is finalized again. Payroll refuses out-of-date summaries.
 
 **Screens**
 
@@ -235,8 +250,8 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 | Path | Contents | Who reads it |
 |---|---|---|
 | `orgs/{o}/leaveTypes/{id}` | `name`, `code`, `paid`, `annualQuota`, `accrual` (MONTHLY, YEARLY, MANUAL), `carryForwardMax`, `allowHalfDay`, `unlimited`, `status`. Four defaults live in code (casual 12 a year monthly, sick 12 yearly, earned 15 monthly carrying up to 30, loss of pay unlimited); an org document with the same id overrides one | anyone in the org |
-| `orgs/{o}/leaveBalances/{employeeId}_{year}` | per type: `credited`, `adjusted`, `used`, `pending`. Available = credited + adjusted − used − pending | attendance viewers at the branch; the employee |
-| `orgs/{o}/leaveLedger/{id}` | append-only: `kind` (ACCRUAL, CARRY, ADJUST, TAKEN, RETURNED), `typeId`, `year`, `days` (+/−), `period`, `note`, `requestId`, who and when | as above |
+| `orgs/{o}/leaveBalances/{employeeId}_{year}` | per type: `credited`, `adjusted`, `used`, `pending`, `carriedOut`. Available = credited + adjusted − used − pending − carriedOut | attendance viewers at the branch; the employee |
+| `orgs/{o}/leaveLedger/{id}` | append-only: `kind` (ACCRUAL, CARRY, CARRY_OUT, ADJUST, TAKEN, RETURNED), `typeId`, `year`, `days` (+/−), `period`, `note`, `requestId`, who and when | as above |
 | `orgs/{o}/leaveRequests/{id}` | employee copies, type (name, code, paid), `from`, `to`, `halfDay` (NONE, FIRST, SECOND), `dates` (the working days it covers), `months`, `days`, `year`, `reason`, `status` (PENDING, APPROVED, REJECTED, CANCELLED), decision | as above |
 
 **Rules** (`functions/src/hr/leaveRules.ts`, unit tested):
@@ -249,10 +264,16 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
     counting the joining month, rounded down to the half day.
   - MANUAL types (maternity, bereavement) are never credited automatically; HR grants days with an adjustment.
   - Types with `carryForwardMax` carry unused days from last year's balance, up to that many, when the year's first
-    accrual runs. Later changes to last year do not change the carried amount.
+    accrual runs. In the same transaction the carried days leave last year's balance (`carriedOut`, a CARRY_OUT
+    ledger entry), so backdated leave or a negative adjustment in last year can't spend them again; unused days
+    above the cap stay in last year. Later changes to last year do not change the carried amount.
+  - Someone still joining (ONBOARDING) without a joining date is not credited until the date is set, so the yearly
+    share is worked out from it. Staff already working without a joining date (records made from roles) are
+    credited as before.
   - Every credit has a fixed ledger id (employee, type and month or year), so accrual can run any number of times.
-    The daily job `scheduled-accrueLeave` (00:45 IST) credits the current month for every organization; HR can
-    run a past month with **Credit leave**.
+    The daily job `scheduled-accrueLeave` (00:45 IST) credits the current month for every active organization, a
+    couple of organizations and eight employees at a time; one that fails is logged and retried the next day, and
+    the run logs a summary (`leave-accrual`). HR can run a past month with **Credit leave**.
 - **On attendance** (`attendanceRules.evaluateDay`): a full day of leave is ON_LEAVE and payable if the leave is
   paid. A half day of leave is paid for half a day, and the other half counts if at least a half day was worked.
   Payable days in the month summary include paid leave; leave days and paid leave days are listed too.
@@ -300,8 +321,8 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 | `orgs/{o}/payrollSettings/{YYYY-MM}` | a version of the statutory settings from that month: `pf` (`enabled`, `employeeRate`, `employerRate`, `epsRate`, `wageCeiling`, `capAtCeiling`), `esi` (`enabled`, `employeeRate`, `employerRate`, `grossLimit`), `pt` (`enabled`, `slabs` of `{from, amount}`, `februaryAmount`). Without any version the standard rates in code apply (PF 12% + 12% on wages up to ₹15,000, EPS 8.33%; ESI 0.75% + 3.25% up to ₹21,000 gross; PT ₹200 from ₹25,000) | anyone in the org |
 | `orgs/{o}/salaries/{employeeId}_{YYYY-MM}` | a salary version from that month: `earnings` (`code`, `name`, monthly `amount`; BASIC required), `pf`, `esi`, `pt` (whether each applies), `monthlyGross`, `reason` | salary viewers at the branch; the employee |
 | `orgs/{o}/payrollInputs/{employeeId}_{month}` | `tds`, `otherEarnings`, `otherDeductions` for the month | salary viewers at the branch |
-| `orgs/{o}/payrollRuns/{month}_{branchId or HO}` | `status` (DRAFT, SUBMITTED, APPROVED), `stale`, `employees`, `totals`, `problems`, `settingsFrom`, who prepared, submitted and approved, `rejectNote` | salary viewers at the branch |
-| `orgs/{o}/payslips/{employeeId}_{month}` | employee details (designation, PAN, UAN, masked bank), `days`, earned `earnings`, other earnings and deductions, PF, ESI, PT, TDS, `gross`, `deductions`, `net`, employer PF and ESI, `published` | payslip viewers at the branch; the employee once published |
+| `orgs/{o}/payrollRuns/{month}_{branchId or HO}` | `status` (PREPARING while prepare runs, DRAFT, SUBMITTED, APPROVED), `stale`, `version` (bumped by every change that makes it stale), `prepareId`, `employees`, `totals`, `problems`, `settingsFrom`, `contributors` (who set the salaries and inputs it uses), who prepared, submitted and approved, `rejectNote` | salary viewers at the branch |
+| `orgs/{o}/payslips/{employeeId}_{month}` | employee details (designation, `panLast4`, `uanLast4`, masked bank), `days`, earned `earnings`, other earnings and deductions, PF, ESI, PT, TDS, `gross`, `deductions`, `net`, employer PF and ESI, `prepareId`, `published` | payslip viewers at the branch; the employee once published |
 
 **Rules** (`functions/src/hr/payrollRules.ts`, unit tested; whole rupees):
 
@@ -322,21 +343,35 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - **Salary** (`salary-save`, `salary.edit`, reason required, never your own): a new version from a month. The audit
   log records the gross, not the breakup.
 - **Settings** (`payrollSettings-save`, `salary.edit` org-wide): a new version from a month.
+- A salary or settings version is refused if it would change a submitted or approved run (a month it reaches
+  before the next version); such a month changes only through a later month (arrears). Draft runs it reaches
+  (the employee's branch for a salary, every branch for settings) become stale.
 - **TDS and extras** (`payroll-setInputs`, `payroll.run`, never your own): per employee per month. A prepared draft
   becomes stale and must be prepared again.
 - **Prepare** (`payroll-prepare`, `payroll.run`):
   - Runs per branch and month, or for head office staff, and only once attendance for that month is finalized.
+    Out-of-date attendance summaries (`stale`) are refused.
+  - A transaction first moves the run to PREPARING under a fresh `prepareId` (refused while it is submitted or
+    approved, or being prepared), so it can't be submitted or approved meanwhile. Payslips are written stamped with
+    the `prepareId`; a last transaction makes the run a DRAFT. If inputs, salaries, settings or the attendance lock
+    changed while it ran (`version` or `finalizeId` differ), the draft stays stale. A failed prepare leaves a
+    stale draft; one that never finished is taken over after 15 minutes.
   - Writes one payslip per employee in the attendance summaries. A missing salary is listed as a problem.
+  - Records as `contributors` whoever last saved the salary versions and inputs it uses.
   - Safe to repeat while the run is a draft.
 - **Submit** (`payroll-submit`, `payroll.run`): only a draft that is up to date and has no problems.
 - **Decide** (`payroll-decide`, `payroll.approve`):
-  - Only someone who neither prepared nor submitted the run can decide.
-  - Approving publishes every payslip in one transaction, so a run covers at most 450 people.
+  - Only someone who neither prepared nor submitted the run, and is not one of its contributors, can decide.
+  - Approving publishes, in one transaction, the payslips of the run's last preparation (matching `prepareId`), so a
+    run covers at most 450 people.
   - Sending back needs a reason and returns the run to draft.
-- **Locked months:** while a run is submitted or approved, its month's attendance cannot be reopened and inputs
-  cannot change. Reopening attendance under a draft marks the draft stale.
+- **Locked months:** while a run is submitted or approved, its month's attendance cannot be reopened and inputs,
+  salaries and settings that reach it cannot change. Reopening attendance under a draft marks the draft stale.
 - **Payslip PDF** (`payslips-download`): the employee's own once published, or anyone with `payslips.viewAll` at
-  the branch, including drafts marked DRAFT. Opening someone else's is audited.
+  the branch, including drafts marked DRAFT. Opening someone else's is audited. Payslips keep only the last four
+  characters of PAN and UAN; the PDF shows them in full only to the employee and to holders of
+  `employees.privateData` (read from the private profile when it is rendered), and masked (`XXXXXX234F`) to others
+  such as franchise owners.
 
 **Screens**
 
@@ -418,9 +453,12 @@ a branch manager's own letter comes from HR or another manager at the branch. Th
   probation, notice period, the date to accept by (today up to the joining date) and any other terms.
 - **Preview** (`offers-preview`, a query): the PDF exactly as it would be released, marked PREVIEW. Nothing is stored.
 - **Release** (`offers-release`): numbers the letter, generates the PDF (`functions/src/hr/letterPdf.ts`, A4, worded by the offer template in force, §13,
-  letterhead with the organization and branch address, signed by the releaser's name and job title), and in one transaction:
-  - stores the file privately (`hr/{orgId}/{employeeId}/{id}.pdf`) and files it in the employee's documents as a
-    verified **Offer letter**, so it shows under **My documents** in the Staff view at once;
+  letterhead with the organization and branch address, signed by the releaser's name and job title) and stores it
+  privately (`hr/{orgId}/{employeeId}/{id}.pdf`, under a new random id) before the transaction, then in one
+  transaction (which checks the letter's content is still what the PDF says, else asks to try again, and deletes the
+  file if it does not commit):
+  - files it in the employee's documents as a verified **Offer letter** (the letter and the document are created
+    with that id, never over existing ones), so it shows under **My documents** in the Staff view at once;
   - marks any earlier released letter, and its document, as replaced;
   - notifies the employee (`offer.released`) and writes an `employee.offer.release` audit entry.
 - **Open** (`offers-open`): the letter for releasers at the branch or the employee, audited. The employee can also
@@ -469,7 +507,7 @@ branches; never to yourself): the employee profile's **Letters** tab or the **Le
 from the employee record (position, department, manager, joining date). Letters go to employees past draft.
 The list shows every published custom letter (a branch's own marked with the branch name). Once an employee is
 chosen, letters published for other branches are named in a note rather than offered; offer-type templates are
-used by *Release offer*, not here.
+used by *Release offer*, not here. The PDF is generated and stored before the transaction, as for offers (§12).
 
 - Numbers: `OL/…` offers, `AL/…` appointment letters, `LT/…` custom letters (`{prefix}/{employee ID}/{year}/{n}`).
 - Filed in the employee's documents as verified: *Appointment letter* (`appointment-letter`), or for a custom letter
@@ -497,7 +535,8 @@ Staff fill in their own HR details and documents instead of HR typing them in.
 - **Profile picture:** added, changed or removed by the person (Complete my profile, My profile) or by HR who may
   edit employees (the employee profile), with `employees-setPhoto`. The browser shrinks the photo to 480 px JPEG
   first; the server accepts JPEG, PNG or WebP up to 1 MB (checked by its bytes), stores it at
-  `employee-photos/{orgId}/{employeeId}/…` behind a download-token URL, deletes the old file after the change, and
+  `employee-photos/{orgId}/{employeeId}/{random}.{ext}` (uploaded before the transaction, deleted if the change
+  does not commit) behind a download-token URL, deletes the old file after the change, and
   ticks *Photo collected* while joining. Photos show on the employee profile, My profile and the People list
   (initials when there is none).
 - **Mandatory details:** HR chooses them under **Settings → Jobs → Self-onboarding** (`hr-setSelfOnboarding`,

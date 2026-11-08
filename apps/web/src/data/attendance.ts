@@ -92,7 +92,8 @@ export interface MonthSummary {
 }
 
 export interface MonthLock {
-  status: 'FINALIZED' | 'REOPENED';
+  /** FINALIZING while finalization runs (the month is already closed to changes). */
+  status: 'FINALIZING' | 'FINALIZED' | 'REOPENED';
   finalizedByEmail?: string;
   finalizedAt?: Date | null;
 }

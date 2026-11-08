@@ -22,7 +22,7 @@ import { EmployeeOffersPanel } from './OfferLetters';
 import { EmployeeDialog, EmployeeStatusBadge } from './People';
 import { PersonalDialog, TransitionDialog } from './employeeDialogs';
 import { AccessPanel, BankPanel, Checklist, Fact } from './employeePanels';
-import { command } from '../../data/api';
+import { call } from '../../data/api';
 import { AadhaarValue } from '../../shared/aadhaar';
 import { EmployeePhoto } from './EmployeePhoto';
 
@@ -168,7 +168,7 @@ export function EmployeeProfilePage() {
                   p.aadhaarLast4 && (
                     <AadhaarValue
                       last4={p.aadhaarLast4}
-                      reveal={canPrivate ? () => command<{ aadhaar: string }>('employees-revealAadhaar', { orgId, employeeId: e.id }).then((r) => r.aadhaar) : undefined}
+                      reveal={canPrivate ? () => call<{ aadhaar: string }>('employees-revealAadhaar', { orgId, employeeId: e.id }).then((r) => r.aadhaar) : undefined}
                     />
                   )
                 }

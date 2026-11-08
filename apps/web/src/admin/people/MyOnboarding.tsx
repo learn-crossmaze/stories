@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
-import { command } from '../../data/api';
+import { call, command } from '../../data/api';
 import { AadhaarValue, aadhaarError, aadhaarHint, cleanAadhaar } from '../../shared/aadhaar';
 import { type PrivateProfile } from '../../data/hr';
 import { myOnboarding, onboardingChanged, type OnboardingStatus, type ProfileField } from '../../data/selfOnboarding';
@@ -154,7 +154,7 @@ function DetailsForm({ orgId, s, onSaved }: { orgId: string; s: OnboardingStatus
             {s.profile.aadhaarLast4 && (
               <AadhaarValue
                 last4={s.profile.aadhaarLast4}
-                reveal={() => command<{ aadhaar: string }>('employees-revealAadhaar', { orgId, employeeId: s.employee.id }).then((r) => r.aadhaar)}
+                reveal={() => call<{ aadhaar: string }>('employees-revealAadhaar', { orgId, employeeId: s.employee.id }).then((r) => r.aadhaar)}
               />
             )}
           </div>

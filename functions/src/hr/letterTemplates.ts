@@ -7,6 +7,7 @@ import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id, name, reason } from '../core/schemas.js';
 import { dateKeyIST } from '../core/time.js';
+import { auditCtx } from './common.js';
 import { letterPdf, longDate } from './letterPdf.js';
 import { inWords, rupees } from './payrollRules.js';
 
@@ -260,7 +261,6 @@ function checkText(subject: string, body: string) {
   if (unknown.length) throw errors.invalid(`Unknown placeholder ${unknown.map((u) => `{{${u}}}`).join(', ')}. See the list under the editor.`);
 }
 
-const auditCtx = (actor: { uid: string; email: string | null }, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 
 /** Creates a template (as a draft), or changes one. Kind and branch can only change while it is a draft. */
 export const save = command(

@@ -50,7 +50,8 @@ export interface MonthInputs {
   otherDeductions: Adjustment[];
 }
 
-export type RunStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED';
+/** PREPARING while payroll-prepare runs. */
+export type RunStatus = 'PREPARING' | 'DRAFT' | 'SUBMITTED' | 'APPROVED';
 
 export interface PayrollRun {
   id: string;
@@ -66,6 +67,8 @@ export interface PayrollRun {
   preparedBy: string;
   preparedByEmail: string;
   submittedBy: string | null;
+  /** People whose salaries or pay inputs the run uses; they may not approve it. */
+  contributors?: string[];
   submittedByEmail: string | null;
   approvedByEmail: string | null;
   rejectNote: string | null;
@@ -121,6 +124,8 @@ export async function getRun(orgId: string, month: string, branchId: string | nu
   const snap = await getDoc(doc(db(), `orgs/${orgId}/payrollRuns/${runId(month, branchId)}`));
   if (!snap.exists()) return null;
   const d = snap.data();
+  // A run being prepared for the first time has no figures yet.
+  if (!d.totals) return null;
   return { ...(d as Omit<PayrollRun, 'id'>), id: snap.id, preparedAt: toDate(d.preparedAt) };
 }
 
