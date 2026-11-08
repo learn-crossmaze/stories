@@ -1,0 +1,85 @@
+# Production deploy on every push to main: tests first, then the backend, then the site.
+#
+# Order matters: the web app calls actions by name, so a site that is newer than its backend shows
+# "the server is out of date". The backend therefore deploys first, and the site only after it succeeded.
+# The backend step runs only when the repository variable DEPLOY_BACKEND is 'true' (docs/DEPLOYMENT.md §1);
+# until then the owner deploys it by hand with `npm run deploy:backend`, as before.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One production deploy at a time; a newer push waits for the running one instead of cancelling it mid-deploy.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  backend:
+    name: Backend (functions, Firestore rules/indexes/TTL, Storage rules)
+    needs: ci
+    if: vars.DEPLOY_BACKEND == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+      - run: npm ci && npm --prefix functions ci
+      - name: Write the functions' environment file
+        env:
+          FUNCTIONS_ENV: ${{ secrets.FUNCTIONS_ENV }}
+        run: |
+          if [ -z "$FUNCTIONS_ENV" ]; then
+            echo "::error::Secret FUNCTIONS_ENV is missing. Add the contents of functions/.env.stories-by-crossmaze (BOOTSTRAP_SUPER_ADMIN_EMAIL, GOOGLE_BOOKS_API_KEY, ENFORCE_APP_CHECK…) as a repository secret; see docs/DEPLOYMENT.md §1."
+            exit 1
+          fi
+          printf '%s\n' "$FUNCTIONS_ENV" > functions/.env.stories-by-crossmaze
+      - name: Deploy
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
+        run: |
+          printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          # No --force: if a deploy would delete a function, it stops and the owner decides (docs/DEPLOYMENT.md).
+          npx firebase deploy --only firestore,functions,storage --project stories-by-crossmaze --non-interactive
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json" functions/.env.stories-by-crossmaze
+
+  hosting:
+    name: Web app (Firebase Hosting)
+    needs: [ci, backend]
+    # Runs when the tests passed and the backend either deployed or is deployed by hand (skipped).
+    if: ${{ !cancelled() && needs.ci.result == 'success' && (needs.backend.result == 'success' || needs.backend.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
+          channelId: live
+          projectId: stories-by-crossmaze

@@ -369,8 +369,8 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
     is ready when a run is approved (sent after the approval commits).
 - Nothing is sent for your own actions, or to employees without an account.
 - **Rules:** the owner reads their notifications and may only change `read` to true. Functions write them.
-- **Retention:** `expireAt` is 90 days out. Turn on a Firestore TTL policy on `notifications.expireAt` in the
-  console to delete old ones.
+- **Retention:** `expireAt` is 90 days out. A Firestore TTL policy on `notifications.expireAt` (deployed from
+  `firebase/firestore.indexes.json`) deletes old ones.
 - **Screen:** the header **bell** shows the unread count and the latest 30 notifications. Opening one marks it
   read; **Mark all read** clears the count.
 

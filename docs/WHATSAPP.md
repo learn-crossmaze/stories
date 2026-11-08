@@ -252,8 +252,8 @@ links them.
   4. It fills the template's values in order of first use.
   5. It calls `POST /{phone-number-id}/messages`, then marks the message SENT (with the `wamid`), FAILED or SKIPPED.
 
-  Queued messages keep `expireAt` (+90 days): turn on a Firestore TTL policy on `whatsappOutbox.expireAt` to clear
-  old ones.
+  Queued messages keep `expireAt` (+90 days): a Firestore TTL policy on `whatsappOutbox.expireAt` (deployed from
+  `firebase/firestore.indexes.json`) clears old ones.
 - **Webhook:** `whatsappWebhook?o=<orgId>&b=<branchId>`.
   - GET answers Meta's verification with the branch's verify token.
   - POST checks `X-Hub-Signature-256` against the app secret (when saved), records status updates by `wamid`, and

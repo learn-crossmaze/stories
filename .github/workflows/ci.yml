@@ -1,13 +1,17 @@
 name: CI
 
+# Pull requests run it here; pushes to main run it as the first step of deploy.yml, so nothing ships untested.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # github.workflow is the caller's name when deploy.yml calls this, so PR runs and deploy runs never cancel each other.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   web:

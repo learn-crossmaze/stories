@@ -1,0 +1,25 @@
+# Monthly dependency updates, grouped so each ecosystem arrives as one PR that CI tests as a whole.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      web-and-tooling:
+        patterns: ['*']
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /functions
+    schedule: { interval: monthly }
+    groups:
+      functions:
+        patterns: ['*']
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
+    groups:
+      actions:
+        patterns: ['*']
