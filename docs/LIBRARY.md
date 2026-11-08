@@ -16,7 +16,7 @@ Catalogue page filters by Active / Archived.
 |---|---|
 | `code` | `BOOK-000001…` from `counters/books`, allocated inside the create transaction; pattern configurable ([NUMBERING.md](NUMBERING.md)) |
 | `isbn` | optional; ISBN-10 or ISBN-13 accepted, stored as ISBN-13 digits; unique via `isbnIndex/{isbn}` |
-| `authorIds` / `authorNames` | 1–5 authors; names denormalized for display and search, refreshed when an author is renamed |
+| `authorIds` / `authorNames` | 1–5 authors; names denormalized for display and search, refreshed when an author (publisher, category) is renamed: after the rename commits, every book referring to it is updated page by page in write batches of 400 (no transaction; each write applies only if the book is unchanged since it was read, and a page with a book edited meanwhile is redone from fresh reads). A failure is logged and never fails the rename |
 | `genres` | 1–3 of FICTION, FANTASY, MYSTERY, ADVENTURE, SCIENCE, BIOGRAPHY, SELF_HELP, CLASSICS, COMICS, EDUCATIONAL |
 | `ageGroup`, `minAge`, `readingLevel` | CHILDREN / TEENS / ADULTS; EARLY_READER … ADVANCED |
 | `replacementPriceMinor` | paise; charged against the deposit if a copy is lost (else the copy's cost) |
@@ -70,8 +70,10 @@ ISBNs already in the catalogue are skipped, authors and publishers are reused by
 **Covers:** catalogue editors (Super Admin, head office) add a photo or scan on the book page (**Add cover** /
 **Change cover** / **Remove**). The browser shrinks it to a JPEG of at most 800 px (~100 KB) and sends it to
 `books-setCover`, which checks the permission and the file type (JPEG, PNG or WebP by content, 1.5 MB at most),
-stores it at `covers/{bookId}/{requestId}.{ext}` in Cloud Storage, and saves `coverUrl`/`coverPath` on the book. The
-previous file is deleted after the change commits. Covers are public (Storage rules allow reads under `covers/`; no
+uploads it **once, before any transaction**, to `covers/{bookId}/{requestId}.{ext}` in Cloud Storage, then saves
+`coverUrl`/`coverPath` on the book in a short transaction that re-checks the permission. If saving fails, the
+uploaded file is deleted; once saved, the previous file is. A retried request finds its own file already set and
+returns it. Covers are public (Storage rules allow reads under `covers/`; no
 client writes). Titles without a cover show a generated placeholder (title + colour). Only upload artwork you have the
 right to use.
 

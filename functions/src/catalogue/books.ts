@@ -1,4 +1,5 @@
-import { FieldValue, type Transaction } from 'firebase-admin/firestore';
+import { type DocumentSnapshot, FieldPath, FieldValue, type Transaction } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
@@ -127,9 +128,13 @@ function derived(input: BookInput, code: string, isbn13: string | null, names: A
     publisherName: names.publisherName,
     categoryNames: names.categoryNames,
     titleNormalized: normalizeText(input.title),
-    searchTokens: searchTokens(input.title, input.subtitle, ...names.authorNames, isbn13, code, ...input.keywords),
+    searchTokens: bookTokens(input, names.authorNames, isbn13, code),
   };
 }
+
+/** A title's search tokens: title, subtitle, author names, ISBN, code and keywords. */
+const bookTokens = (b: Pick<BookInput, 'title' | 'subtitle' | 'keywords'>, authorNames: string[], isbn13: string | null, code: string) =>
+  searchTokens(b.title, b.subtitle, ...authorNames, isbn13, code, ...(b.keywords ?? []));
 
 function canonicalIsbn(raw: string): string | null {
   if (!raw) return null;
@@ -437,27 +442,60 @@ export const remove = command(
   },
 );
 
-/** Refreshes denormalized author/publisher/category names and search tokens on books. */
+/** Books per page (and per write batch) when names are refreshed after a rename. */
+export const REFRESH_PAGE = 400;
+
+/**
+ * Refreshes denormalized author/publisher/category names and search tokens
+ * on every book that refers to a renamed reference (after the rename
+ * commits). These are display and search copies, so no transaction is
+ * needed: books are read a page at a time and written in batches of up to
+ * REFRESH_PAGE, each write conditional on the book not having changed since
+ * it was read (an edit in between already computed fresh names; such a page
+ * is redone book by book). Never throws: a failure is logged, and the next
+ * edit or rename of the book puts it right.
+ */
 async function refreshBooksReferencing(kind: RefKind, refId: string) {
   const field = kind === 'authors' ? 'authorIds' : kind === 'categories' ? 'categoryIds' : 'publisherId';
-  const q = kind === 'publishers' ? db.collection('books').where(field, '==', refId) : db.collection('books').where(field, 'array-contains', refId);
-  const books = await q.get();
-  for (const doc of books.docs) {
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(doc.ref);
-      const b = snap.data() as BookInput & { code: string; isbn: string | null };
-      const names = await resolveRefsLenient(tx, b);
-      tx.update(doc.ref, derived({ ...b, isbn: b.isbn ?? '' } as BookInput, b.code, b.isbn, names));
-    });
-  }
-}
-
-async function resolveRefsLenient(tx: Transaction, b: Pick<BookInput, 'authorIds' | 'publisherId' | 'categoryIds'>) {
-  const names = async (kind: RefKind, ids: string[]) =>
-    (await Promise.all(ids.map((i) => tx.get(db.doc(`${kind}/${i}`))))).map((s) => (s.get('name') as string) ?? '');
-  return {
-    authorNames: await names('authors', b.authorIds),
-    publisherName: (await names('publishers', b.publisherId ? [b.publisherId] : []))[0] ?? null,
-    categoryNames: await names('categories', b.categoryIds),
+  const base = (kind === 'publishers' ? db.collection('books').where(field, '==', refId) : db.collection('books').where(field, 'array-contains', refId)).orderBy(
+    FieldPath.documentId(),
+  );
+  const known = new Map<string, string>();
+  const namesOf = async (k: RefKind, ids: string[]) => {
+    const missing = [...new Set(ids)].filter((i) => !known.has(`${k}/${i}`));
+    if (missing.length) for (const s of await db.getAll(...missing.map((i) => db.doc(`${k}/${i}`)))) known.set(`${k}/${s.id}`, (s.get('name') as string | undefined) ?? '');
+    return ids.map((i) => known.get(`${k}/${i}`) ?? '');
   };
+  const fieldsFor = async (doc: DocumentSnapshot) => {
+    const b = doc.data() as BookInput & { code: string; isbn: string | null };
+    const authorNames = await namesOf('authors', b.authorIds ?? []);
+    const [publisherName] = b.publisherId ? await namesOf('publishers', [b.publisherId]) : [null];
+    const categoryNames = await namesOf('categories', b.categoryIds ?? []);
+    return { authorNames, publisherName, categoryNames, searchTokens: bookTokens(b, authorNames, b.isbn ?? null, b.code) };
+  };
+
+  let last: DocumentSnapshot | undefined;
+  let refreshed = 0;
+  try {
+    for (;;) {
+      const page = await (last ? base.startAfter(last) : base).limit(REFRESH_PAGE).get();
+      if (page.empty) break;
+      const batch = db.batch();
+      for (const doc of page.docs) batch.update(doc.ref, await fieldsFor(doc), { lastUpdateTime: doc.updateTime });
+      try {
+        await batch.commit();
+      } catch {
+        // Some book changed after it was read: redo this page one book at a time, from fresh reads.
+        for (const doc of page.docs) {
+          const fresh = await doc.ref.get();
+          if (fresh.exists) await fresh.ref.update(await fieldsFor(fresh), { lastUpdateTime: fresh.updateTime }).catch(() => undefined);
+        }
+      }
+      refreshed += page.size;
+      if (page.size < REFRESH_PAGE) break;
+      last = page.docs[page.docs.length - 1];
+    }
+  } catch (e) {
+    logger.error(`${kind}-rename: refreshing names on books failed`, { kind, refId, refreshed, error: e instanceof Error ? e.message : String(e) });
+  }
 }

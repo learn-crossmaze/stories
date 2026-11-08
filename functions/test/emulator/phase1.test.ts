@@ -140,6 +140,27 @@ describe('M1.1 catalogue', () => {
     expect(book.authorNames).toEqual(['R. L. Stevenson']);
     expect(book.searchTokens).toEqual(expect.arrayContaining(['treasure', 'stevenson', '9780306406157']));
   });
+
+  it('refreshes names on every book of a prolific author, page by page', async () => {
+    const total = catalog.REFRESH_PAGE + 50;
+    for (let start = 0; start < total; start += 450) {
+      const batch = db.batch();
+      for (let i = start; i < Math.min(total, start + 450); i++) {
+        batch.set(db.collection('books').doc(), {
+          title: `Volume ${i}`, subtitle: '', keywords: [], code: `BOOK-9${String(i).padStart(5, '0')}`, isbn: null, status: 'ACTIVE',
+          authorIds: [authorId], authorNames: ['Robert Louis Stevenson'], publisherId: null, categoryIds: [], categoryNames: [],
+        });
+      }
+      await batch.commit();
+    }
+    await call(catalog.authors.rename, sa, { id: authorId, name: 'R. L. Stevenson' });
+    const stale = await db.collection('books').where('authorNames', 'array-contains', 'Robert Louis Stevenson').count().get();
+    expect(stale.data().count).toBe(0);
+    const fresh = await db.collection('books').where('authorNames', 'array-contains', 'R. L. Stevenson').count().get();
+    expect(fresh.data().count).toBe(total + 1);
+    const one = (await db.collection('books').where('code', '==', 'BOOK-900007').get()).docs[0].data();
+    expect(one.searchTokens).toEqual(expect.arrayContaining(['volume', 'stevenson', 'book']));
+  });
 });
 
 describe('book covers', () => {
@@ -169,6 +190,27 @@ describe('book covers', () => {
   it('only catalogue editors may change covers, and only images are accepted', async () => {
     expect(await failure(call(covers.setCover, fin, { bookId, image: png }))).toBe('FORBIDDEN');
     expect(await failure(call(covers.setCover, sa, { bookId, image: Buffer.from('<svg onload=alert(1)>').toString('base64') }))).toBe('INVALID_INPUT');
+  });
+
+  it('uploads once per request, and removes the upload when the change is not saved', async () => {
+    const requestId = randomUUID();
+    const a = await call<{ coverUrl: string }>(covers.setCover, sa, { bookId, image: png }, requestId);
+    const b = await call<{ coverUrl: string }>(covers.setCover, sa, { bookId, image: png }, requestId);
+    expect(b.coverUrl).toBe(a.coverUrl);
+    expect((await db.doc(`books/${bookId}`).get()).get('coverPath')).toBe(`covers/${bookId}/${requestId}.png`);
+    const audit = await db.collection('platformAuditLogs').where('action', '==', 'book.cover.set').get();
+    expect(audit.size).toBe(1);
+
+    // The saving transaction fails (e.g. contention): the file just uploaded is deleted, the old cover stays.
+    const real = db.runTransaction.bind(db);
+    let n = 0;
+    vi.spyOn(db, 'runTransaction').mockImplementation(((fn: never, opts?: never) => (++n === 2 ? Promise.reject(new Error('aborted')) : real(fn, opts))) as never);
+    const other = randomUUID();
+    await failure(call(covers.setCover, sa, { bookId, image: png }, other));
+    vi.restoreAllMocks();
+    expect(await exists(`covers/${bookId}/${other}.png`)).toBe(false);
+    expect((await db.doc(`books/${bookId}`).get()).get('coverPath')).toBe(`covers/${bookId}/${requestId}.png`);
+    expect(await exists(`covers/${bookId}/${requestId}.png`)).toBe(true);
   });
 });
 
