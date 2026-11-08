@@ -1,19 +1,19 @@
 // Settings → Letter templates (docs/HRMS.md §13): offer, appointment and custom letters, per branch or for all branches.
 import { useState } from 'react';
 
-import { ApiError } from '../../data/api';
+import { errorText } from '../../data/api';
 import { archiveTemplate, type LetterTemplate, listTemplates, previewTemplate, publishTemplate, saveTemplate, type TemplateDefaults, templateDefaults, type TemplateText, usedPlaceholders } from '../../data/letterTemplates';
 import type { LetterKind } from '../../data/offers';
-import { ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
+import { Badge, ErrorState, Icon, makeStatusBadge, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
-import { ConfirmWithReason, Dialog, FormError, SelectField, TextArea, TextField } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, FormError, SelectField, TextArea, TextField, useAction } from '../components/Dialog';
 import { useWorkspace } from '../Workspace';
 
 const KINDS: LetterKind[] = ['OFFER', 'APPOINTMENT', 'CUSTOM'];
-const statusTone: Record<string, string> = { DRAFT: 'info', PUBLISHED: 'ok', ARCHIVED: 'muted' };
+const TemplateStatusBadge = makeStatusBadge<string>({ DRAFT: 'info', PUBLISHED: 'ok', ARCHIVED: 'muted' }, ht.tplStatus);
 
 type Draft = TemplateText & { templateId?: string; branchId: string | null };
 
@@ -22,8 +22,7 @@ function TemplateDialog({ orgId, draft, defaults, published, onClose, onSaved }:
   const [f, setF] = useState<Draft>(draft);
   const set = <K extends keyof Draft>(k: K) => (v: Draft[K]) => setF((x) => ({ ...x, [k]: v }));
   const [touched, setTouched] = useState(false);
-  const [busy, setBusy] = useState<'preview' | 'save' | 'publish' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { pending: busy, error, run: act } = useAction();
   const unknown = usedPlaceholders(`${f.subject}\n${f.body}`).filter((p) => !(p in defaults.placeholders));
   const errors = {
     name: f.name.trim().length >= 2 ? undefined : t.required,
@@ -34,10 +33,8 @@ function TemplateDialog({ orgId, draft, defaults, published, onClose, onSaved }:
   const fixed = !!f.templateId && published;
   const run = async (what: 'preview' | 'save' | 'publish') => {
     setTouched(true);
-    if (Object.values(errors).some(Boolean) || busy) return;
-    setBusy(what);
-    setError(null);
-    try {
+    if (Object.values(errors).some(Boolean)) return;
+    await act(async () => {
       const text = { ...f, name: f.name.trim(), subject: f.subject.trim(), body: f.body.trim() };
       if (what === 'preview') await previewTemplate(orgId, text);
       else {
@@ -46,11 +43,7 @@ function TemplateDialog({ orgId, draft, defaults, published, onClose, onSaved }:
         onSaved(what === 'publish' ? ht.tplPublished(text.name) : ht.tplSaved(text.name));
         onClose();
       }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
-    } finally {
-      setBusy(null);
-    }
+    }, what);
   };
   return (
     <Dialog title={f.templateId ? ht.tplEdit : ht.tplNew} onClose={onClose}>
@@ -134,7 +127,7 @@ export function LetterTemplatesSection({ orgId }: { orgId: string }) {
       await publishTemplate(orgId, x.id);
       saved(ht.tplPublished(x.name));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     }
   };
   const copy = (x: TemplateText, branchId: string | null, name?: string): Draft => ({ name: name ?? x.name, kind: x.kind, subject: x.subject, body: x.body, acceptance: x.acceptance, branchId });
@@ -162,11 +155,11 @@ export function LetterTemplatesSection({ orgId }: { orgId: string }) {
         {(['OFFER', 'APPOINTMENT'] as const).map((k) => (
           <li key={k}>
             <span>
-              <strong>{d.builtIn[k].name}</strong> <span className="badge badge-muted">{ht.tplBuiltInBadge}</span>
+              <strong>{d.builtIn[k].name}</strong> <Badge tone="muted">{ht.tplBuiltInBadge}</Badge>
               <div className="muted small">{hasOrgWide(k) ? ht.tplBuiltInReplaced : ht.tplBuiltInInUse}</div>
             </span>
             <span className="cell-actions">
-              <button type="button" className="btn btn-text" onClick={() => void previewTemplate(orgId, { ...d.builtIn[k], branchId: null }).catch((err) => setError(err instanceof ApiError ? err.message : t.errorGeneric))}>
+              <button type="button" className="btn btn-text" onClick={() => void previewTemplate(orgId, { ...d.builtIn[k], branchId: null }).catch((err) => setError(errorText(err)))}>
                 {ht.offerPreview}
               </button>
               <button type="button" className="btn btn-text" onClick={() => setEditing({ draft: copy(d.builtIn[k], null), published: false })} aria-label={`${ht.tplCustomize} ${d.builtIn[k].name}`}>
@@ -202,7 +195,7 @@ export function LetterTemplatesSection({ orgId }: { orgId: string }) {
                   </td>
                   <td>{x.branchId ? branchName(x.branchId) : ht.tplAllBranches}</td>
                   <td>
-                    <span className={`badge badge-${statusTone[x.status]}`}>{ht.tplStatus[x.status]}</span>
+                    <TemplateStatusBadge status={x.status} />
                   </td>
                   <td className="cell-actions">
                     {x.status !== 'ARCHIVED' && (

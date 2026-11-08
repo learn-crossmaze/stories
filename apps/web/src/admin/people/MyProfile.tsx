@@ -8,7 +8,7 @@ import { myEmployee } from '../../data/hr';
 import { available, employeeRequests, leaveBalance, listLeaveTypes } from '../../data/leave';
 import { employeePayslips, monthName } from '../../data/payroll';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { ht } from '../../strings/hr';
@@ -78,7 +78,7 @@ export function MyProfilePage() {
           <div>
           <h1>{e.fullName}</h1>
           <p className="muted">
-            {e.code} · {e.designationName ?? ht.navMyProfile} <span className="badge badge-info">{ht.status[e.status] ?? e.status}</span>
+            {e.code} · {e.designationName ?? ht.navMyProfile} <Badge tone="info">{ht.status[e.status] ?? e.status}</Badge>
           </p>
           </div>
         </div>

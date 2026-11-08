@@ -14,20 +14,19 @@ import {
   openDocument,
   uploadDocument,
 } from '../../data/hrDocuments';
-import { command } from '../../data/api';
+import { command, errorText } from '../../data/api';
 import { day } from '../../shared/format';
-import { ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
+import { ErrorState, Icon, makeStatusBadge, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { Notice } from '../components/kit';
 
-const TONE: Record<string, string> = { VERIFIED: 'ok', PENDING: 'info', REJECTED: 'danger', EXPIRED: 'danger', SUPERSEDED: 'muted', REMOVED: 'muted', MISSING: 'warn' };
-
-export function DocumentBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${TONE[status] ?? 'muted'}`}>{ht.docStatus[status] ?? status}</span>;
-}
+export const DocumentBadge = makeStatusBadge<string>(
+  { VERIFIED: 'ok', PENDING: 'info', REJECTED: 'danger', EXPIRED: 'danger', SUPERSEDED: 'muted', REMOVED: 'muted', MISSING: 'warn' },
+  ht.docStatus,
+);
 
 /** Expiry line, highlighted once inside the reminder window. */
 export function ExpiryNote({ doc, reminderDays = 30 }: { doc: Pick<EmployeeDocument, 'expiresOn' | 'status'>; reminderDays?: number }) {
@@ -108,16 +107,12 @@ function UploadDialog({
 /** Verify or reject a pending document (reason required to reject). */
 export function useDocumentReview(orgId: string, onDone: () => void) {
   const [rejecting, setRejecting] = useState<EmployeeDocument | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const verify = async (d: EmployeeDocument) => {
-    setError(null);
-    try {
+  const { busy, error, run } = useAction();
+  const verify = (d: EmployeeDocument) =>
+    run(async () => {
       await command('documents-review', { orgId, employeeId: d.employeeId, documentId: d.id, decision: 'VERIFY' });
       onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
-    }
-  };
+    });
   const dialog = rejecting && (
     <ConfirmWithReason
       title={ht.rejectTitle(rejecting.typeName)}
@@ -131,7 +126,7 @@ export function useDocumentReview(orgId: string, onDone: () => void) {
       }}
     />
   );
-  return { verify, reject: setRejecting, dialog, error };
+  return { verify, reject: setRejecting, dialog, error, busy };
 }
 
 /** `onChanged` refreshes the employee record (verifying a document can tick an onboarding item). */
@@ -181,7 +176,7 @@ export function EmployeeDocumentsPanel({
     try {
       await openDocument(orgId, employee.id, d.id);
     } catch (e) {
-      setOpenError(e instanceof Error ? e.message : t.errorGeneric);
+      setOpenError(errorText(e));
     }
   };
 
@@ -268,7 +263,7 @@ export function EmployeeDocumentsPanel({
                         </button>
                         {d.status === 'PENDING' && canVerify && !own && (
                           <>
-                            <button type="button" className="btn btn-text" onClick={() => void review.verify(d)} aria-label={`${ht.verify} ${d.typeName}`}>
+                            <button type="button" className="btn btn-text" disabled={review.busy} onClick={() => void review.verify(d)} aria-label={`${ht.verify} ${d.typeName}`}>
                               {ht.verify}
                             </button>
                             <button type="button" className="btn btn-text" onClick={() => review.reject(d)} aria-label={`${ht.reject} ${d.typeName}`}>

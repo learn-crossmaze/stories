@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 
-import { command, toApiError } from '../../data/api';
+import { command } from '../../data/api';
 import type { Employee } from '../../data/hr';
 import { onboardingChanged } from '../../data/selfOnboarding';
+import { useAction } from '../../shared/Dialog';
 import { shrinkToJpeg } from '../../shared/image';
 import { ht } from '../../strings/hr';
 
@@ -34,21 +35,13 @@ export function EmployeeAvatar({ employee, size = 'sm' }: { employee: Pick<Emplo
  */
 export function EmployeePhoto({ orgId, employee, canEdit, onChanged }: { orgId: string; employee: Employee; canEdit: boolean; onChanged: () => void }) {
   const input = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const save = async (image: string | null) => {
-    setBusy(true);
-    setError(null);
-    try {
+  const { busy, error, setError, run } = useAction();
+  const save = (image: string | null) =>
+    run(async () => {
       await command('employees-setPhoto', { orgId, employeeId: employee.id, image });
       onChanged();
       onboardingChanged();
-    } catch (e) {
-      setError(toApiError(e).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   return (
     <div className="employee-photo">
       <EmployeeAvatar employee={employee} size="lg" />

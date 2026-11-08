@@ -4,12 +4,12 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
+import { errorText } from '../../data/api';
 import { documentQueue, type EmployeeDocument, listDocumentTypes, openDocument } from '../../data/hrDocuments';
 import { paths } from '../../paths';
 import { day } from '../../shared/format';
 import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
-import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { FormError } from '../components/Dialog';
 import { Tabs } from '../components/kit';
@@ -40,7 +40,7 @@ export function DocumentsPage() {
     try {
       await openDocument(org.id, d.employeeId, d.id);
     } catch (e) {
-      setOpenError(e instanceof Error ? e.message : t.errorGeneric);
+      setOpenError(errorText(e));
     }
   };
 
@@ -106,7 +106,7 @@ export function DocumentsPage() {
                     </button>
                     {d.status === 'PENDING' && d.uploadedBy !== user?.uid && (
                       <>
-                        <button type="button" className="btn btn-text" onClick={() => void review.verify(d)} aria-label={`${ht.verify} ${d.typeName}, ${d.employeeName}`}>
+                        <button type="button" className="btn btn-text" disabled={review.busy} onClick={() => void review.verify(d)} aria-label={`${ht.verify} ${d.typeName}, ${d.employeeName}`}>
                           {ht.verify}
                         </button>
                         <button type="button" className="btn btn-text" onClick={() => review.reject(d)} aria-label={`${ht.reject} ${d.typeName}, ${d.employeeName}`}>

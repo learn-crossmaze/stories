@@ -7,7 +7,7 @@ import { ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../sh
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useAction, useSubmit } from '../components/Dialog';
 import { useWorkspace } from '../Workspace';
 
 const isTime = (v: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
@@ -195,16 +195,12 @@ export function HolidaysSection({ orgId }: { orgId: string }) {
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const holidays = useAsync(() => listHolidays(orgId, year), [orgId, year]);
   const [adding, setAdding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const remove = async (h: Holiday) => {
-    setError(null);
-    try {
+  const { busy, error, run } = useAction();
+  const remove = (h: Holiday) =>
+    run(async () => {
       await command('holidays-remove', { orgId, date: h.date });
       holidays.reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
-    }
-  };
+    });
   return (
     <section className="section" aria-labelledby="holidays">
       <div className="page-header-row">
@@ -245,7 +241,7 @@ export function HolidaysSection({ orgId }: { orgId: string }) {
                 {h.name}
                 <span className="muted small"> · {h.branchIds.length ? h.branchIds.map(branchName).join(', ') : ht.holidayAllBranches}</span>
               </span>
-              <button type="button" className="btn btn-text" onClick={() => void remove(h)} aria-label={`${ht.holidayRemove} ${h.name}`}>
+              <button type="button" className="btn btn-text" disabled={busy} onClick={() => void remove(h)} aria-label={`${ht.holidayRemove} ${h.name}`}>
                 {ht.holidayRemove}
               </button>
             </li>

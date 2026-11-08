@@ -4,7 +4,7 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
-import { ApiError } from '../../data/api';
+import { errorText } from '../../data/api';
 import { EMPLOYMENT_TYPES, type Employee, type EmploymentType, listEmployees } from '../../data/hr';
 import { type LetterTemplate, listTemplates, templateDefaults, usedPlaceholders } from '../../data/letterTemplates';
 import {
@@ -25,12 +25,12 @@ import {
 import { paths } from '../../paths';
 import { addDays, todayIST } from '../../shared/dates';
 import { day } from '../../shared/format';
-import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, makeStatusBadge, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
-import { ConfirmWithReason, Dialog, FormError, SelectField, TextArea, TextField } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, FormError, SelectField, TextArea, TextField, useAction } from '../components/Dialog';
 import { useWorkspace } from '../Workspace';
 
 const OFFERABLE = ['DRAFT', 'ONBOARDING', 'ACTIVE'];
@@ -75,8 +75,7 @@ export function OfferDialog({ orgId, employee, candidates, onClose, onReleased }
   const [f, setF] = useState(() => blankTerms(orgId, employee ?? null));
   const set = <K extends keyof typeof f>(k: K) => (v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const [touched, setTouched] = useState(false);
-  const [busy, setBusy] = useState<'preview' | 'release' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { pending: busy, error, run: act } = useAction();
   const today = todayIST();
   const current = employee ?? candidates?.find((c) => c.id === f.employeeId) ?? null;
 
@@ -106,21 +105,15 @@ export function OfferDialog({ orgId, employee, candidates, onClose, onReleased }
   });
   const run = async (kind: 'preview' | 'release') => {
     setTouched(true);
-    if (Object.values(errors).some(Boolean) || busy) return;
-    setBusy(kind);
-    setError(null);
-    try {
+    if (Object.values(errors).some(Boolean)) return;
+    await act(async () => {
       if (kind === 'preview') await previewOffer(terms());
       else {
         const res = await releaseOffer(terms());
         onReleased(res.number);
         onClose();
       }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
-    } finally {
-      setBusy(null);
-    }
+    }, kind);
   };
 
   return (
@@ -200,8 +193,7 @@ export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssu
   const [f, setF] = useState<Record<LetterField, string>>(NO_VALUES);
   const set = (k: LetterField) => (v: string) => setF((x) => ({ ...x, [k]: v }));
   const [touched, setTouched] = useState(false);
-  const [busy, setBusy] = useState<'preview' | 'issue' | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { pending: busy, error, run: act } = useAction();
   const current = employee ?? candidates?.find((c) => c.id === employeeId) ?? null;
 
   if (data.loading || !data.data) {
@@ -256,21 +248,15 @@ export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssu
   });
   const run = async (kind: 'preview' | 'issue') => {
     setTouched(true);
-    if (Object.values(errors).some(Boolean) || busy || !template) return;
-    setBusy(kind);
-    setError(null);
-    try {
+    if (Object.values(errors).some(Boolean) || !template) return;
+    await act(async () => {
       if (kind === 'preview') await previewLetter(terms());
       else {
         const res = await issueLetter(terms());
         onIssued(ht.letterIssued(template.name, res.number));
         onClose();
       }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
-    } finally {
-      setBusy(null);
-    }
+    }, kind);
   };
   const fromRecord = ht.letterBlankHint;
   return (
@@ -339,8 +325,7 @@ export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssu
   );
 }
 
-const statusTone: Record<string, string> = { RELEASED: 'ok', SUPERSEDED: 'muted', WITHDRAWN: 'warn' };
-const OfferBadge = ({ status }: { status: string }) => <span className={`badge badge-${statusTone[status] ?? 'muted'}`}>{ht.offerStatus[status] ?? status}</span>;
+const OfferBadge = makeStatusBadge<string>({ RELEASED: 'ok', SUPERSEDED: 'muted', WITHDRAWN: 'warn' }, ht.offerStatus);
 
 function OfferActions({ offer, canWithdraw, onWithdraw }: { offer: OfferLetter; canWithdraw: boolean; onWithdraw: () => void }) {
   const [error, setError] = useState<string | null>(null);
@@ -350,7 +335,7 @@ function OfferActions({ offer, canWithdraw, onWithdraw }: { offer: OfferLetter; 
         type="button"
         className="btn btn-text"
         aria-label={`${ht.offerOpen} ${letterName(offer)} ${offer.number}`}
-        onClick={() => openOffer(offer.orgId, offer.id).catch((e: unknown) => setError(e instanceof ApiError ? e.message : t.errorGeneric))}
+        onClick={() => openOffer(offer.orgId, offer.id).catch((e: unknown) => setError(errorText(e)))}
       >
         {ht.offerOpen}
       </button>

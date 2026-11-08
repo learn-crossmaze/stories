@@ -11,11 +11,11 @@ import { type Employee, listEmployees } from '../../data/hr';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
 import { day as dayFmt } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, useAction, useSubmit } from '../components/Dialog';
 import { Notice, Tabs } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 import { AdjustDialog, DayBadge, DayFlags, ShiftDialog, useCorrectionDecision } from './attendanceKit';
@@ -33,18 +33,14 @@ function DayBoard({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' }) 
   }, [orgId, date, JSON.stringify(scope)]);
   const [adjusting, setAdjusting] = useState<{ e: Employee; r: AttendanceRecord | null } | null>(null);
   const [shiftFor, setShiftFor] = useState<Employee | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
   const isToday = date === todayIST();
   const manage = (e: Employee) => (e.branchId ? can(claims, 'attendance.manage', orgId, e.branchId) : can(claims, 'attendance.manage', orgId) && scope === 'ALL');
-  const doPunch = async (e: Employee, action: 'IN' | 'OUT') => {
-    setError(null);
-    try {
+  const doPunch = (e: Employee, action: 'IN' | 'OUT') =>
+    run(async () => {
       await punch(orgId, action, e.id);
       data.reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t.errorGeneric);
-    }
-  };
+    });
 
   return (
     <>
@@ -98,12 +94,12 @@ function DayBoard({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' }) 
                     <td className="nowrap">{r?.workedMinutes ? hours(r.workedMinutes) : '—'}</td>
                     <td className="cell-actions">
                       {manage(e) && isToday && !r?.checkIn && (
-                        <button type="button" className="btn btn-text" onClick={() => void doPunch(e, 'IN')} aria-label={ht.checkInFor(e.fullName)}>
+                        <button type="button" className="btn btn-text" disabled={busy} onClick={() => void doPunch(e, 'IN')} aria-label={ht.checkInFor(e.fullName)}>
                           {ht.checkIn}
                         </button>
                       )}
                       {manage(e) && isToday && r?.checkIn && !r.checkOut && (
-                        <button type="button" className="btn btn-text" onClick={() => void doPunch(e, 'OUT')} aria-label={ht.checkOutFor(e.fullName)}>
+                        <button type="button" className="btn btn-text" disabled={busy} onClick={() => void doPunch(e, 'OUT')} aria-label={ht.checkOutFor(e.fullName)}>
                           {ht.checkOut}
                         </button>
                       )}
@@ -216,7 +212,7 @@ function MonthView({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' })
                     <tr key={s.id}>
                       <td>
                         <Link to={paths.adminEmployee(s.employeeId)}>{s.employeeName}</Link>
-                        {s.stale && <span className="badge badge-warn"> {ht.staleSummary}</span>}
+                        {s.stale && <Badge tone="warn"> {ht.staleSummary}</Badge>}
                       </td>
                       {(Object.keys(ht.summaryCols) as (keyof typeof s)[]).map((k) => (
                         <td key={String(k)} className="num">
