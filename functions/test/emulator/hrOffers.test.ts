@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { bucket } from '../../src/catalogue/covers.js';
@@ -76,6 +78,25 @@ describe('offer letters', () => {
     expect(note.size).toBe(1);
     const audit = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'employee.offer.release').get();
     expect(audit.size).toBe(1);
+  });
+
+  it('an employee upload can never replace the letter HR filed; a retried release files one letter', async () => {
+    const workerId = await recordOf(worker);
+    const requestId = randomUUID();
+    const first = await call<{ offerId: string; documentId: string }>(offers.release, hr, terms(workerId), requestId);
+    expect(first.documentId).not.toBe(requestId);
+    expect(await call(offers.release, hr, terms(workerId), requestId)).toEqual(first);
+    const filed = (await db.doc(`orgs/${org}/employees/${workerId}/documents/${first.documentId}`).get()).data()!;
+    const [files] = await bucket().getFiles({ prefix: `hr/${org}/${workerId}/` });
+    expect(files.map((f) => f.name)).toEqual([filed.storagePath]);
+
+    // The employee uploads with the same request id: their own new document, the letter untouched.
+    const mine = await call<{ documentId: string }>(docs.upload, worker, { orgId: org, employeeId: workerId, typeId: 'aadhaar', fileName: 'a.pdf', content: Buffer.from('%PDF-1.4 mine').toString('base64') }, requestId);
+    expect(mine.documentId).not.toBe(first.documentId);
+    const after = (await db.doc(`orgs/${org}/employees/${workerId}/documents/${first.documentId}`).get()).data()!;
+    expect(after).toMatchObject({ typeId: 'offer-letter-issued', status: 'VERIFIED', storagePath: filed.storagePath, offerId: first.offerId });
+    const [bytes] = await bucket().file(filed.storagePath).download();
+    expect(bytes.length).toBe(filed.size);
   });
 
   it('nobody releases their own offer letter; a branch manager only at their branch; librarians never', async () => {

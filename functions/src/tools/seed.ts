@@ -289,7 +289,7 @@ async function seedHr() {
       acceptsStreaming: false,
     })) as R;
 
-  const { created } = await call<{ created: number }>(emp.backfill, { orgId: CORP });
+  const { created } = await call<{ created: number }>((await import('../hr/employeesBackfill.js')).backfill, { orgId: CORP });
   const titles: Record<string, string> = {};
   for (const name of ['Head of Operations', 'Finance Manager', 'HR Manager', 'Catalogue Manager', 'Branch Manager', 'Librarian', 'Delivery Executive', 'Library Assistant']) {
     titles[name] = (await call<{ designationId: string }>(settings.createDesignation, { orgId: CORP, name })).designationId;

@@ -1,9 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
 import { beforeEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { bucket } from '../../src/catalogue/covers.js';
+import { errors } from '../../src/core/errors.js';
 import { db } from '../../src/core/firebase.js';
 import * as docs from '../../src/hr/documents.js';
 import * as emp from '../../src/hr/employees.js';
+import { deleteFile, stagedCommand, storeNew } from '../../src/hr/staged.js';
 import * as branches from '../../src/organization/branches.js';
 import * as orgs from '../../src/organization/orgs.js';
 import * as staff from '../../src/organization/staff.js';
@@ -79,6 +84,48 @@ describe('employee documents', () => {
     expect(own.status).toBe('PENDING');
     expect(await failure(call(docs.review, hr, { orgId: org, employeeId: hrId, documentId: own.documentId, decision: 'VERIFY' }))).toBe('FORBIDDEN');
     await call(docs.review, hr2, { orgId: org, employeeId: hrId, documentId: own.documentId, decision: 'VERIFY' });
+  });
+
+  it('document ids come from the server: an upload never replaces another document or its file', async () => {
+    const requestId = randomUUID();
+    const issued = await call<{ documentId: string }>(docs.upload, hr, { orgId: org, employeeId: workerId, typeId: 'pan-card', fileName: 'pan.pdf', content: PDF }, requestId);
+    expect(issued.documentId).not.toBe(requestId);
+    const original = await docOf(issued.documentId);
+    // The employee sends the same request id: a new document of their own; HR's is untouched.
+    const mine = await call<{ documentId: string }>(docs.upload, worker, { orgId: org, employeeId: workerId, typeId: 'aadhaar', fileName: 'a.png', content: PNG }, requestId);
+    expect(mine.documentId).not.toBe(issued.documentId);
+    expect(await docOf(issued.documentId)).toMatchObject({ typeId: 'pan-card', status: 'VERIFIED', uploadedBy: hr.uid, storagePath: original.storagePath });
+    const [bytes] = await bucket().file(original.storagePath).download();
+    expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+    // A retried request returns the same document and leaves one file.
+    expect(await call(docs.upload, hr, { orgId: org, employeeId: workerId, typeId: 'pan-card', fileName: 'pan.pdf', content: PDF }, requestId)).toEqual(issued);
+    const [files] = await bucket().getFiles({ prefix: `hr/${org}/${workerId}/` });
+    expect(files.map((f) => f.name).sort()).toEqual([original.storagePath, (await docOf(mine.documentId)).storagePath].sort());
+  });
+
+  it('files staged before a command are removed when it does not commit; a replay stages nothing', async () => {
+    let staged = 0;
+    const prefix = `test-staged/${org}/`;
+    const fn = stagedCommand(
+      'test-staged',
+      z.strictObject({ fail: z.boolean() }),
+      async () => {
+        staged += 1;
+        const file = await storeNew(`${prefix}${randomUUID()}.txt`, Buffer.from('staged'), 'text/plain');
+        return { value: file.name, discard: () => deleteFile(file) };
+      },
+      async ({ input }, _tx, path) => {
+        if (input.fail) throw errors.conflict('REFUSED', 'Refused after staging.');
+        return { path };
+      },
+    );
+    expect(await failure(call(fn, hr, { fail: true }))).toBe('REFUSED');
+    expect((await bucket().getFiles({ prefix }))[0]).toHaveLength(0);
+    const requestId = randomUUID();
+    const done = await call<{ path: string }>(fn, hr, { fail: false }, requestId);
+    expect(await call(fn, hr, { fail: false }, requestId)).toEqual(done);
+    expect(staged).toBe(2);
+    expect((await bucket().getFiles({ prefix }))[0].map((f) => f.name)).toEqual([done.path]);
   });
 
   it('rejects files that are not PDF, JPEG or PNG, and requires expiry dates where the type has them', async () => {

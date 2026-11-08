@@ -1,7 +1,9 @@
 // Staff HRMS: employee records, lifecycle and HR settings (hr router, docs/HRMS.md).
 import * as attendance from './attendance.js';
 import * as documents from './documents.js';
+import * as employeePrivate from './employeePrivate.js';
 import * as employees from './employees.js';
+import * as employeesBackfill from './employeesBackfill.js';
 import * as leave from './leave.js';
 import * as letterTemplates from './letterTemplates.js';
 import * as offers from './offers.js';
@@ -14,13 +16,13 @@ export const routes = {
   'employees-update': employees.update,
   'employees-transition': employees.transition,
   'employees-checkItem': employees.checkItem,
-  'employees-setPrivate': employees.setPrivate,
-  'employees-setBank': employees.setBank,
-  'employees-revealBank': employees.revealBank,
-  'employees-revealAadhaar': employees.revealAadhaar,
-  'employees-setPhoto': employees.setPhoto,
+  'employees-setPrivate': employeePrivate.setPrivate,
+  'employees-setBank': employeePrivate.setBank,
+  'employees-revealBank': employeePrivate.revealBank,
+  'employees-revealAadhaar': employeePrivate.revealAadhaar,
+  'employees-setPhoto': employeePrivate.setPhoto,
   'employees-linkAccount': employees.linkAccount,
-  'employees-backfill': employees.backfill,
+  'employees-backfill': employeesBackfill.backfill,
   'designations-create': settings.createDesignation,
   'designations-rename': settings.renameDesignation,
   'designations-archive': settings.archiveDesignation,

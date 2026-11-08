@@ -1,6 +1,5 @@
 import { FieldValue, type DocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import { logger } from 'firebase-functions';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { z } from 'zod';
 
@@ -12,8 +11,11 @@ import { LINKS, notify } from '../core/notify.js';
 import { db, REGION } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, name, reason } from '../core/schemas.js';
+import { JOB_OPTIONS, sweep } from '../core/sweep.js';
 import { dateKeyIST } from '../core/time.js';
+import { auditCtx, date } from './common.js';
 import { type ChecklistItem, canFor, loadEmployee } from './model.js';
+import { deleteFile, stagedCommand, storeNew } from './staged.js';
 
 /**
  * Employee documents (docs/HRMS.md §7). Files are private: they live in
@@ -84,8 +86,6 @@ async function isDocumentStaff(actor: Actor, orgId: string, employee: DocumentSn
 }
 
 const isSelf = (actor: Actor, employee: DocumentSnapshot) => !!employee.get('uid') && employee.get('uid') === actor.uid;
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
-const auditCtx = (actor: Actor, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 
 /**
  * On verification: older verified or expired copies of the same type are
@@ -103,48 +103,60 @@ async function verifyEffects(tx: Transaction, actor: Actor, orgId: string, emplo
   };
 }
 
+const uploadSchema = z.strictObject({
+  orgId: id,
+  employeeId: id,
+  typeId: id,
+  fileName: z.string().trim().min(1).max(120),
+  content: z.string().min(8).max(Math.ceil((MAX_DOCUMENT_BYTES * 4) / 3) + 4),
+  number: z.string().trim().max(40).default(''),
+  issuedOn: z.union([z.literal(''), date]).default(''),
+  expiresOn: z.union([z.literal(''), date]).default(''),
+});
+type UploadInput = z.infer<typeof uploadSchema>;
+
+/** Everything an upload is checked against (reads only); run when staging and again in the transaction. */
+async function checkUpload(tx: Transaction, actor: Actor, input: UploadInput) {
+  const employee = await loadEmployee(tx, input.orgId, input.employeeId);
+  const type = await loadType(tx, input.orgId, input.typeId);
+  const staff = await isDocumentStaff(actor, input.orgId, employee, tx);
+  if (!staff && !(isSelf(actor, employee) && type.selfUpload)) throw errors.forbidden();
+  if (employee.get('status') === 'OFFBOARDED' && !staff) throw errors.forbidden();
+  if (type.hasExpiry && !input.expiresOn) throw errors.invalid('Enter the expiry date.');
+  const today = dateKeyIST(new Date());
+  if (input.expiresOn && input.expiresOn <= today) throw errors.invalid('This document has already expired.');
+  if (input.issuedOn && input.issuedOn > today) throw errors.invalid('The issue date is in the future.');
+  // Documents about yourself always wait for someone else to verify them.
+  const verified = staff && !isSelf(actor, employee) && (await canFor(actor, 'documents.verify', input.orgId, employee.get('branchId'), tx));
+  return { employee, type, staff, verified };
+}
+
 /**
  * Uploads a document (base64 PDF, JPEG or PNG, 5 MB at most). Uploaded by a
  * verifier for someone else it is verified at once (they saw the original);
  * uploaded by the employee (types marked self-upload, or any type for HR staff
- * themselves) it waits for another verifier.
+ * themselves) it waits for another verifier. The file goes to Storage before
+ * the transaction, under a new random id that the record is then created
+ * with (never over an existing record or file); it is deleted if the record
+ * is not created.
  */
-export const upload = command(
+export const upload = stagedCommand(
   'documents-upload',
-  z.strictObject({
-    orgId: id,
-    employeeId: id,
-    typeId: id,
-    fileName: z.string().trim().min(1).max(120),
-    content: z.string().min(8).max(Math.ceil((MAX_DOCUMENT_BYTES * 4) / 3) + 4),
-    number: z.string().trim().max(40).default(''),
-    issuedOn: z.union([z.literal(''), date]).default(''),
-    expiresOn: z.union([z.literal(''), date]).default(''),
-  }),
-  async ({ actor, input, requestId }, tx) => {
-    const employee = await loadEmployee(tx, input.orgId, input.employeeId);
-    const type = await loadType(tx, input.orgId, input.typeId);
-    const staff = await isDocumentStaff(actor, input.orgId, employee, tx);
-    if (!staff && !(isSelf(actor, employee) && type.selfUpload)) throw errors.forbidden();
-    if (employee.get('status') === 'OFFBOARDED' && !staff) throw errors.forbidden();
-    if (type.hasExpiry && !input.expiresOn) throw errors.invalid('Enter the expiry date.');
-    const today = dateKeyIST(new Date());
-    if (input.expiresOn && input.expiresOn <= today) throw errors.invalid('This document has already expired.');
-    if (input.issuedOn && input.issuedOn > today) throw errors.invalid('The issue date is in the future.');
-
+  uploadSchema,
+  async ({ actor, input }) => {
+    await db.runTransaction((tx) => checkUpload(tx, actor, input), { readOnly: true });
     const bytes = Buffer.from(input.content, 'base64');
     const kind = FILE_TYPES.find((t) => t.matches(bytes));
     if (!kind) throw errors.invalid('Upload a PDF, JPEG or PNG file.');
     if (bytes.length > MAX_DOCUMENT_BYTES) throw errors.invalid('The file is too large (5 MB at most).');
-
-    // One file per request (a retried request overwrites the same file).
-    const ref = documentsCol(input.orgId, input.employeeId).doc(requestId ?? documentsCol(input.orgId, input.employeeId).doc().id);
-    const storagePath = `hr/${input.orgId}/${input.employeeId}/${ref.id}.${kind.ext}`;
-    // Documents about yourself always wait for someone else to verify them.
-    const verified = staff && !isSelf(actor, employee) && (await canFor(actor, 'documents.verify', input.orgId, employee.get('branchId'), tx));
+    const documentId = documentsCol(input.orgId, input.employeeId).doc().id;
+    const file = await storeNew(`hr/${input.orgId}/${input.employeeId}/${documentId}.${kind.ext}`, bytes, kind.type);
+    return { value: { documentId, kind, size: bytes.length, storagePath: file.name, storageBucket: file.bucket.name }, discard: () => deleteFile(file) };
+  },
+  async ({ actor, input, requestId }, tx, staged) => {
+    const { employee, type, staff, verified } = await checkUpload(tx, actor, input);
+    const ref = documentsCol(input.orgId, input.employeeId).doc(staged.documentId);
     const effects = verified ? await verifyEffects(tx, actor, input.orgId, employee, input.typeId, type, ref.id) : null;
-    const b = bucket();
-    await b.file(storagePath).save(bytes, { resumable: false, contentType: kind.type, metadata: { cacheControl: 'private, no-store' } });
 
     const record = {
       orgId: input.orgId,
@@ -157,10 +169,10 @@ export const upload = command(
       typeName: type.name,
       category: type.category,
       fileName: input.fileName,
-      contentType: kind.type,
-      size: bytes.length,
-      storagePath,
-      storageBucket: b.name,
+      contentType: staged.kind.type,
+      size: staged.size,
+      storagePath: staged.storagePath,
+      storageBucket: staged.storageBucket,
       number: input.number,
       issuedOn: input.issuedOn || null,
       expiresOn: input.expiresOn || null,
@@ -173,7 +185,7 @@ export const upload = command(
       verifiedAt: verified ? FieldValue.serverTimestamp() : null,
       rejectReason: null,
     };
-    tx.set(ref, { ...record, uploadedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+    tx.create(ref, { ...record, uploadedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
     effects?.();
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'employee.document.upload',
@@ -344,13 +356,16 @@ export const archiveType = command(
   },
 );
 
-/** Marks verified documents whose expiry date has passed as EXPIRED. Safe to repeat. */
-export async function expireDocuments(now = new Date(), batch = 300): Promise<number> {
+/**
+ * Marks verified documents whose expiry date has passed as EXPIRED; returns
+ * how many changed. Safe to repeat: a document that fails is logged and
+ * picked up by the next run.
+ */
+export async function expireDocuments(now = new Date()): Promise<number> {
   const today = dateKeyIST(now);
-  const due = await db.collectionGroup('documents').where('status', '==', 'VERIFIED').where('expiresOn', '<', today).limit(batch).get();
-  let expired = 0;
-  for (const d of due.docs) {
-    const done = await db.runTransaction(async (tx) => {
+  const due = db.collectionGroup('documents').where('status', '==', 'VERIFIED').where('expiresOn', '<', today);
+  const result = await sweep('documents-expire', due, (d) =>
+    db.runTransaction(async (tx) => {
       const snap = await tx.get(d.ref);
       if (snap.get('status') !== 'VERIFIED' || !(snap.get('expiresOn') < today)) return false;
       tx.update(d.ref, { status: 'EXPIRED', expiredAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
@@ -362,13 +377,11 @@ export async function expireDocuments(now = new Date(), batch = 300): Promise<nu
         after: { documentId: d.id, type: snap.get('typeName'), expiresOn: snap.get('expiresOn') },
       });
       return true;
-    });
-    if (done) expired += 1;
-  }
-  return expired;
+    }),
+  );
+  return result.changed;
 }
 
-export const expireSweep = onSchedule({ schedule: 'every day 00:30', timeZone: 'Asia/Kolkata', region: REGION }, async () => {
-  const n = await expireDocuments();
-  logger.info(`Expired ${n} employee documents`);
+export const expireSweep = onSchedule({ schedule: 'every day 00:30', timeZone: 'Asia/Kolkata', region: REGION, ...JOB_OPTIONS }, async () => {
+  await expireDocuments();
 });
