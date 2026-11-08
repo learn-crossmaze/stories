@@ -32,7 +32,7 @@ export const bootstrapSuperAdmin = command(
     }
     if (!user.exists) throw errors.conflict('NO_PROFILE', 'Please sign out and sign in again, then retry.');
     tx.set(stateRef, { superAdminBootstrapped: true, bootstrappedBy: actor.uid, at: FieldValue.serverTimestamp() });
-    tx.update(userRef, { platformRoles: ['SUPER_ADMIN'], updatedAt: FieldValue.serverTimestamp() });
+    tx.update(userRef, { platformRoles: ['SUPER_ADMIN'], claimsStale: true, updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, null, {
       action: 'platform.superAdmin.bootstrap',
       entityType: 'user',

@@ -8,7 +8,7 @@ import * as members from '../../src/members/members.js';
 import * as orgs from '../../src/organization/orgs.js';
 import * as staff from '../../src/organization/staff.js';
 import * as settings from '../../src/messaging/settings.js';
-import { deliver, handleWebhook, queueRenewalReminders } from '../../src/messaging/outbox.js';
+import { deliver, handleWebhook, queueRenewalReminders, reapOutbox } from '../../src/messaging/outbox.js';
 import { clearSwitchboardCache } from '../../src/messaging/whatsapp.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
@@ -244,5 +244,52 @@ describe('sending', () => {
     expect(await queueRenewalReminders(now)).toBe(1);
     const [r] = await outbox();
     expect(r.data()).toMatchObject({ event: 'renewal_reminder', memberId: memberRef.id, vars: { plan_name: 'Learner', days_left: '7' } });
+  });
+  it('queues each renewal reminder once, however often or overlapping the job runs', async () => {
+    fakeMeta();
+    await connect();
+    await template('renewal_reminder', { body: 'Hello {{member_name}}, your {{plan_name}} plan at {{branch_name}} ends on {{valid_until}} ({{days_left}} days left). Renew at the counter or in the Stories app to keep borrowing books.' });
+    clearSwitchboardCache();
+    const memberRef = db.collection(`orgs/${org}/members`).doc();
+    const subRef = db.collection(`orgs/${org}/subscriptions`).doc();
+    const now = new Date('2026-10-01T03:30:00Z');
+    await memberRef.set({ fullName: 'Asha', phone: '+919876543210', activeSubscriptionId: subRef.id, nextSubscriptionId: null, homeBranchId: central });
+    await subRef.set({ memberId: memberRef.id, branchId: central, status: 'ACTIVE', planSnapshot: {}, endAt: new Date(now.getTime() + 86_400_000) });
+    expect(await queueRenewalReminders(now)).toBe(1);
+    expect(await queueRenewalReminders(new Date(now.getTime() + 20 * 60_000))).toBe(0); // same hour: already queued
+    const [r] = await outbox();
+    expect(r.id).toBe(`renewal_${subRef.id}_1d`);
+    expect(r.get('vars')).toEqual({ valid_until: expect.any(String), days_left: '1' }); // a missing plan name is left out, not undefined
+  });
+
+  it('sends messages whose trigger never ran and closes interrupted sends without resending', async () => {
+    const calls = fakeMeta();
+    await connect();
+    await template('member_welcome');
+    await call(members.register, lib, { orgId: org, homeBranchId: central, fullName: 'Asha Rao', dob: '1990-05-01', phone: '98765 43210' });
+    const [queued] = await outbox();
+    const stuck = db.collection(`orgs/${org}/whatsappOutbox`).doc();
+    await stuck.set({ ...queued.data(), status: 'SENDING', attemptAt: new Date(Date.now() - 20 * 60_000) });
+    // Not yet: the trigger normally sends within seconds.
+    expect(await reapOutbox()).toEqual({ resent: 0, closed: 1 });
+    expect((await stuck.get()).data()).toMatchObject({ status: 'FAILED', error: expect.stringMatching(/interrupted/) });
+    expect(await reapOutbox(Date.now() + 11 * 60_000)).toEqual({ resent: 1, closed: 0 });
+    expect((await queued.ref.get()).get('status')).toBe('SENT');
+    expect(calls.filter((c) => c.path === `/${CONN.phoneNumberId}/messages`)).toHaveLength(1);
+  });
+
+  it('drops a message for an event Stories no longer knows instead of failing on it', async () => {
+    fakeMeta();
+    await connect();
+    const ref = db.collection(`orgs/${org}/whatsappOutbox`).doc();
+    await ref.set({ branchId: central, event: 'retired_event', memberId: 'm1', vars: {}, status: 'QUEUED', at: new Date() });
+    expect(await deliver(org, ref.id)).toBe('DROPPED');
+    expect((await ref.get()).exists).toBe(false);
+  });
+
+  it("refuses Meta's webhook check with an empty verify token", async () => {
+    fakeMeta();
+    await connect();
+    expect((await webhook('GET', null, { 'hub.mode': 'subscribe', 'hub.verify_token': '', 'hub.challenge': '42' })).status).toBe(403);
   });
 });

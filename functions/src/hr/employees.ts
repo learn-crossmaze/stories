@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { bucket, downloadUrl, IMAGE_TYPES } from '../catalogue/covers.js';
 import { recordAudit } from '../core/audit.js';
 import { command, type CallContext } from '../core/callable.js';
-import { syncClaims } from '../core/claims.js';
+import { markClaimsStale, syncClaims } from '../core/claims.js';
 import { errors } from '../core/errors.js';
 import { auth, db } from '../core/firebase.js';
 import { ALL_BRANCHES, type Actor, type Membership } from '../core/rbac.js';
@@ -289,6 +289,7 @@ export const transition = command(
     tx.update(snap.ref, { ...changes, updatedAt: FieldValue.serverTimestamp() });
     if (membershipRef && membership) {
       tx.update(membershipRef, { status: 'REVOKED', roles: [], revokedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
+      markClaimsStale(tx, snap.get('uid'));
       recordAudit(tx, auditCtx(ctx), input.orgId, {
         action: 'staff.revoke',
         entityType: 'membership',

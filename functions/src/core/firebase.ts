@@ -8,3 +8,6 @@ export const db = getFirestore();
 export const auth = getAuth();
 
 export const REGION = 'asia-south1';
+
+/** App Check is enforced once it is registered for the web app (docs/DEPLOYMENT.md, one-time steps). */
+export const ENFORCE_APP_CHECK = process.env.ENFORCE_APP_CHECK === 'true';

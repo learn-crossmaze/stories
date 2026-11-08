@@ -18,6 +18,7 @@ import { handleDeliveryWebhook } from './delivery/index.js';
 import { router } from './core/router.js';
 import { accrueLeave, expireDocuments } from './hr/index.js';
 import { handleWhatsAppWebhook, sendWhatsApp } from './messaging/index.js';
+import { maintenance } from './platform/maintenance.js';
 import { ROUTES } from './routes.js';
 
 setGlobalOptions({ region: REGION, maxInstances: 5 });
@@ -49,5 +50,5 @@ export const deliveryWebhook = onRequest({ region: REGION }, (req, res) => handl
 /** Sends each queued WhatsApp message (orgs/{o}/whatsappOutbox). */
 export const whatsapp = { send: sendWhatsApp };
 
-/** Scheduled jobs (idempotent). */
-export const scheduled = { expireSubscriptions, expireHolds, expireDocuments, accrueLeave };
+/** Scheduled jobs (idempotent). `maintenance` finishes interrupted work: claims syncs and WhatsApp sends. */
+export const scheduled = { expireSubscriptions, expireHolds, expireDocuments, accrueLeave, maintenance };

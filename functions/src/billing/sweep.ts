@@ -4,6 +4,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 
 import { recordAudit } from '../core/audit.js';
 import { db, REGION } from '../core/firebase.js';
+import { JOB_OPTIONS, sweep } from '../core/sweep.js';
 import { queueRenewalReminders } from '../messaging/outbox.js';
 import { queueWhatsApp } from '../messaging/whatsapp.js';
 
@@ -13,17 +14,11 @@ import { queueWhatsApp } from '../messaging/whatsapp.js';
  * re-checked inside its own transaction. Borrowing checks use the clock
  * directly, so a delayed sweep never lets an expired member borrow.
  */
-export async function expireDueSubscriptions(now = new Date(), batch = 300): Promise<number> {
-  const due = await db
-    .collectionGroup('subscriptions')
-    .where('status', '==', 'ACTIVE')
-    .where('endAt', '<=', Timestamp.fromDate(now))
-    .limit(batch)
-    .get();
-  let expired = 0;
-  for (const doc of due.docs) {
+export async function expireDueSubscriptions(now = new Date()): Promise<number> {
+  const due = db.collectionGroup('subscriptions').where('status', '==', 'ACTIVE').where('endAt', '<=', Timestamp.fromDate(now));
+  const run = await sweep('expireSubscriptions', due, (doc) => {
     const orgId = doc.ref.parent.parent!.id;
-    const done = await db.runTransaction(async (tx) => {
+    return db.runTransaction(async (tx) => {
       const sub = await tx.get(doc.ref);
       if (sub.get('status') !== 'ACTIVE' || sub.get('endAt').toMillis() > now.getTime()) return false;
       const memberRef = db.doc(`orgs/${orgId}/members/${sub.get('memberId')}`);
@@ -49,13 +44,14 @@ export async function expireDueSubscriptions(now = new Date(), batch = 300): Pro
       }
       return true;
     });
-    if (done) expired++;
-  }
-  return expired;
+  });
+  return run.changed;
 }
 
-export const expireSweep = onSchedule({ schedule: 'every 60 minutes', region: REGION, timeZone: 'Asia/Kolkata' }, async () => {
-  const n = await expireDueSubscriptions();
-  const reminders = await queueRenewalReminders();
-  logger.info(`expired ${n} subscriptions; queued ${reminders} renewal reminders`);
+/** Hourly: ends terms, then queues renewal reminders for the scheduled hour (each step runs even if the other fails). */
+export const expireSweep = onSchedule({ schedule: 'every 60 minutes', region: REGION, timeZone: 'Asia/Kolkata', ...JOB_OPTIONS }, async (event) => {
+  const hour = new Date(event.scheduleTime);
+  const results = await Promise.allSettled([expireDueSubscriptions(hour), queueRenewalReminders(hour)]);
+  for (const r of results) if (r.status === 'rejected') logger.error('expireSubscriptions: a step failed', { error: String(r.reason) });
+  if (results.some((r) => r.status === 'rejected')) throw new Error('expireSubscriptions: a step failed (see the log above)');
 });

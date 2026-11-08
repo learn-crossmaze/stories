@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
-import { syncClaims } from '../core/claims.js';
+import { assertClaimsFit, markClaimsStale, syncClaims } from '../core/claims.js';
 import { errors } from '../core/errors.js';
 import { auth, db } from '../core/firebase.js';
 import {
@@ -16,6 +16,7 @@ import {
   type Membership,
   type OrgType,
   rolesGrant,
+  type UserProfile,
 } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
 import { ROLES, type Role } from '../generated/rbac.js';
@@ -121,6 +122,10 @@ export const setRoles = command(
     if (!profile.exists) {
       throw errors.conflict('NO_PROFILE', 'This person needs to sign in to Stories once before roles can be granted.');
     }
+    await assertClaimsFit(tx, target.uid, profile.data() as UserProfile, {
+      orgId: input.orgId, orgName: orgSnap.get('name'), orgType, uid: target.uid, email: null, displayName: null,
+      roles: input.roles, branchIds: input.branchIds, status: 'ACTIVE',
+    });
     // Every staff member has one employee record (People); link or create it, never duplicate it.
     const email = target.email ?? input.email;
     const linked = await findEmployeeFor(tx, input.orgId, target.uid, email);
@@ -159,6 +164,7 @@ export const setRoles = command(
       });
     }
     tx.set(ref, { ...membership, employeeId: staffId.employeeId, grantedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
+    markClaimsStale(tx, target.uid);
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'staff.setRoles',
       entityType: 'membership',
@@ -185,6 +191,7 @@ export const revoke = command(
     if (!existing || existing.status !== 'ACTIVE') throw errors.notFound('Active staff role');
     await authorize(tx, actor, input.orgId, input.uid, existing, [], existing.branchIds);
     tx.update(ref, { status: 'REVOKED', roles: [], revokedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
+    markClaimsStale(tx, input.uid);
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'staff.revoke',
       entityType: 'membership',

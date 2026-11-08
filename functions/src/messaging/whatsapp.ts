@@ -1,7 +1,6 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-
 import { FieldValue, Timestamp, type Transaction, type WriteBatch } from 'firebase-admin/firestore';
 
+import { hmacHexMatches } from '../core/crypto.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { defaultTemplateName, eventFor } from './events.js';
@@ -155,11 +154,7 @@ export async function sendTemplate(conn: Pick<Connection, 'accessToken' | 'setti
 
 /** Verifies X-Hub-Signature-256: sha256= HMAC of the raw body with the Meta app secret. */
 export function verifyMetaSignature(rawBody: Buffer | string, header: string | undefined, secret: string): boolean {
-  if (!header?.startsWith('sha256=') || !secret) return false;
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-  const a = Buffer.from(expected, 'utf8');
-  const b = Buffer.from(header.slice(7), 'utf8');
-  return a.length === b.length && timingSafeEqual(a, b);
+  return hmacHexMatches(rawBody, header, secret, 'sha256=');
 }
 
 /** Paise as rupees for a message, e.g. ₹1,399 or ₹1,399.50. */
@@ -209,23 +204,31 @@ export interface QueuedMessage {
   vars?: Record<string, string>;
   /** What it is about, e.g. { loanIds } or { subscriptionId } (for the log). */
   ref?: Record<string, string | string[] | null>;
+  /** Fixed id for messages a job may queue more than once (e.g. one renewal reminder per plan and day); the second create fails. */
+  id?: string;
 }
+
+/** Values as text; missing ones are left out (Firestore rejects `undefined`, and the template fills them with ''). */
+const textValues = (vars: Record<string, unknown> | undefined) =>
+  Object.fromEntries(Object.entries(vars ?? {}).filter(([, v]) => v !== undefined && v !== null).map(([k, v]) => [k, String(v)]));
 
 /**
  * Queues a WhatsApp message in the caller's transaction or batch (writes only),
  * so it goes out exactly when the change it reports commits.
  */
-export function queueWhatsApp(writer: Transaction | WriteBatch, m: QueuedMessage) {
-  if (!wanted(m.orgId, m.branchId, m.event)) return;
-  (writer as Transaction).create(outboxCol(m.orgId).doc(), {
+/** Queues a message in the caller's transaction or batch; false when the branch has the event switched off (nothing written). */
+export function queueWhatsApp(writer: Transaction | WriteBatch, m: QueuedMessage): boolean {
+  if (!wanted(m.orgId, m.branchId, m.event)) return false;
+  (writer as Transaction).create(m.id ? outboxCol(m.orgId).doc(m.id) : outboxCol(m.orgId).doc(), {
     branchId: m.branchId,
     event: m.event,
     memberId: m.memberId ?? null,
     uid: m.uid ?? null,
-    vars: m.vars ?? {},
+    vars: textValues(m.vars),
     ref: m.ref ?? null,
     status: 'QUEUED',
     at: FieldValue.serverTimestamp(),
     expireAt: Timestamp.fromMillis(Date.now() + 90 * 86_400_000),
   });
+  return true;
 }

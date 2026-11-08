@@ -1,5 +1,4 @@
 import { FieldValue, Timestamp, type Transaction } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { z } from 'zod';
 
@@ -9,6 +8,7 @@ import { type CallContext, command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db, REGION } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
+import { JOB_OPTIONS, sweep } from '../core/sweep.js';
 import { logEvent } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
@@ -135,17 +135,12 @@ export const cancel = command('reservations-cancel', cancelSchema, (ctx, tx) =>
  * expires and the copy goes to the next member waiting, else back on the shelf.
  * Idempotent: each hold is re-checked in its own transaction.
  */
-export async function expireHolds(now = new Date(), batch = 300): Promise<number> {
-  const due = await db
-    .collectionGroup('reservations')
-    .where('status', '==', 'ALLOCATED')
-    .where('holdUntil', '<=', Timestamp.fromDate(now))
-    .limit(batch)
-    .get();
-  let n = 0;
-  for (const doc of due.docs) {
+export async function expireHolds(now = new Date()): Promise<number> {
+  const due = db.collectionGroup('reservations').where('status', '==', 'ALLOCATED').where('holdUntil', '<=', Timestamp.fromDate(now));
+  // One at a time: holds on the same title pass copies between members, so parallel runs would only contend.
+  const run = await sweep('expireHolds', due, (doc) => {
     const orgId = doc.ref.parent.parent!.id;
-    const done = await db.runTransaction(async (tx) => {
+    return db.runTransaction(async (tx) => {
       const res = await tx.get(doc.ref);
       if (res.get('status') !== 'ALLOCATED' || res.get('holdUntil').toMillis() > now.getTime()) return false;
       const copy = await tx.get(db.doc(`orgs/${orgId}/copies/${res.get('allocatedCopyId')}`));
@@ -163,11 +158,10 @@ export async function expireHolds(now = new Date(), batch = 300): Promise<number
       queueWhatsApp(tx, { orgId, branchId: res.get('branchId'), event: 'reservation_expired', memberId: res.get('memberId'), vars: { book_title: res.get('bookTitle') as string }, ref: { reservationId: res.id } });
       return true;
     });
-    if (done) n++;
-  }
-  return n;
+  }, { concurrency: 1 });
+  return run.changed;
 }
 
-export const expireHoldsSweep = onSchedule({ schedule: 'every 15 minutes', region: REGION, timeZone: 'Asia/Kolkata' }, async () => {
-  logger.info(`expired ${await expireHolds()} reservation holds`);
+export const expireHoldsSweep = onSchedule({ schedule: 'every 15 minutes', region: REGION, timeZone: 'Asia/Kolkata', ...JOB_OPTIONS }, async () => {
+  await expireHolds();
 });

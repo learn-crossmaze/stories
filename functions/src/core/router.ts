@@ -1,8 +1,6 @@
 import { type CallableFunction, type CallableRequest, HttpsError, onCall } from 'firebase-functions/v2/https';
 
-import { REGION } from './firebase.js';
-
-const ENFORCE_APP_CHECK = process.env.ENFORCE_APP_CHECK === 'true';
+import { ENFORCE_APP_CHECK, REGION } from './firebase.js';
 
 /**
  * Groups many callables behind one deployed function. Each Cloud Function is
