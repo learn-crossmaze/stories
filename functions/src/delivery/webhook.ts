@@ -1,13 +1,10 @@
-import { timingSafeEqual } from 'node:crypto';
-
 import { logger } from 'firebase-functions';
 import type { Request } from 'firebase-functions/v2/https';
 
+import { safeEqual } from '../core/crypto.js';
 import { applyTracking, syncOne } from './courierBooking.js';
 import { courierFor, porterStatus } from './couriers.js';
 import { type Delivery, deliveriesCol, privateRef } from './model.js';
-
-const sameToken = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 /** The courier's order number in a webhook body, wherever the courier puts it. */
 function orderIdOf(body: Record<string, unknown>): string | null {
@@ -30,7 +27,7 @@ export async function handleDeliveryWebhook(req: Request, res: { status: (n: num
   if (!orgId || !branchId || !token) return res.status(400).send('missing branch');
   const secret = await privateRef(orgId, branchId).get();
   const expected = secret.get('webhookToken') as string | undefined;
-  if (!expected || !sameToken(token, expected)) return res.status(401).send('bad token');
+  if (!expected || !safeEqual(token, expected)) return res.status(401).send('bad token');
 
   let body: Record<string, unknown>;
   try {

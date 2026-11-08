@@ -1,7 +1,6 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-
 import type { DocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 
+import { hmacHexMatches } from '../core/crypto.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 
@@ -95,11 +94,7 @@ export function gatewayError(e: unknown): never {
 
 /** Verifies the X-Razorpay-Signature header: HMAC-SHA256 of the raw request body with the webhook secret. */
 export function verifySignature(rawBody: Buffer | string, signature: string | undefined, secret: string): boolean {
-  if (!signature || !secret) return false;
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-  const a = Buffer.from(expected, 'utf8');
-  const b = Buffer.from(signature, 'utf8');
-  return a.length === b.length && timingSafeEqual(a, b);
+  return hmacHexMatches(rawBody, signature, secret);
 }
 
 // ------------------------------------------------------------------ API shapes (subset)
