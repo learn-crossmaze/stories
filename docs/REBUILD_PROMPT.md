@@ -34,7 +34,8 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
   `seed`, `gen:rbac`, `deploy:backend` (`firebase deploy --only firestore,functions,storage`). Hosting deploys from
   GitHub Actions on merge to `main`; every PR gets a Firebase preview channel.
 - **CI (GitHub Actions):** web (typecheck, test, build), functions (typecheck, unit + emulator tests), security rules
-  tests (emulator), RBAC generator `--check`, hosting preview.
+  tests (emulator), RBAC generator `--check`, hosting preview. `deploy.yml` on main: CI → backend (when
+  `DEPLOY_BACKEND` is on) → hosting. Dependabot monthly.
 
 ### 0.2 Business rules (non-negotiable)
 
@@ -60,7 +61,9 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
   pipeline: auth → load `Actor` (uid, email, emailVerified, profile) → zod validate (+ `requestId: uuid`) → **one
   Firestore transaction** running the handler (permission checks, rules, writes, audit) → result stored in
   `idempotency/{name}:{uid}:{requestId}` (TTL 30 days) so a retry returns the stored result → optional `after`
-  side effect post-commit. App Check enforcement behind `ENFORCE_APP_CHECK`.
+  side effect post-commit (idempotent; retried with the same requestId until it succeeds). An optional `prepare`
+  step does network work before the transaction (`discard` undoes it if the transaction doesn't commit). The web
+  `command()` retries transient failures with the same requestId. App Check enforcement behind `ENFORCE_APP_CHECK`.
 - **Routers:** actions are grouped into a few deployed callables to stay within the Cloud Run CPU quota —
   `admin` (platform, organization, `whatsapp-*`), `catalogue`, `inventory`, `members`, `billing`, `circulation`,
   `hr` — called as `{ action: 'books-create', ...data }`. The web maps action prefixes to routers
@@ -69,7 +72,9 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
 - Scheduled (all idempotent): `scheduled-expireHolds` (every 15 min: expired reservation holds pass on),
   `scheduled-expireSubscriptions` (hourly: ended terms EXPIRED, pre-paid renewals take over, WhatsApp renewal
   reminders 7 and 1 days ahead), `scheduled-expireDocuments` (employee document expiry reminders) and
-  `scheduled-accrueLeave` (monthly/yearly leave credits). HTTP: `razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`. Firestore
+  `scheduled-accrueLeave` (monthly/yearly leave credits), `scheduled-maintenance` (every 15 min: re-syncs claims of
+  users left `claimsStale`, sends or closes stuck WhatsApp messages). Jobs run through `core/sweep.ts` (paged, one
+  failing document never blocks the rest). HTTP: `razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`. Firestore
   trigger: `whatsapp-send` (one run per queued WhatsApp message).
 - `Actor.require(perm, orgId, branchId?, tx?)` reads `users/{uid}/memberships/{orgId}` (roles, branchIds, status);
   `requireCatalog(perm)` needs the permission in a **CORPORATE** org (or Super Admin). Errors are typed
@@ -294,7 +299,7 @@ payroll run waiting for Finance to approve).
 
 ### 0.10 Quality bar
 
-- Tests: web (Vitest + Testing Library, 58), functions unit (51) and emulator (132: every command's rules, races,
+- Tests: web (Vitest + Testing Library, 78), functions unit (54) and emulator (176: every command's rules, races,
   idempotency, permissions, member self-service, ownership, HRMS, WhatsApp with a fake Graph API), security rules
   (41), camera decoder tests on synthetic webcam frames. No test is skipped to get green.
 - Accessibility: labelled controls, status never shown by colour alone, focus management in dialogs, reduced motion.
