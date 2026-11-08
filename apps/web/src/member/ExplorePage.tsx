@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { BookCover } from '../shared/BookCover';
-import { call, errorText } from '../data/api';
+import { call } from '../data/api';
 import { type Book, searchBooks } from '../data/catalogue';
 import { label } from '../data/common';
 import { type Membership, reserveBook } from '../data/me';
+import { useAction } from '../shared/Dialog';
+import { useAsync } from '../shared/useAsync';
 import { useDebounced } from '../shared/useDebounced';
 import { usePagedQuery } from '../shared/usePagedQuery';
 import { t } from '../strings';
@@ -75,36 +77,34 @@ function ExploreBody({ m }: { m: Membership }) {
 
 /** Synopsis, where copies are and a Reserve button (at the home branch or one that has it). */
 function BookPanel({ m, book, onReserved }: { m: Membership; book: Book; onReserved: () => void }) {
-  const [avail, setAvail] = useState<Availability | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  useEffect(() => {
-    call<Availability>('copies-availability', { orgId: m.orgId, bookId: book.id })
-      .then(setAvail)
-      .catch(() => setAvail({ branches: [] }));
-  }, [m.orgId, book.id]);
+  const avail = useAsync(() => call<Availability>('copies-availability', { orgId: m.orgId, bookId: book.id }), [m.orgId, book.id]);
+  const action = useAction();
+  const [reserved, setReserved] = useState<string | null>(null);
   const already = m.reservations.some((r) => r.bookId === book.id && (r.status === 'WAITING' || r.status === 'ALLOCATED'));
-  const branches = avail ? [...avail.branches].sort((a, b) => Number(b.branchId === m.branch.id) - Number(a.branchId === m.branch.id)) : [];
-  if (avail && !branches.some((b) => b.branchId === m.branch.id))
+  const branches = avail.data ? [...avail.data.branches].sort((a, b) => Number(b.branchId === m.branch.id) - Number(a.branchId === m.branch.id)) : [];
+  if (avail.data && !branches.some((b) => b.branchId === m.branch.id))
     branches.unshift({ branchId: m.branch.id, branchName: m.branch.name, available: 0, total: 0 });
-  const reserve = async (branchId: string) => {
-    setBusy(branchId);
-    setMsg(null);
-    try {
+  const reserve = (branchId: string) => {
+    setReserved(null);
+    return action.run(async () => {
       const r = await reserveBook(m, book.id, branchId);
-      setMsg({ tone: 'ok', text: r.status === 'ALLOCATED' ? t.meReservedHeld : t.meReservedWaiting });
+      setReserved(r.status === 'ALLOCATED' ? t.meReservedHeld : t.meReservedWaiting);
       onReserved();
-    } catch (e) {
-      setMsg({ tone: 'error', text: errorText(e) });
-    } finally {
-      setBusy(null);
-    }
+    }, branchId);
   };
   return (
     <div className="book-panel">
       {book.synopsis && <p className="synopsis">{book.synopsis}</p>}
-      {!avail ? (
+      {avail.loading ? (
         <SkeletonRows rows={1} />
+      ) : avail.error || !avail.data ? (
+        // Unknown availability is not "not stocked": say so, and offer to try again.
+        <p className="form-error" role="alert">
+          {avail.error ?? t.errorLoad}{' '}
+          <button type="button" className="btn btn-text" onClick={avail.reload}>
+            {t.retry}
+          </button>
+        </p>
       ) : (
         <ul className="plain-list">
           {branches.map((b) => (
@@ -119,19 +119,24 @@ function BookPanel({ m, book, onReserved }: { m: Membership; book: Book; onReser
                 <button
                   type="button"
                   className="btn btn-outlined"
-                  disabled={busy !== null || m.member.status !== 'ACTIVE'}
+                  disabled={action.busy || m.member.status !== 'ACTIVE'}
                   onClick={() => void reserve(b.branchId)}
                 >
-                  {busy === b.branchId ? t.saving : b.available ? t.meReserveHere : t.meJoinQueue}
+                  {action.pending === b.branchId ? t.saving : b.available ? t.meReserveHere : t.meJoinQueue}
                 </button>
               )}
             </li>
           ))}
         </ul>
       )}
-      {msg && (
-        <p className={msg.tone === 'ok' ? 'form-notice' : 'form-error'} role={msg.tone === 'ok' ? 'status' : 'alert'}>
-          {msg.text}
+      {reserved && (
+        <p className="form-notice" role="status">
+          {reserved}
+        </p>
+      )}
+      {action.error && (
+        <p className="form-error" role="alert">
+          {action.error}
         </p>
       )}
     </div>
