@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
-import { ApiError, command } from '../../data/api';
+import { command } from '../../data/api';
 import { memberSubscriptions } from '../../data/billing';
 import { type Loan, memberLoans, memberReservations } from '../../data/circulation';
 import { label, toDate } from '../../data/common';
@@ -14,13 +14,14 @@ import { day, since } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { useAction } from '../components/Dialog';
 import { NeedBranch, Notice, ScanInput, Tabs } from '../components/kit';
+import { reportError } from '../../shared/reportError';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 import { CopyStatusBadge } from '../inventory/Inventory';
 
 type Msg = { tone: 'ok' | 'warn' | 'error'; text: string } | null;
-const failText = (e: unknown) => (e instanceof ApiError ? e.message : t.errorGeneric);
 
 function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
   const { claims } = useAuth();
@@ -30,7 +31,8 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
   const [returning, setReturning] = useState<string[]>([]);
   const [issuing, setIssuing] = useState<Copy[]>([]);
   const [msg, setMsg] = useState<Msg>(null);
-  const [busy, setBusy] = useState(false);
+  const action = useAction();
+  const busy = action.busy;
   const [tick, setTick] = useState(0);
   const mid = member?.id ?? '';
   const loans = useAsync(() => (mid ? memberLoans(orgId, mid, scope, true) : Promise.resolve([] as Loan[])), [orgId, mid, tick]);
@@ -76,9 +78,8 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
     if (!member) return;
     const returnCodes = active.filter((l) => returning.includes(l.id)).map((l) => l.copyCode);
     const issueCodes = issuing.map((c) => c.barcode);
-    setBusy(true);
     setMsg(null);
-    try {
+    const done = await action.run(async () => {
       if (returnCodes.length && issueCodes.length) {
         await command('circulation-exchange', { orgId, branchId, memberId: member.id, returnBarcodes: returnCodes, issueBarcodes: issueCodes });
       } else if (issueCodes.length) {
@@ -86,16 +87,18 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
       } else {
         await command('circulation-return', { orgId, branchId, barcodes: returnCodes });
       }
-      setMsg({ tone: 'ok', text: lt.done });
-      setReturning([]);
-      setIssuing([]);
-      // Refresh the member's counters (books held, holds) along with the lists.
+    });
+    if (!done) return;
+    setMsg({ tone: 'ok', text: lt.done });
+    setReturning([]);
+    setIssuing([]);
+    setTick((n) => n + 1);
+    // Refresh the member's counters (books held, holds). The books went out either way:
+    // a failed refresh only leaves the old counters on screen.
+    try {
       setMember((await getMember(orgId, member.id)) ?? member);
-      setTick((n) => n + 1);
     } catch (e) {
-      setMsg({ tone: 'error', text: failText(e) });
-    } finally {
-      setBusy(false);
+      reportError(e, 'load', { what: 'member after desk action' });
     }
   };
 
@@ -201,6 +204,7 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
         </section>
       </div>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       <div className="desk-actions">
         <button type="button" className="btn btn-filled btn-lg" disabled={busy || (!r && !i) || !canAct} onClick={go}>
           {busy ? t.saving : actionLabel}
@@ -213,12 +217,12 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
 function QuickReturn({ orgId, branchId }: { orgId: string; branchId: string }) {
   const [staged, setStaged] = useState<Copy[]>([]);
   const [msg, setMsg] = useState<Msg>(null);
-  const [busy, setBusy] = useState(false);
+  const action = useAction();
   return (
     <section className="card">
       <ScanInput
         label={lt.scanToReturn}
-        busy={busy}
+        busy={action.busy}
         onScan={async (v) => {
           setMsg(null);
           const c = await findCopy(orgId, branchId, v);
@@ -237,21 +241,18 @@ function QuickReturn({ orgId, branchId }: { orgId: string; branchId: string }) {
         </ul>
       )}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       <button
         type="button"
         className="btn btn-filled"
-        disabled={busy || !staged.length}
-        onClick={async () => {
-          setBusy(true);
-          try {
+        disabled={action.busy || !staged.length}
+        onClick={() => {
+          setMsg(null);
+          void action.run(async () => {
             await command('circulation-return', { orgId, branchId, barcodes: staged.map((c) => c.barcode) });
             setMsg({ tone: 'ok', text: lt.returned(staged.length) });
             setStaged([]);
-          } catch (e) {
-            setMsg({ tone: 'error', text: failText(e) });
-          } finally {
-            setBusy(false);
-          }
+          });
         }}
       >
         {lt.returnN(staged.length)}
@@ -262,21 +263,17 @@ function QuickReturn({ orgId, branchId }: { orgId: string; branchId: string }) {
 
 function Inspection({ orgId, branchId }: { orgId: string; branchId: string }) {
   const queue = useAsync(() => listCopies(orgId, branchId, 'UNDER_INSPECTION').then((p) => p.items), [orgId, branchId]);
-  const [msg, setMsg] = useState<Msg>(null);
-  const decide = async (c: Copy, outcome: 'PASS' | 'DAMAGED') => {
-    setMsg(null);
-    try {
+  const action = useAction();
+  const decide = (c: Copy, outcome: 'PASS' | 'DAMAGED') =>
+    action.run(async () => {
       await command('copies-inspect', { orgId, copyId: c.id, outcome, condition: outcome === 'PASS' ? c.condition : 'POOR' });
       queue.reload();
-    } catch (e) {
-      setMsg({ tone: 'error', text: failText(e) });
-    }
-  };
+    }, c.id);
   if (queue.loading) return <SkeletonRows rows={3} />;
   if (!queue.data?.length) return <EmptyState icon="check" title={lt.noInspections} message="" />;
   return (
     <>
-      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       <ul className="plain-list">
         {queue.data.map((c) => (
           <li key={c.id}>
@@ -287,10 +284,10 @@ function Inspection({ orgId, branchId }: { orgId: string; branchId: string }) {
               {c.bookTitle} <span className="muted small">· {label(c.condition)}</span>
             </span>
             <span className="cell-actions">
-              <button type="button" className="btn btn-outlined" onClick={() => decide(c, 'PASS')}>
+              <button type="button" className="btn btn-outlined" disabled={action.busy} onClick={() => void decide(c, 'PASS')}>
                 {lt.passInspection}
               </button>
-              <button type="button" className="btn btn-text" onClick={() => decide(c, 'DAMAGED')}>
+              <button type="button" className="btn btn-text" disabled={action.busy} onClick={() => void decide(c, 'DAMAGED')}>
                 {lt.failInspection}
               </button>
             </span>
