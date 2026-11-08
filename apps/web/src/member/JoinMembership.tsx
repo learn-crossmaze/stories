@@ -1,12 +1,13 @@
 import { useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
-import { ApiError } from '../data/api';
+import { errorText } from '../data/api';
 import { addChild, joinLibrary, loadJoinOptions, type Membership } from '../data/me';
 import { ErrorState, SkeletonRows } from '../shared/ui';
 import { useAsync } from '../shared/useAsync';
 import { t } from '../strings';
-import { FormError, SelectField, TextField } from '../admin/components/Dialog';
+import { FormError } from '../shared/Dialog';
+import { SelectField, TextField } from '../shared/fields';
 import { useMemberData } from './memberData';
 import { aadhaarError, cleanAadhaar } from '../shared/aadhaar';
 
@@ -58,7 +59,7 @@ export function JoinMembership() {
       select(res.memberId);
       overview.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -134,7 +135,7 @@ export function AddChild({ member }: { member: Membership }) {
       select(res.memberId);
       overview.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }

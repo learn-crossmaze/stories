@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
-import { DialogActions, FormError, SelectField, TextArea, TextField, useSubmit } from '../admin/components/Dialog';
+import { DialogActions, FormError, useSubmit } from './Dialog';
+import { SelectField, TextArea, TextField } from './fields';
 import type { DeliveryAddress, DeliveryKind, RequestInput } from '../data/delivery';
 import { istDate } from '../data/delivery';
 import { money } from './format';

@@ -4,12 +4,12 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { ApiError } from '../../data/api';
+import { errorText } from '../../data/api';
 import { branchPayments, checkRefund, depositAccount, depositLeft, type Payment, type PaymentView, refundable, type RefundInput, refundPayment } from '../../data/billing';
 import { label } from '../../data/common';
 import { paths } from '../../paths';
 import { money, toMinor, when } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
+import { EmptyState, ErrorState, makeStatusBadge, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { lt } from '../../strings/library';
@@ -19,12 +19,8 @@ import { useWorkspace } from '../Workspace';
 
 /** "UPI", "Razorpay link"… */
 export const methodLabel = (m: string) => lt.paymentMethods[m] ?? label(m.replace(/^(OFFLINE|ONLINE)_/, ''));
-const REFUND_TONE: Record<string, string> = { SUCCESS: 'ok', PENDING: 'info', PROCESSING: 'info', FAILED: 'danger' };
-
 /** Refund status in words: always text, never colour alone. */
-export function RefundBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${REFUND_TONE[status] ?? 'muted'}`}>{lt.refundStatus[status] ?? label(status)}</span>;
-}
+export const RefundBadge = makeStatusBadge<string>({ SUCCESS: 'ok', PENDING: 'info', PROCESSING: 'info', FAILED: 'danger' }, (s) => lt.refundStatus[s] ?? label(s));
 
 /**
  * Refunds (part of) a payment. A Razorpay payment goes back through Razorpay
@@ -72,7 +68,7 @@ export function RefundDialog({ orgId, payment, memberName, onClose, onDone }: { 
       onDone(r.status === 'PENDING' ? lt.refundPending(money(r.amountMinor), who) : lt.refundDone(money(r.amountMinor), who, r.gatewayRefundId));
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setBusy(false);
     }
@@ -162,7 +158,7 @@ function BranchPayments({ orgId, branchId }: { orgId: string; branchId: string }
       setNotice(lt.refundChecked(lt.refundStatus[r.status] ?? r.status));
       list.reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
+      setError(errorText(err));
     } finally {
       setChecking(null);
     }

@@ -1,4 +1,3 @@
-import type { DocumentSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -10,6 +9,7 @@ import { AGE_GROUPS, type AgeGroup, GENRES, label, LANGUAGES, READING_LEVELS } f
 import { type BranchStock, stockByBranch } from '../../data/inventory';
 import { useAsync } from '../../shared/useAsync';
 import { useDebounced } from '../../shared/useDebounced';
+import { usePagedQuery } from '../../shared/usePagedQuery';
 import { toMinor } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
@@ -303,9 +303,8 @@ export function CataloguePage() {
   const [age, setAge] = useState<AgeGroup | ''>('');
   const [status, setStatus] = useState<Book['status'] | ''>('');
   const debounced = useDebounced(q);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
-  const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+  const list = usePagedQuery<Book>((after) => searchBooks(debounced, age, after, status), [debounced, age, status]);
+  const books = list.items;
   const [attempt, setAttempt] = useState(0);
   const [dialog, setDialog] = useState<'book' | 'refs' | 'numbering' | null>(null);
   const { org, branch } = useWorkspace();
@@ -334,22 +333,10 @@ export function CataloguePage() {
     setStockFailed(false);
   }, [org?.id, attempt]);
 
-  const load = async (after?: DocumentSnapshot) => {
-    setState({ loading: true, error: null });
-    try {
-      const page = await searchBooks(debounced, age, after, status);
-      setBooks((prev) => (after ? [...prev, ...page.items] : page.items));
-      setCursor(page.cursor);
-      setState({ loading: false, error: null });
-    } catch (e) {
-      console.error(e);
-      setState({ loading: false, error: t.errorLoad });
-    }
+  const reload = () => {
+    setAttempt((n) => n + 1);
+    list.reload();
   };
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced, age, status, attempt]);
 
   return (
     <>
@@ -392,9 +379,9 @@ export function CataloguePage() {
           <option value="ARCHIVED">{lt.archivedTitles}</option>
         </select>
       </div>
-      {state.error && books.length === 0 ? (
-        <ErrorState message={state.error} onRetry={() => setAttempt((n) => n + 1)} />
-      ) : state.loading && books.length === 0 ? (
+      {list.error && books.length === 0 ? (
+        <ErrorState message={list.error} onRetry={reload} />
+      ) : list.loading && books.length === 0 ? (
         <SkeletonRows rows={6} />
       ) : books.length === 0 ? (
         <EmptyState icon="book" title={lt.booksEmpty} message={lt.booksEmptyHint} />
@@ -419,14 +406,15 @@ export function CataloguePage() {
               </li>
             ))}
           </ul>
-          {cursor && (
-            <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
-              {state.loading ? t.loading : t.loadMore}
+          {list.error && <p className="form-error" role="alert">{list.error}</p>}
+          {list.hasMore && (
+            <button type="button" className="btn btn-outlined load-more" disabled={list.loading} onClick={list.loadMore}>
+              {list.loading ? t.loading : t.loadMore}
             </button>
           )}
         </>
       )}
-      {dialog === 'book' && <BookDialog onClose={() => setDialog(null)} onSaved={() => setAttempt((n) => n + 1)} />}
+      {dialog === 'book' && <BookDialog onClose={() => setDialog(null)} onSaved={reload} />}
       {dialog === 'refs' && <RefDataDialog onClose={() => setDialog(null)} />}
       {dialog === 'numbering' && <BookNumbering onClose={() => setDialog(null)} />}
     </>

@@ -1,9 +1,7 @@
-import type { DocumentSnapshot } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
-
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
 import { type AuditEntry, listAudit } from '../../data/org';
+import { usePagedQuery } from '../../shared/usePagedQuery';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useWorkspace } from '../Workspace';
@@ -30,35 +28,18 @@ function Changes({ entry }: { entry: AuditEntry }) {
 export function AuditPage() {
   const { claims } = useAuth();
   const { org, branchName } = useWorkspace();
-  const [entries, setEntries] = useState<AuditEntry[]>([]);
-  const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const scopeKey = JSON.stringify(scope);
-
-  const load = async (after?: DocumentSnapshot) => {
-    if (!org) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const page = await listAudit(org.id, scope, after);
-      setEntries((prev) => (after ? [...prev, ...page.entries] : page.entries));
-      setCursor(page.cursor);
-    } catch (e) {
-      console.error(e);
-      setError(t.errorLoad);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    setEntries([]);
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [org?.id, scopeKey, attempt]);
+  // Another organization's (or scope's) entries never stay on screen while the new ones load.
+  const list = usePagedQuery<AuditEntry>(
+    async (after) => {
+      const page = await listAudit(org!.id, scope, after);
+      return { items: page.entries, cursor: page.cursor };
+    },
+    [org?.id, scopeKey],
+    { enabled: !!org, keepPrevious: false },
+  );
+  const { items: entries, loading, error } = list;
 
   if (!org) return <NoOrgState />;
   return (
@@ -67,7 +48,7 @@ export function AuditPage() {
         <h1>{t.auditTitle}</h1>
       </header>
       {error && entries.length === 0 ? (
-        <ErrorState message={error} onRetry={() => setAttempt((n) => n + 1)} />
+        <ErrorState message={error} onRetry={list.reload} />
       ) : loading && entries.length === 0 ? (
         <SkeletonRows rows={6} />
       ) : entries.length === 0 ? (
@@ -104,9 +85,9 @@ export function AuditPage() {
               </tbody>
             </table>
           </TableWrap>
-          {error && <p className="form-error">{error}</p>}
-          {cursor && (
-            <button type="button" className="btn btn-outlined load-more" disabled={loading} onClick={() => load(cursor)}>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          {list.hasMore && (
+            <button type="button" className="btn btn-outlined load-more" disabled={loading} onClick={list.loadMore}>
               {loading ? t.loading : t.loadMore}
             </button>
           )}

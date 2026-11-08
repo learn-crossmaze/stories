@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { toApiError } from '../data/api';
+import { errorText } from '../data/api';
 import { DURATION_LABELS, type Duration, label, PER_PERIOD, planWithOption } from '../data/common';
 import {
   cancelUnpaid,
@@ -17,7 +17,7 @@ import {
 import { useAsync } from '../shared/useAsync';
 import { PendingUpgrade, UpgradeChooser } from '../shared/Upgrade';
 import { day, money } from '../shared/format';
-import { TableWrap } from '../shared/ui';
+import { Badge, TableWrap } from '../shared/ui';
 import { t } from '../strings';
 import { AddChild } from './JoinMembership';
 import { useMemberData } from './memberData';
@@ -69,7 +69,7 @@ function MembershipBody({ m }: { m: Membership }) {
       if (ok) setMsg({ tone: 'ok', text: ok });
       overview.reload();
     } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
+      setMsg({ tone: 'error', text: errorText(e) });
     } finally {
       setBusy(null);
     }
@@ -91,7 +91,7 @@ function MembershipBody({ m }: { m: Membership }) {
       setMsg(r.paid ? { tone: 'ok', text: t.mePaid } : { tone: 'error', text: t.meNotPaidYet });
       if (r.paid) overview.reload();
     } catch (e) {
-      setMsg({ tone: 'error', text: toApiError(e).message });
+      setMsg({ tone: 'error', text: errorText(e) });
     } finally {
       setBusy(null);
     }
@@ -296,7 +296,7 @@ function PlanCard({ plan, busy, disabled, onChoose }: { plan: MyPlan; busy: bool
             <label key={o.duration} className="check">
               <input type="radio" name={`opt-${plan.id}`} checked={pick === o.duration} onChange={() => setPick(o.duration)} />
               {DURATION_LABELS[o.duration]} · {money(o.priceMinor)}
-              {o.discountLabel && <span className="badge badge-ok">{o.discountLabel}</span>}
+              {o.discountLabel && <Badge tone="ok">{o.discountLabel}</Badge>}
             </label>
           ))}
         </fieldset>

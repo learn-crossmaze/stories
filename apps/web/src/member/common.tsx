@@ -5,7 +5,7 @@ import { label } from '../data/common';
 import { currentTerm, type Membership } from '../data/me';
 import { day, relativeDays } from '../shared/format';
 import { t } from '../strings';
-import { EmptyState, ErrorState, SkeletonRows } from '../shared/ui';
+import { Badge, EmptyState, ErrorState, SkeletonRows } from '../shared/ui';
 import { JoinMembership } from './JoinMembership';
 import { useMemberData } from './memberData';
 
@@ -71,9 +71,9 @@ export function MemberSwitcher() {
 export function PlanBadge({ m }: { m: Membership }) {
   const term = currentTerm(m);
   const left = days(m.member.renewalDueAt);
-  if (!term) return <span className="badge badge-muted">{t.meNoPlan}</span>;
-  if (left !== null && left <= 15) return <span className="badge badge-warn">{t.meRenewSoon(relativeDays(m.member.renewalDueAt))}</span>;
-  return <span className="badge badge-ok">{t.meActive}</span>;
+  if (!term) return <Badge tone="muted">{t.meNoPlan}</Badge>;
+  if (left !== null && left <= 15) return <Badge tone="warn">{t.meRenewSoon(relativeDays(m.member.renewalDueAt))}</Badge>;
+  return <Badge tone="ok">{t.meActive}</Badge>;
 }
 
 export function LoanList({ loans }: { loans: Membership['loans'] }) {

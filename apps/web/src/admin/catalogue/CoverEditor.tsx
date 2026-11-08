@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 
-import { command } from '../../data/api';
+import { command, errorText } from '../../data/api';
 import { shrinkToJpeg } from '../../shared/image';
 import type { Book } from '../../data/catalogue';
 import { BookCover, Notice } from '../components/kit';
@@ -22,7 +22,7 @@ export function CoverEditor({ book, canEdit, onChanged }: { book: Book; canEdit:
       await command('books-setCover', { bookId: book.id, image });
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : lt.coverFailed);
+      setError(errorText(e, lt.coverFailed));
     } finally {
       setBusy(false);
     }

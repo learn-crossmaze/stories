@@ -1,95 +1,12 @@
-import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { useState } from 'react';
 
-import { ApiError } from '../../data/api';
+import { Dialog, DialogActions, FormError, useAction, useSubmit } from '../../shared/Dialog';
+import { TextField } from '../../shared/fields';
 import { t } from '../../strings';
 
-/**
- * Accessible modal: labelled, Escape closes, focus moves in, stays in (Tab wraps) and returns on close.
- * Forms get room for two columns; `narrow` suits a short confirmation or a single field.
- */
-export function Dialog({ title, onClose, children, narrow }: { title: string; onClose: () => void; children: ReactNode; narrow?: boolean }) {
-  const titleId = useId();
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-      // Keep Tab inside the dialog while it is open.
-      if (e.key !== 'Tab' || !ref.current) return;
-      const items = [...ref.current.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(
-        (el) =>
-          !el.hasAttribute('disabled') && !el.closest('[hidden]') && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden',
-      );
-      if (!items.length) return;
-      const [first, last] = [items[0], items[items.length - 1]];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      previous?.focus();
-    };
-  }, [onClose]);
-  return (
-    <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={narrow ? 'dialog dialog-narrow' : 'dialog'} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
-        <h2 id={titleId}>{title}</h2>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Form wrapper for a server command: disables double submits, keeps input on
- * failure and shows the server's user-facing message.
- */
-export function useSubmit(action: () => Promise<void>) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const submit = async (e?: FormEvent) => {
-    e?.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await action();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : t.errorGeneric);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { busy, error, submit };
-}
-
-export function FormError({ error }: { error: string | null }) {
-  return (
-    <p className="form-error" role="alert">
-      {error}
-    </p>
-  );
-}
-
-export function DialogActions({ busy, submitLabel, onCancel, danger }: { busy: boolean; submitLabel: string; onCancel: () => void; danger?: boolean }) {
-  return (
-    <div className="dialog-actions">
-      <button type="button" className="btn btn-text" onClick={onCancel} disabled={busy}>
-        {t.cancel}
-      </button>
-      <button type="submit" className={`btn ${danger ? 'btn-danger' : 'btn-filled'}`} disabled={busy}>
-        {busy ? t.saving : submitLabel}
-      </button>
-    </div>
-  );
-}
+// The dialog and form pieces live in src/shared (the member app uses them too); re-exported for the console.
+export { Dialog, DialogActions, FormError, useAction, useSubmit } from '../../shared/Dialog';
+export { SelectField, TextArea, TextField } from '../../shared/fields';
 
 /** Confirmation for destructive actions; the reason goes into the audit log. */
 export function ConfirmWithReason({
@@ -125,99 +42,6 @@ export function ConfirmWithReason({
   );
 }
 
-export function TextField(props: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  error?: string;
-  hint?: string;
-  type?: string;
-  autoComplete?: string;
-  disabled?: boolean;
-}) {
-  const id = useId();
-  const described = [props.hint && `${id}-hint`, props.error && `${id}-error`].filter(Boolean).join(' ') || undefined;
-  return (
-    <div className="field">
-      <label htmlFor={id}>{props.label}</label>
-      <input
-        id={id}
-        type={props.type ?? 'text'}
-        value={props.value}
-        disabled={props.disabled}
-        autoComplete={props.autoComplete}
-        onChange={(e) => props.onChange(e.target.value)}
-        aria-invalid={!!props.error}
-        aria-describedby={described}
-      />
-      {props.hint && (
-        <span id={`${id}-hint`} className="field-hint">
-          {props.hint}
-        </span>
-      )}
-      {props.error && (
-        <span id={`${id}-error`} className="field-error">
-          {props.error}
-        </span>
-      )}
-    </div>
-  );
-}
-
-export function SelectField<T extends string>(props: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-  disabled?: boolean;
-  hint?: string;
-  error?: string;
-}) {
-  const id = useId();
-  const described = [props.hint && `${id}-hint`, props.error && `${id}-error`].filter(Boolean).join(' ') || undefined;
-  return (
-    <div className="field">
-      <label htmlFor={id}>{props.label}</label>
-      <select
-        id={id}
-        value={props.value}
-        disabled={props.disabled}
-        onChange={(e) => props.onChange(e.target.value as T)}
-        aria-invalid={!!props.error}
-        aria-describedby={described}
-      >
-        {props.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      {props.hint && (
-        <span id={`${id}-hint`} className="field-hint">
-          {props.hint}
-        </span>
-      )}
-      {props.error && (
-        <span id={`${id}-error`} className="field-error">
-          {props.error}
-        </span>
-      )}
-    </div>
-  );
-}
-
-export function TextArea(props: { label: string; value: string; onChange: (v: string) => void; rows?: number; hint?: string; error?: string }) {
-  const id = useId();
-  return (
-    <div className="field">
-      <label htmlFor={id}>{props.label}</label>
-      <textarea id={id} rows={props.rows ?? 3} value={props.value} onChange={(e) => props.onChange(e.target.value)} aria-invalid={!!props.error} />
-      {props.hint && <span className="field-hint">{props.hint}</span>}
-      {props.error && <span className="field-error">{props.error}</span>}
-    </div>
-  );
-}
-
 /** Checkbox list with a filter box, for picking several items from a long list. */
 export function MultiPick({
   legend,
@@ -237,7 +61,7 @@ export function MultiPick({
   onAdd?: (name: string) => Promise<void>;
 }) {
   const [filter, setFilter] = useState('');
-  const [adding, setAdding] = useState(false);
+  const add = useAction();
   const shown = options.filter((o) => value.includes(o.value) || o.label.toLowerCase().includes(filter.toLowerCase())).slice(0, 60);
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : max && value.length >= max ? value : [...value, v]);
   return (
@@ -249,16 +73,13 @@ export function MultiPick({
           <button
             type="button"
             className="btn btn-text"
-            disabled={adding}
-            onClick={async () => {
-              setAdding(true);
-              try {
+            disabled={add.busy}
+            onClick={() =>
+              void add.run(async () => {
                 await onAdd(filter.trim());
                 setFilter('');
-              } finally {
-                setAdding(false);
-              }
-            }}
+              })
+            }
           >
             + {filter.trim()}
           </button>
@@ -272,6 +93,7 @@ export function MultiPick({
           </label>
         ))}
       </div>
+      {add.error && <span className="field-error">{add.error}</span>}
       {error && <span className="field-error">{error}</span>}
     </fieldset>
   );

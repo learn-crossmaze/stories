@@ -34,6 +34,31 @@ export function toApiError(e: unknown): ApiError {
 }
 
 /**
+ * Text for a failure, safe to show to the user: the server's message for a
+ * command or read (ApiError), a plain sentence for well-known database
+ * failures, otherwise `fallback`. Never the raw SDK message ("Missing or
+ * insufficient permissions.").
+ */
+export function errorText(e: unknown, fallback: string = t.errorGeneric): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof FirebaseError && e.code.startsWith('functions/')) return toApiError(e).message;
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') {
+    switch (code.replace(/^firestore\//, '')) {
+      case 'permission-denied':
+        return t.errorForbidden;
+      // A database index is missing or still building (after a deploy).
+      case 'failed-precondition':
+        return t.errorIndex;
+      case 'unavailable':
+      case 'deadline-exceeded':
+        return t.errorNetwork;
+    }
+  }
+  return fallback;
+}
+
+/**
  * Actions are grouped into a few deployed functions ("routers") to stay within
  * the project's Cloud Run CPU quota (functions/src/index.ts). The router is
  * chosen by the action's prefix; the action name itself is unchanged.

@@ -21,6 +21,9 @@ export default defineConfig(({ command, mode }) => {
     plugins: [react()],
     server: { port: 8081 },
     build: {
+      // Source maps for reading error reports' stack traces, without the browser loading them
+      // (no sourceMappingURL comment; firebase.json doesn't upload them).
+      sourcemap: 'hidden',
       rolldownOptions: {
         output: {
           // Libraries change less often than the app: their own files stay cached across deploys.

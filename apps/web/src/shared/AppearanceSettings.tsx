@@ -1,6 +1,6 @@
 import { ACCENTS, type Accent, type Appearance, DEFAULT_APPEARANCE, useAppearance } from './appearance';
 import { t } from '../strings';
-import { TableWrap } from './ui';
+import { Badge, TableWrap } from './ui';
 
 type Choice<K extends keyof Appearance> = {
   value: Appearance[K];
@@ -169,13 +169,13 @@ export function AppearanceSettings() {
               <tr>
                 <td>Asha Rao</td>
                 <td>
-                  <span className="badge badge-ok">{t.apSampleActive}</span>
+                  <Badge tone="ok">{t.apSampleActive}</Badge>
                 </td>
               </tr>
               <tr>
                 <td>Ravi Kumar</td>
                 <td>
-                  <span className="badge badge-warn">{t.apSampleDue}</span>
+                  <Badge tone="warn">{t.apSampleDue}</Badge>
                 </td>
               </tr>
             </tbody>

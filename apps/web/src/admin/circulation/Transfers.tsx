@@ -2,20 +2,20 @@ import { useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { ApiError, command } from '../../data/api';
+import { command } from '../../data/api';
 import { listTransfers, type Transfer } from '../../data/circulation';
 import { CONDITIONS, type Condition, label } from '../../data/common';
 import { type Copy, findCopy } from '../../data/inventory';
 import { useAsync } from '../../shared/useAsync';
 import { day } from '../../shared/format';
 import { t } from '../../strings';
-import { EmptyState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { EmptyState, Icon, makeStatusBadge, SkeletonRows, TableWrap } from '../../shared/ui';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice, ScanInput, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 
-const TONE: Record<Transfer['status'], string> = { DRAFT: 'muted', IN_TRANSIT: 'info', RECEIVED: 'ok', CANCELLED: 'muted' };
+const TransferStatusBadge = makeStatusBadge<Transfer['status']>({ DRAFT: 'muted', IN_TRANSIT: 'info', RECEIVED: 'ok', CANCELLED: 'muted' }, label);
 
 function NewTransferDialog({ orgId, fromBranchId, onClose, onSaved }: { orgId: string; fromBranchId: string; onClose: () => void; onSaved: () => void }) {
   const { branches } = useWorkspace();
@@ -124,7 +124,7 @@ function BranchTransfers({ orgId, branchId }: { orgId: string; branchId: string 
   const [creating, setCreating] = useState(false);
   const [receiving, setReceiving] = useState<Transfer | null>(null);
   const [cancelling, setCancelling] = useState<Transfer | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const action = useAction();
   const manage = can(claims, 'books.transfer', orgId, branchId);
   return (
     <>
@@ -136,7 +136,7 @@ function BranchTransfers({ orgId, branchId }: { orgId: string; branchId: string 
           </button>
         )}
       </div>
-      {msg && <Notice tone="error">{msg}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       {list.loading ? (
         <SkeletonRows rows={3} />
       ) : !list.data?.length ? (
@@ -163,7 +163,7 @@ function BranchTransfers({ orgId, branchId }: { orgId: string; branchId: string 
                     {tr.items.map((i) => `${i.code}${i.received ? ' ✓' : ''}`).join(', ')}
                   </td>
                   <td>
-                    <span className={`badge badge-${TONE[tr.status]}`}>{label(tr.status)}</span>
+                    <TransferStatusBadge status={tr.status} />
                   </td>
                   <td className="nowrap small">{day(tr.createdAt)}</td>
                   <td className="cell-actions">
@@ -177,17 +177,15 @@ function BranchTransfers({ orgId, branchId }: { orgId: string; branchId: string 
                         <button
                           type="button"
                           className="btn btn-outlined"
-                          onClick={async () => {
-                            setMsg(null);
-                            try {
+                          disabled={action.busy}
+                          onClick={() =>
+                            void action.run(async () => {
                               await command('transfers-dispatch', { orgId, transferId: tr.id });
                               list.reload();
-                            } catch (e) {
-                              setMsg(e instanceof ApiError ? e.message : t.errorGeneric);
-                            }
-                          }}
+                            }, tr.id)
+                          }
                         >
-                          {lt.dispatch}
+                          {action.pending === tr.id ? t.saving : lt.dispatch}
                         </button>
                         <button type="button" className="btn btn-text" onClick={() => setCancelling(tr)}>
                           {t.cancel}

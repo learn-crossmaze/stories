@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 
-import { toApiError } from '../data/api';
 import { cancelMyDelivery, type Delivery, OPEN, requestDelivery } from '../data/delivery';
 import type { Membership } from '../data/me';
 import { paths } from '../paths';
+import { useAction } from '../shared/Dialog';
 import { DeliveryRequestForm } from '../shared/DeliveryRequestForm';
 import { day, money } from '../shared/format';
+import { Badge } from '../shared/ui';
 import { dt } from '../strings/delivery';
 import { useMemberData } from './memberData';
 
@@ -19,14 +20,13 @@ const live = (s: Membership['subscriptions'][number]) =>
 
 function Current({ m, d }: { m: Membership; d: Delivery }) {
   const { overview } = useMemberData();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
   const track = d.provider?.trackingUrl ?? d.courier?.trackingUrl ?? null;
   return (
     <div className="card">
       <p>
         <strong>{dt.kind[d.kind]}</strong> · {day(d.date)}
-        {d.slot && `, ${d.slot}`} · <span className="badge badge-info">{dt.status[d.status]}</span>
+        {d.slot && `, ${d.slot}`} · <Badge tone="info">{dt.status[d.status]}</Badge>
       </p>
       {d.status === 'OUT' && d.rider && (
         <p className="small">
@@ -48,28 +48,22 @@ function Current({ m, d }: { m: Membership; d: Delivery }) {
         </p>
       )}
       {d.fee.status === 'DUE' && <p className="muted small">{dt.feeToCollect(money(d.fee.amountMinor))}</p>}
-      {error && (
+      {action.error && (
         <p className="form-error" role="alert">
-          {error}
+          {action.error}
         </p>
       )}
       {d.status === 'REQUESTED' && (
         <button
           type="button"
           className="btn btn-text danger"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            setError(null);
-            try {
+          disabled={action.busy}
+          onClick={() =>
+            void action.run(async () => {
               await cancelMyDelivery(m.orgId, d.id);
               overview.reload();
-            } catch (e) {
-              setError(toApiError(e).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
+            })
+          }
         >
           {dt.cancel}
         </button>

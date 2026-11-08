@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 
-import { toApiError } from '../data/api';
+import { errorText } from '../data/api';
 import { label } from '../data/common';
 import { cancelMyReservation, type Membership } from '../data/me';
 import { day, when } from '../shared/format';
@@ -35,7 +35,7 @@ function MyBooksBody({ m }: { m: Membership }) {
       await cancelMyReservation(m, id);
       overview.reload();
     } catch (e) {
-      setError(toApiError(e).message);
+      setError(errorText(e));
     } finally {
       setBusy(null);
     }

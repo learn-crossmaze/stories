@@ -49,16 +49,37 @@ export interface BulkResult {
   skipped: { isbn: string; title: string; reason: string }[];
 }
 
+/** Items [start, end) of a list, sent in one call. */
+export interface ChunkRange {
+  start: number;
+  end: number;
+}
+
+/**
+ * How a list sent in several calls reports back. Each call is its own
+ * transaction: when a later one fails, the earlier ones have happened, so
+ * `onChunk` hands over each call's result as soon as it is committed (the
+ * screen marks those rows done and a retry sends only the rest). `requestId`
+ * picks the id for a call; giving the same id when the same items are sent
+ * again makes a retry after an unknown outcome return the stored result
+ * instead of doing it twice.
+ */
+export interface ChunkOptions<R> {
+  onChunk?: (result: R, range: ChunkRange) => void;
+  requestId?: (range: ChunkRange) => string | undefined;
+}
+
 /** The server takes 25 books per call; longer lists go in several calls. */
 export const BULK_CHUNK = 25;
 
-export async function bulkCreateBooks(items: BulkItem[], onProgress?: (done: number) => void): Promise<BulkResult> {
+export async function bulkCreateBooks(items: BulkItem[], options: ChunkOptions<BulkResult> = {}): Promise<BulkResult> {
   const out: BulkResult = { created: [], skipped: [] };
-  for (let i = 0; i < items.length; i += BULK_CHUNK) {
-    const res = await command<BulkResult>('books-bulkCreate', { items: items.slice(i, i + BULK_CHUNK) });
+  for (let start = 0; start < items.length; start += BULK_CHUNK) {
+    const range = { start, end: Math.min(items.length, start + BULK_CHUNK) };
+    const res = await command<BulkResult>('books-bulkCreate', { items: items.slice(range.start, range.end) }, options.requestId?.(range));
     out.created.push(...res.created);
     out.skipped.push(...res.skipped);
-    onProgress?.(Math.min(items.length, i + BULK_CHUNK));
+    options.onChunk?.(res, range);
   }
   return out;
 }
@@ -80,31 +101,37 @@ export interface ReceiveResult {
 export const RECEIVE_TITLES = 25;
 export const RECEIVE_COPIES = 100;
 
+/** How a delivery is split into calls: at most 25 titles and 100 copies each. */
+export function receiveChunks(items: Pick<ReceiveItem, 'quantity'>[]): ChunkRange[] {
+  const ranges: ChunkRange[] = [];
+  let start = 0;
+  let copies = 0;
+  items.forEach((item, i) => {
+    if (i > start && (i - start === RECEIVE_TITLES || copies + item.quantity > RECEIVE_COPIES)) {
+      ranges.push({ start, end: i });
+      start = i;
+      copies = 0;
+    }
+    copies += item.quantity;
+  });
+  if (items.length > start) ranges.push({ start, end: items.length });
+  return ranges;
+}
+
 /** Receives a delivery at a branch (functions/src/inventory/receive.ts): new titles and every copy. */
 export async function receiveStock(
   target: { orgId: string; branchId: string; locationId: string | null; condition: string },
   items: ReceiveItem[],
-  onProgress?: (done: number) => void,
+  options: ChunkOptions<ReceiveResult> = {},
 ): Promise<ReceiveResult> {
   const out: ReceiveResult = { received: [], newTitles: [], copies: 0, allocated: 0 };
-  let chunk: ReceiveItem[] = [];
-  let done = 0;
-  const send = async () => {
-    if (!chunk.length) return;
-    const res = await command<ReceiveResult>('copies-receive', { ...target, items: chunk });
+  for (const range of receiveChunks(items)) {
+    const res = await command<ReceiveResult>('copies-receive', { ...target, items: items.slice(range.start, range.end) }, options.requestId?.(range));
     out.received.push(...res.received);
     out.newTitles.push(...res.newTitles);
     out.copies += res.copies;
     out.allocated += res.allocated;
-    done += chunk.length;
-    onProgress?.(done);
-    chunk = [];
-  };
-  for (const item of items) {
-    const copies = chunk.reduce((n, i) => n + i.quantity, 0);
-    if (chunk.length === RECEIVE_TITLES || copies + item.quantity > RECEIVE_COPIES) await send();
-    chunk.push(item);
+    options.onChunk?.(res, range);
   }
-  await send();
   return out;
 }

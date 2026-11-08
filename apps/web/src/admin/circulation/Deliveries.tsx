@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 
-import { toApiError } from '../../data/api';
 import { memberLoans, memberReservations } from '../../data/circulation';
 import {
   bookCourier,
@@ -26,12 +25,12 @@ import {
 import { type Member, searchMembers } from '../../data/members';
 import { DeliveryRequestForm } from '../../shared/DeliveryRequestForm';
 import { day, money, when } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, NoOrgState, SkeletonRows, type Tone } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { dt } from '../../strings/delivery';
 import { lt } from '../../strings/library';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice, ScanInput, Tabs } from '../components/kit';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope } from '../../auth/claims';
@@ -40,7 +39,7 @@ import { useWorkspace } from '../Workspace';
 // Operations → Circulation → Deliveries: the branch's home-delivery board
 // (docs/DELIVERY.md), and Staff → My deliveries for riders.
 
-const STATUS_TONE: Record<string, string> = {
+const STATUS_TONE: Record<string, Tone> = {
   REQUESTED: 'warn',
   OUT: 'info',
   RETURNING: 'info',
@@ -48,7 +47,7 @@ const STATUS_TONE: Record<string, string> = {
   FAILED: 'danger',
   CANCELLED: 'muted',
 };
-const FEE_TONE: Record<string, string> = {
+const FEE_TONE: Record<string, Tone> = {
   FREE: 'muted',
   DUE: 'warn',
   PAID: 'ok',
@@ -108,7 +107,7 @@ function HowItGoes({ d }: { d: Delivery }) {
       {p && (
         <>
           {' · '}
-          <span className={`badge badge-${p.status === 'BOOKING_FAILED' || p.status === 'CANCELLED' ? 'danger' : 'info'}`}>{dt.courierStatus[p.status] ?? p.status}</span>
+          <Badge tone={p.status === 'BOOKING_FAILED' || p.status === 'CANCELLED' ? 'danger' : 'info'}>{dt.courierStatus[p.status] ?? p.status}</Badge>
           {p.partner && ` ${dt.partner(p.partner.name, p.partner.phone, p.partner.vehicleNumber)}`}
           {p.fareMinor != null && ` · ${money(p.fareMinor)}`}
         </>
@@ -175,8 +174,17 @@ function NewDeliveryDialog({ orgId, branchId, view, onClose, onSaved }: { orgId:
             </button>
           </div>
         </>
-      ) : extras.loading || !extras.data ? (
+      ) : extras.loading ? (
         <SkeletonRows rows={3} />
+      ) : extras.error || !extras.data ? (
+        <>
+          <ErrorState message={extras.error ?? t.errorLoad} onRetry={extras.reload} />
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-text" onClick={onClose}>
+              {t.cancel}
+            </button>
+          </div>
+        </>
       ) : (
         <>
           <p>
@@ -237,7 +245,7 @@ function DispatchDialog({ orgId, delivery, view, onClose, onSaved }: { orgId: st
   const [codes, setCodes] = useState<string[]>([]);
   const [waive, setWaive] = useState(false);
   const [fares, setFares] = useState<string | null>(null);
-  const [farePending, setFarePending] = useState(false);
+  const quote = useAction();
   const sends = delivery.kind !== 'PICKUP';
   useEffect(() => {
     if (info.data) setCodes(info.data.holds.map((h) => h.copyCode).filter((c): c is string => !!c));
@@ -329,23 +337,20 @@ function DispatchDialog({ orgId, delivery, view, onClose, onSaved }: { orgId: st
                   <button
                     type="button"
                     className="btn btn-outlined"
-                    disabled={farePending}
-                    onClick={async () => {
-                      setFarePending(true);
-                      try {
+                    disabled={quote.busy}
+                    onClick={() => {
+                      setFares(null);
+                      void quote.run(async () => {
                         const r = await quoteCourier(orgId, delivery.id, method);
                         setFares(r.fares.length ? r.fares.map((f) => dt.fare(f.vehicle, money(f.fareMinor), f.etaMinutes)).join(' · ') : dt.noFares);
-                      } catch (e) {
-                        setFares(toApiError(e).message);
-                      } finally {
-                        setFarePending(false);
-                      }
+                      });
                     }}
                   >
-                    {farePending ? t.loading : dt.getQuote}
+                    {quote.busy ? t.loading : dt.getQuote}
                   </button>
                 )}
                 {fares && <span className="small">{fares}</span>}
+                {quote.error && <span className="small field-error">{quote.error}</span>}
               </div>
             )}
             {delivery.fee.status === 'DUE' && (
@@ -362,8 +367,41 @@ function DispatchDialog({ orgId, delivery, view, onClose, onSaved }: { orgId: st
   );
 }
 
+type ReportProps = { orgId: string; delivery: Delivery; onClose: () => void; onSaved: () => void };
+
 /** How the visit went: by the rider at the door, or by the branch for them. */
-export function ReportDialog({ orgId, delivery, loans, onClose, onSaved }: { orgId: string; delivery: Delivery; loans: MemberLoan[]; onClose: () => void; onSaved: () => void }) {
+export function ReportDialog({ loans, ...props }: ReportProps & { loans: MemberLoan[] }) {
+  return (
+    <Dialog title={dt.reportTitle(props.delivery.memberName)} onClose={props.onClose}>
+      <ReportForm {...props} loans={loans} />
+    </Dialog>
+  );
+}
+
+/** The report from the board: opens straight away and loads the member's books itself. */
+function BoardReportDialog(props: ReportProps) {
+  const loans = useAsync(() => getDelivery(props.orgId, props.delivery.id).then((r) => r.memberLoans), [props.orgId, props.delivery.id]);
+  return (
+    <Dialog title={dt.reportTitle(props.delivery.memberName)} onClose={props.onClose}>
+      {loans.loading ? (
+        <SkeletonRows rows={3} />
+      ) : loans.error || !loans.data ? (
+        <>
+          <ErrorState message={loans.error ?? t.errorLoad} onRetry={loans.reload} />
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-text" onClick={props.onClose}>
+              {t.cancel}
+            </button>
+          </div>
+        </>
+      ) : (
+        <ReportForm {...props} loans={loans.data} />
+      )}
+    </Dialog>
+  );
+}
+
+function ReportForm({ orgId, delivery, loans, onClose, onSaved }: ReportProps & { loans: MemberLoan[] }) {
   const [outcome, setOutcome] = useState<'DELIVERED' | 'FAILED'>('DELIVERED');
   const [handedTo, setHandedTo] = useState('');
   const [collected, setCollected] = useState<string[]>(delivery.collectLoanIds);
@@ -384,63 +422,61 @@ export function ReportDialog({ orgId, delivery, loans, onClose, onSaved }: { org
     onClose();
   });
   return (
-    <Dialog title={dt.reportTitle(delivery.memberName)} onClose={onClose}>
-      <form onSubmit={submit} noValidate>
-        <fieldset className="checklist">
-          <legend>{dt.report}</legend>
-          {(['DELIVERED', 'FAILED'] as const).map((o) => (
-            <label key={o} className="check">
-              <input type="radio" name="outcome" checked={outcome === o} onChange={() => setOutcome(o)} /> {o === 'DELIVERED' ? dt.delivered : dt.notDelivered}
-            </label>
-          ))}
-        </fieldset>
-        {outcome === 'DELIVERED' ? (
-          <>
-            <TextField label={dt.handedTo} value={handedTo} onChange={setHandedTo} />
-            {collects && (
-              <fieldset className="checklist">
-                <legend>{dt.collectedNow}</legend>
-                {candidates.length === 0 ? (
-                  <p className="muted small">{dt.noLoans}</p>
-                ) : (
-                  candidates.map((l) => (
-                    <label key={l.loanId} className="check">
-                      <input
-                        type="checkbox"
-                        checked={collected.includes(l.loanId)}
-                        onChange={(e) => setCollected(e.target.checked ? [...collected, l.loanId] : collected.filter((x) => x !== l.loanId))}
-                      />
-                      {l.bookTitle} <span className="mono small">{l.copyCode}</span>
-                    </label>
-                  ))
-                )}
-              </fieldset>
-            )}
-            {delivery.fee.status === 'DUE' && (
-              <div className="form-grid">
-                <SelectField
-                  label={`${dt.collectFee} (${money(delivery.fee.amountMinor)})`}
-                  value={feeMethod}
-                  onChange={setFeeMethod}
-                  options={[
-                    { value: '', label: dt.feeNotCollected },
-                    ...FEE_METHODS.map((m) => ({
-                      value: m,
-                      label: lt.paymentMethods[m],
-                    })),
-                  ]}
-                />
-                {feeMethod && feeMethod !== 'OFFLINE_CASH' && <TextField label={dt.feeRef} value={feeRef} onChange={setFeeRef} />}
-              </div>
-            )}
-          </>
-        ) : (
-          <TextField label={dt.failReason} hint={dt.failHint} value={reason} onChange={setReason} />
-        )}
-        <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
-      </form>
-    </Dialog>
+    <form onSubmit={submit} noValidate>
+      <fieldset className="checklist">
+        <legend>{dt.report}</legend>
+        {(['DELIVERED', 'FAILED'] as const).map((o) => (
+          <label key={o} className="check">
+            <input type="radio" name="outcome" checked={outcome === o} onChange={() => setOutcome(o)} /> {o === 'DELIVERED' ? dt.delivered : dt.notDelivered}
+          </label>
+        ))}
+      </fieldset>
+      {outcome === 'DELIVERED' ? (
+        <>
+          <TextField label={dt.handedTo} value={handedTo} onChange={setHandedTo} />
+          {collects && (
+            <fieldset className="checklist">
+              <legend>{dt.collectedNow}</legend>
+              {candidates.length === 0 ? (
+                <p className="muted small">{dt.noLoans}</p>
+              ) : (
+                candidates.map((l) => (
+                  <label key={l.loanId} className="check">
+                    <input
+                      type="checkbox"
+                      checked={collected.includes(l.loanId)}
+                      onChange={(e) => setCollected(e.target.checked ? [...collected, l.loanId] : collected.filter((x) => x !== l.loanId))}
+                    />
+                    {l.bookTitle} <span className="mono small">{l.copyCode}</span>
+                  </label>
+                ))
+              )}
+            </fieldset>
+          )}
+          {delivery.fee.status === 'DUE' && (
+            <div className="form-grid">
+              <SelectField
+                label={`${dt.collectFee} (${money(delivery.fee.amountMinor)})`}
+                value={feeMethod}
+                onChange={setFeeMethod}
+                options={[
+                  { value: '', label: dt.feeNotCollected },
+                  ...FEE_METHODS.map((m) => ({
+                    value: m,
+                    label: lt.paymentMethods[m],
+                  })),
+                ]}
+              />
+              {feeMethod && feeMethod !== 'OFFLINE_CASH' && <TextField label={dt.feeRef} value={feeRef} onChange={setFeeRef} />}
+            </div>
+          )}
+        </>
+      ) : (
+        <TextField label={dt.failReason} hint={dt.failHint} value={reason} onChange={setReason} />
+      )}
+      <FormError error={error} />
+      <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+    </form>
   );
 }
 
@@ -483,20 +519,13 @@ type Open = {
 } | null;
 
 function DeliveryCard({ orgId, branchId, d, onAct, onChanged }: { orgId: string; branchId: string; d: Delivery; onAct: (o: Open) => void; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    setMsg(null);
-    try {
+  const action = useAction();
+  const busy = action.busy;
+  const run = (fn: () => Promise<unknown>) =>
+    action.run(async () => {
       await fn();
       onChanged();
-    } catch (e) {
-      setMsg(toApiError(e).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const p = d.provider;
   return (
     <li className="card dl-card">
@@ -511,10 +540,8 @@ function DeliveryCard({ orgId, branchId, d, onAct, onChanged }: { orgId: string;
           </p>
         </div>
         <div className="dl-badges">
-          <span className={`badge badge-${STATUS_TONE[d.status]}`}>
-            {d.outcome && d.status !== 'REQUESTED' && d.status !== 'OUT' ? dt.outcome[d.outcome] : dt.status[d.status]}
-          </span>
-          {d.fee.amountMinor > 0 && <span className={`badge badge-${FEE_TONE[d.fee.status]}`}>{`${dt.fee[d.fee.status]} ${money(d.fee.amountMinor)}`}</span>}
+          <Badge tone={STATUS_TONE[d.status]}>{d.outcome && d.status !== 'REQUESTED' && d.status !== 'OUT' ? dt.outcome[d.outcome] : dt.status[d.status]}</Badge>
+          {d.fee.amountMinor > 0 && <Badge tone={FEE_TONE[d.fee.status]}>{`${dt.fee[d.fee.status]} ${money(d.fee.amountMinor)}`}</Badge>}
         </div>
       </div>
       <p className="small">
@@ -523,7 +550,7 @@ function DeliveryCard({ orgId, branchId, d, onAct, onChanged }: { orgId: string;
       <Books d={d} />
       <HowItGoes d={d} />
       {d.failReason && <p className="small field-error">{d.failReason}</p>}
-      {msg && <Notice tone="error">{msg}</Notice>}
+      {action.error && <Notice tone="error">{action.error}</Notice>}
       <div className="row">
         {d.status === 'REQUESTED' && (
           <button type="button" className="btn btn-filled" onClick={() => onAct({ kind: 'dispatch', d })}>
@@ -572,7 +599,6 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const view = useAsync(() => deliverySettings(orgId, branchId), [orgId, branchId]);
   const data = useAsync(() => listDeliveries(orgId, branchId), [orgId, branchId]);
-  const reportLoans = useAsync(() => (open?.kind === 'report' ? getDelivery(orgId, open.d.id).then((r) => r.memberLoans) : Promise.resolve(null)), [orgId, open?.kind, open?.d.id]);
   // Courier orders: ask the courier for news when the board opens (at most once a minute per order).
   useEffect(() => {
     void syncDeliveries(orgId, branchId)
@@ -581,9 +607,11 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, branchId]);
   if (view.loading || data.loading) return <SkeletonRows rows={5} />;
-  if (view.error || data.error) return <ErrorState message={(view.error ?? data.error)!} onRetry={() => (view.reload(), data.reload())} />;
-  const v = view.data!;
-  const all = data.data!;
+  // Only a board with nothing to show gives way to the error: a failed refresh keeps the board (and an open dialog).
+  if (!view.data || !data.data) return <ErrorState message={view.error ?? data.error ?? t.errorLoad} onRetry={() => (view.reload(), data.reload())} />;
+  const v = view.data;
+  const all = data.data;
+  const refreshError = view.error ?? data.error;
   const rows = tab === 'CLOSED' ? all.closed : all.open.filter((d) => d.status === tab);
   const count = (s: string) => all.open.filter((d) => d.status === s).length;
   const changed = () => data.reload();
@@ -605,6 +633,7 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
         </button>
       </div>
       {notice && <Notice tone="ok">{notice}</Notice>}
+      {refreshError && <Notice tone="error">{refreshError}</Notice>}
       {rows.length === 0 ? (
         <EmptyState icon="truck" title={dt.empty[tab]} message="" />
       ) : (
@@ -616,7 +645,7 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
       )}
       {adding && <NewDeliveryDialog orgId={orgId} branchId={branchId} view={v} onClose={() => setAdding(false)} onSaved={changed} />}
       {open?.kind === 'dispatch' && <DispatchDialog orgId={orgId} delivery={open.d} view={v} onClose={() => setOpen(null)} onSaved={changed} />}
-      {open?.kind === 'report' && reportLoans.data && <ReportDialog orgId={orgId} delivery={open.d} loans={reportLoans.data} onClose={() => setOpen(null)} onSaved={changed} />}
+      {open?.kind === 'report' && <BoardReportDialog orgId={orgId} delivery={open.d} onClose={() => setOpen(null)} onSaved={changed} />}
       {open?.kind === 'fee' && <FeeDialog orgId={orgId} delivery={open.d} onClose={() => setOpen(null)} onSaved={changed} />}
       {open?.kind === 'cancel' && (
         <ConfirmWithReason
@@ -717,7 +746,7 @@ export function MyDeliveriesPage() {
                     {d.dispatchedAt && ` · ${when(d.dispatchedAt)}`}
                   </p>
                 </div>
-                {d.fee.status === 'DUE' && <span className="badge badge-warn">{`${dt.fee.DUE} ${money(d.fee.amountMinor)}`}</span>}
+                {d.fee.status === 'DUE' && <Badge tone="warn">{`${dt.fee.DUE} ${money(d.fee.amountMinor)}`}</Badge>}
               </div>
               <p className="small">
                 {oneLine(d.address)} · <Contact d={d} />

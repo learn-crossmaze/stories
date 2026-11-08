@@ -10,6 +10,11 @@ import { firebaseAuthRepository } from './auth/repository';
 import { initFirebase } from './config/firebase';
 import { setServices } from './data/services';
 import { routes } from './routes';
+import { installGlobalErrorReporting, reportError } from './shared/reportError';
+import { installChunkReload } from './shared/staleChunks';
+
+installGlobalErrorReporting();
+installChunkReload();
 
 // Personal appearance; a "system" theme follows the device's light/dark switch while the app is open.
 applyAppearance(loadAppearance());
@@ -31,7 +36,7 @@ try {
   );
 } catch (e) {
   // Never leave a blank page: show what failed so it can be fixed.
-  console.error(e);
+  reportError(e, 'startup');
   root.render(
     <div className="empty-state" role="alert">
       <h2>Stories couldn't start</h2>
