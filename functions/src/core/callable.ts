@@ -30,6 +30,13 @@ export interface CommandOptions<I, P> {
    * handler receives the result as `ctx.prepared` and re-checks in the transaction.
    */
   prepare?: (ctx: CallContext<I>) => Promise<P>;
+  /**
+   * Undoes what `prepare` created (e.g. deletes a staged file) when this call's
+   * transaction does not commit: the handler refused, the transaction failed,
+   * or a concurrent call with the same requestId committed first. Never runs
+   * once the change committed, even if `after` then fails.
+   */
+  discard?: (prepared: P) => Promise<void>;
 }
 
 async function loadActor(req: CallableRequest): Promise<Actor> {
@@ -142,20 +149,32 @@ export function command<S extends z.ZodObject, R, P = unknown>(
         log.phase = 'handler';
       }
 
-      const { result, replayed, afterPending } = await db.runTransaction(async (tx) => {
-        const prior = await tx.get(idemRef);
-        if (prior.exists) return { result: prior.get('result') as R, replayed: true, afterPending: prior.get('afterPending') === true };
-        const result = await handler(ctx, tx);
-        tx.create(idemRef, {
-          fn: name,
-          uid: actor.uid,
-          result: result ?? null,
-          ...(after ? { afterPending: true } : {}),
-          createdAt: FieldValue.serverTimestamp(),
-          expireAt: Timestamp.fromMillis(Date.now() + IDEMPOTENCY_TTL_DAYS * 86_400_000),
+      const discardPrepared = async () => {
+        if (!options.discard || ctx.prepared === undefined) return;
+        await options.discard(ctx.prepared).catch((e: unknown) => logger.error(`${name}: could not undo the prepare step`, { ...log, ...describe(e) }));
+      };
+      let outcome;
+      try {
+        outcome = await db.runTransaction(async (tx) => {
+          const prior = await tx.get(idemRef);
+          if (prior.exists) return { result: prior.get('result') as R, replayed: true, afterPending: prior.get('afterPending') === true };
+          const result = await handler(ctx, tx);
+          tx.create(idemRef, {
+            fn: name,
+            uid: actor.uid,
+            result: result ?? null,
+            ...(after ? { afterPending: true } : {}),
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromMillis(Date.now() + IDEMPOTENCY_TTL_DAYS * 86_400_000),
+          });
+          return { result, replayed: false, afterPending: !!after };
         });
-        return { result, replayed: false, afterPending: !!after };
-      });
+      } catch (e) {
+        await discardPrepared();
+        throw e;
+      }
+      const { result, replayed, afterPending } = outcome;
+      if (replayed) await discardPrepared();
 
       if (after && afterPending) {
         log.phase = 'after';

@@ -360,7 +360,7 @@ export const ht = {
   cancelNote: 'Note (required when cancelling for someone else)',
   keepLeave: 'Keep it',
   ledger: 'History',
-  ledgerKinds: { ACCRUAL: 'Credited', CARRY: 'Carried forward', ADJUST: 'Adjusted', TAKEN: 'Taken', RETURNED: 'Returned' } as Record<string, string>,
+  ledgerKinds: { ACCRUAL: 'Credited', CARRY: 'Carried forward', CARRY_OUT: 'Carried to next year', ADJUST: 'Adjusted', TAKEN: 'Taken', RETURNED: 'Returned' } as Record<string, string>,
   ledgerEmpty: 'Nothing credited or taken yet this year.',
   todoLeave: (n: number) => `${n} leave request${n === 1 ? '' : 's'} to decide`,
   onLeaveToday: 'On leave today',
