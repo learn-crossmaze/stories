@@ -3,9 +3,9 @@ import { timingSafeEqual } from 'node:crypto';
 import { logger } from 'firebase-functions';
 import type { Request } from 'firebase-functions/v2/https';
 
+import { applyTracking, syncOne } from './courierBooking.js';
 import { courierFor, porterStatus } from './couriers.js';
 import { type Delivery, deliveriesCol, privateRef } from './model.js';
-import { applyTracking, syncOne } from './orders.js';
 
 const sameToken = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 

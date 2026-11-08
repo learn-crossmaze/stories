@@ -1,21 +1,24 @@
-import { FieldValue, Timestamp, type DocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions';
+import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { currentTerm, requireActiveTerm } from '../billing/term.js';
-import { checkLimit, readIssue, readReturns, titles, writeIssue, writeReturns } from '../circulation/circulation.js';
+import { checkLimit, readIssue, readReturns, writeIssue, writeReturns } from '../circulation/circulation.js';
 import { recordAudit } from '../core/audit.js';
-import { type CallContext, command, query } from '../core/callable.js';
-import { AppError, errors } from '../core/errors.js';
+import { type CallContext, command } from '../core/callable.js';
+import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
-import { dateIN } from '../messaging/outbox.js';
-import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
-import { type CourierStatus, CourierError, courierFor, type Stop, type Tracking } from './couriers.js';
+import { queueWhatsApp } from '../messaging/whatsapp.js';
+import { bookCourier, cancelAtCourier } from './courierBooking.js';
+import { courierFor } from './couriers.js';
+import { checkFeeReference, collectFee, WAIVED_FEE } from './fees.js';
+import { dateLabel, queueOut, summary } from './messages.js';
 import {
+  branchRef,
+  collects,
   courierConnection,
   dateKey,
   type Delivery,
@@ -25,52 +28,21 @@ import {
   istDate,
   type Item,
   KINDS,
+  loadDelivery,
   MAX_DAYS_AHEAD,
   METHODS,
   type Method,
   OPEN_STATUSES,
+  sends,
   settingsOf,
 } from './model.js';
 
-// Home delivery orders (docs/DELIVERY.md §2–3). Books that leave the branch
-// are issued to the member when they are dispatched (they count towards the
-// plan from then on); books that come back are returned when the branch
-// receives them, through the circulation desk's own code.
-
-const branchRef = (orgId: string, branchId: string) => db.doc(`orgs/${orgId}/branches/${branchId}`);
-const sends = (kind: string) => kind !== 'PICKUP';
-const collects = (kind: string) => kind !== 'DELIVER';
-const isCourier = (m: string | null) => !!m && m !== 'OWN' && m !== 'MANUAL';
-
-/** "14 Oct 2026, 10:00–13:00" for messages. */
-export const dateLabel = (date: string, slot: string | null) => `${dateIN(new Date(`${date}T12:00:00+05:30`))}${slot ? `, ${slot}` : ''}`;
-
-/** Firestore values → JSON the app can read (timestamps as ISO strings). */
-function plain(v: unknown): unknown {
-  if (v instanceof Timestamp) return v.toDate().toISOString();
-  if (Array.isArray(v)) return v.map(plain);
-  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
-  return v;
-}
-export const row = (d: DocumentSnapshot) => plain({ id: d.id, ...d.data() }) as Record<string, unknown>;
-
-/** Who is bringing the books, for the member's message. */
-function deliveredBy(d: Pick<Delivery, 'method' | 'rider' | 'courier' | 'provider'>): string {
-  if (d.method === 'OWN' && d.rider) return `${d.rider.name}${d.rider.phone ? ` (${d.rider.phone.replace(/^\+91/, '')})` : ''}`;
-  if (d.method === 'MANUAL' && d.courier) return [d.courier.name, d.courier.reference, d.courier.trackingUrl].filter(Boolean).join(' · ');
-  const label = courierFor(d.method ?? '')?.label ?? 'courier';
-  return d.provider?.trackingUrl ? `${label}, track at ${d.provider.trackingUrl}` : label;
-}
-
-function queueOut(tx: Transaction | FirebaseFirestore.WriteBatch, orgId: string, deliveryId: string, d: Delivery) {
-  const sent = d.sent.map((s) => s.bookTitle);
-  queueWhatsApp(tx, sent.length
-    ? { orgId, branchId: d.branchId, event: 'delivery_out', memberId: d.memberId, vars: { book_titles: titles(sent), delivery_by: deliveredBy(d) }, ref: { deliveryId } }
-    : { orgId, branchId: d.branchId, event: 'pickup_out', memberId: d.memberId, vars: { delivery_by: deliveredBy(d) }, ref: { deliveryId } });
-}
-
-const summary = (sent: number, collected: number) =>
-  [sent ? `${sent} book${sent === 1 ? '' : 's'} delivered` : '', collected ? `${collected} collected` : ''].filter(Boolean).join(', ') || 'visit done';
+// Home delivery orders (docs/DELIVERY.md §2–3): request, dispatch, the
+// report from the door, receiving the bag back, cancelling. Books that leave
+// the branch are issued to the member when they are dispatched (they count
+// towards the plan from then on); books that come back are returned when the
+// branch receives them, through the circulation desk's own code. Courier apps
+// are in courierBooking.ts, the fee in fees.ts, lists in orderQueries.ts.
 
 // ------------------------------------------------------------------ request
 
@@ -203,13 +175,6 @@ const courierInput = z.strictObject({
   trackingUrl: z.url().max(300).or(z.literal('')).default(''),
 });
 
-async function loadDelivery(tx: Pick<Transaction, 'get'> | null, orgId: string, deliveryId: string) {
-  const ref = deliveriesCol(orgId).doc(deliveryId);
-  const snap = tx ? await tx.get(ref) : await ref.get();
-  if (!snap.exists) throw errors.notFound('Delivery');
-  return { ref, snap, d: snap.data() as Delivery };
-}
-
 /** The rider: an active staff member of the organization who works at the branch. */
 async function loadRider(tx: Transaction, orgId: string, branchId: string, uid: string) {
   const [membership, user, employee] = await Promise.all([
@@ -268,30 +233,21 @@ export const dispatch = command(
       provider = { key: method as never, orderId: null, status: 'BOOKING', raw: null, trackingUrl: null, fareMinor: null, partner: null, error: null };
     }
 
-    // Books going out are issued now (same rules as the desk).
-    let sent: Item[] = [];
-    let memberWrite: (() => void) | null = null;
+    // Books going out are issued now (same rules and member counters as the desk).
+    let issue: (() => Item[]) | null = null;
     if (sends(d.kind)) {
-      const { snap: memberSnap, member } = await loadMember(tx, input.orgId, d.memberId);
+      const { member } = await loadMember(tx, input.orgId, d.memberId);
       const term = await requireActiveTerm(tx, input.orgId, member);
       const plan = await readIssue(tx, input.orgId, d.branchId, d.memberId, input.barcodes);
       // An exchange hands over the new books as it takes the old ones: those count as coming back.
       const coming = d.kind === 'EXCHANGE' ? (await Promise.all(d.collectLoanIds.map((l) => tx.get(db.doc(`orgs/${input.orgId}/loans/${l}`))))).filter((l) => l.get('status') === 'ACTIVE').length : 0;
       checkLimit(member, term, coming, plan);
-      memberWrite = () => {
+      issue = () => {
         const loanIds = writeIssue(tx, input.orgId, d.branchId, member, d.memberId, term, plan, actor.uid, null, { channel: 'DELIVERY', deliveryId: input.deliveryId, notify: false });
-        sent = plan.copies.map((c, i) => ({ loanId: loanIds[i], copyId: c.snap.id, copyCode: c.copy.code, bookTitle: c.copy.bookTitle }));
-        const fulfilled = plan.copies.filter((c) => c.reservation).length;
-        tx.update(memberSnap.ref, {
-          ...(term.rollover ?? {}),
-          activeLoanCount: FieldValue.increment(plan.copies.length),
-          allocatedCount: FieldValue.increment(-fulfilled),
-          lifetimeLoans: FieldValue.increment(plan.copies.length),
-          updatedAt: FieldValue.serverTimestamp(),
-        });
+        return plan.copies.map((c, i) => ({ loanId: loanIds[i], copyId: c.snap.id, copyCode: c.copy.code, bookTitle: c.copy.bookTitle }));
       };
     }
-    memberWrite?.();
+    const sent: Item[] = issue?.() ?? [];
     const fee = input.waiveFee ? { amountMinor: 0, status: 'FREE' as const } : d.fee;
     const next: Delivery = { ...d, status: 'OUT', method, rider, courier, provider, sent, fee };
     tx.update(ref, {
@@ -311,169 +267,6 @@ export const dispatch = command(
     if (result.book) await bookCourier(ctx.input.orgId, result.deliveryId);
   },
 );
-
-// ------------------------------------------------------------------ courier apps
-
-function stopOf(kind: 'BRANCH' | 'MEMBER', d: Delivery, branch: DocumentSnapshot): Stop {
-  if (kind === 'BRANCH') {
-    const a = branch.get('address') as { line1: string; line2?: string; city: string; state: string; postalCode: string };
-    return {
-      geo: settingsOf(branch).location!, name: `Stories ${branch.get('name')}`, phone: String(branch.get('contact.phone') ?? '').replace(/\s/g, ''),
-      line1: a.line1, line2: a.line2 ?? '', landmark: '', city: a.city, state: a.state, postalCode: a.postalCode,
-    };
-  }
-  return {
-    geo: d.address.geo!, name: d.memberName, phone: d.phone ?? '', line1: d.address.line1, line2: d.address.line2, landmark: d.address.landmark,
-    city: d.address.city, state: d.address.state, postalCode: d.address.postalCode,
-  };
-}
-
-function tripOf(d: Delivery, branch: DocumentSnapshot) {
-  const out = d.kind === 'DELIVER';
-  return {
-    pickup: stopOf(out ? 'BRANCH' : 'MEMBER', d, branch),
-    drop: stopOf(out ? 'MEMBER' : 'BRANCH', d, branch),
-    instructions: out
-      ? `Library books for ${d.memberName} (${d.sent.length} in a sealed bag). ${d.note}`.trim()
-      : `Collect library books from ${d.memberName} and bring them to the Stories branch. ${d.note}`.trim(),
-  };
-}
-
-/**
- * Books the courier for a dispatched delivery (after the dispatch commits).
- * A failure is saved on the delivery for staff to retry or switch method; it
- * never undoes the dispatch.
- */
-export async function bookCourier(orgId: string, deliveryId: string): Promise<{ booked: boolean; error: string | null }> {
-  const ref = deliveriesCol(orgId).doc(deliveryId);
-  const snap = await ref.get();
-  const d = snap.data() as Delivery & { provider: NonNullable<Delivery['provider']> & { attempts?: number } };
-  if (!snap.exists || d.status !== 'OUT' || !d.provider || d.provider.orderId) return { booked: false, error: null };
-  const courier = courierFor(d.provider.key)!;
-  const attempts = (d.provider.attempts ?? 0) + 1;
-  try {
-    const conn = await courierConnection(orgId, d.branchId, d.provider.key);
-    const branch = await branchRef(orgId, d.branchId).get();
-    const booking = await courier.book(conn, { requestId: attempts === 1 ? deliveryId : `${deliveryId}-${attempts}`, ...tripOf(d, branch) });
-    const batch = db.batch();
-    const provider = { ...d.provider, orderId: booking.orderId, status: 'BOOKED', trackingUrl: booking.trackingUrl, fareMinor: booking.fareMinor, error: null, attempts, syncedAt: FieldValue.serverTimestamp() };
-    batch.update(ref, { provider, updatedAt: FieldValue.serverTimestamp() });
-    queueOut(batch, orgId, deliveryId, { ...d, provider: { ...d.provider, trackingUrl: booking.trackingUrl } });
-    await batch.commit();
-    return { booked: true, error: null };
-  } catch (e) {
-    const known = e instanceof CourierError || e instanceof AppError;
-    const error = known ? (e as Error).message : `Could not book ${courier.label}. Try again.`;
-    if (!known) logger.error('courier booking', e);
-    await ref.update({ 'provider.status': 'BOOKING_FAILED', 'provider.error': error, 'provider.attempts': attempts, updatedAt: FieldValue.serverTimestamp() });
-    return { booked: false, error };
-  }
-}
-
-/** Books the courier again: after a failed booking, or when the courier cancelled. */
-export const book = query('deliveries-book', z.strictObject({ orgId: id, deliveryId: id }), async ({ actor, input }) => {
-  const { ref, d } = await loadDelivery(null, input.orgId, input.deliveryId);
-  await actor.require('delivery.assign', input.orgId, d.branchId);
-  if (d.status !== 'OUT' || !isCourier(d.method) || !d.provider) throw errors.conflict('NOT_COURIER', 'Only a dispatched courier delivery can be booked.');
-  if (d.provider.orderId && d.provider.status !== 'CANCELLED') throw errors.conflict('ALREADY_BOOKED', 'The courier is already booked for this delivery.');
-  if (d.provider.orderId) await ref.update({ 'provider.orderId': null, 'provider.partner': null, 'provider.trackingUrl': null });
-  const r = await bookCourier(input.orgId, input.deliveryId);
-  if (r.error) throw errors.conflict('COURIER_ERROR', r.error);
-  return r;
-});
-
-/** Fares from the courier for a delivery (before or after dispatching). */
-export const quote = query('deliveries-quote', z.strictObject({ orgId: id, deliveryId: id, courier: z.string().min(2).max(20) }), async ({ actor, input }) => {
-  const { d } = await loadDelivery(null, input.orgId, input.deliveryId);
-  await actor.require('delivery.assign', input.orgId, d.branchId);
-  const c = courierFor(input.courier);
-  if (!c) throw errors.invalid('Unknown courier.');
-  const branch = await branchRef(input.orgId, d.branchId).get();
-  if (!settingsOf(branch).location) throw errors.conflict('NO_BRANCH_LOCATION', 'Set the branch’s map location in Settings → Delivery first.');
-  if (!d.address.geo) throw errors.conflict('NO_MEMBER_LOCATION', 'Add the member’s map location to the delivery address first.');
-  const conn = await courierConnection(input.orgId, d.branchId, c.key);
-  const trip = tripOf({ ...d, kind: d.kind === 'PICKUP' ? 'PICKUP' : 'DELIVER' }, branch);
-  try {
-    return { fares: await c.quote(conn, trip) };
-  } catch (e) {
-    if (e instanceof CourierError) throw errors.conflict('COURIER_ERROR', e.message);
-    throw e;
-  }
-});
-
-/**
- * Applies the courier's latest state. When the courier drops the books, a
- * delivery is done and a pickup's books are at the branch to be received.
- */
-export async function applyTracking(orgId: string, deliveryId: string, t: Tracking) {
-  await db.runTransaction(async (tx) => {
-    const { ref, d } = await loadDelivery(tx, orgId, deliveryId);
-    if (!d.provider) return;
-    const provider = {
-      ...d.provider,
-      status: t.status === 'UNKNOWN' ? d.provider.status : t.status,
-      raw: t.raw || d.provider.raw,
-      trackingUrl: t.trackingUrl ?? d.provider.trackingUrl,
-      fareMinor: t.fareMinor ?? d.provider.fareMinor,
-      partner: t.partner ?? d.provider.partner,
-      syncedAt: FieldValue.serverTimestamp(),
-    };
-    const done = t.status === 'DELIVERED' && d.status === 'OUT' && !d.outcome;
-    if (!done) {
-      tx.update(ref, { provider, updatedAt: FieldValue.serverTimestamp() });
-      return;
-    }
-    if (d.kind === 'PICKUP') {
-      const loans = await Promise.all(d.collectLoanIds.map((l) => tx.get(db.doc(`orgs/${orgId}/loans/${l}`))));
-      const collected = loans.filter((l) => l.get('status') === 'ACTIVE').map((l) => ({ loanId: l.id, copyId: l.get('copyId'), copyCode: l.get('copyCode'), bookTitle: l.get('bookTitle') }));
-      tx.update(ref, { provider, outcome: 'DELIVERED', collected, status: collected.length ? 'RETURNING' : 'COMPLETED', reportedAt: FieldValue.serverTimestamp(), ...(collected.length ? {} : { closedAt: FieldValue.serverTimestamp() }), updatedAt: FieldValue.serverTimestamp() });
-      queueWhatsApp(tx, { orgId, branchId: d.branchId, event: 'delivery_completed', memberId: d.memberId, vars: { delivery_summary: summary(0, collected.length) }, ref: { deliveryId } });
-    } else {
-      tx.update(ref, { provider, outcome: 'DELIVERED', status: 'COMPLETED', reportedAt: FieldValue.serverTimestamp(), closedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-      queueWhatsApp(tx, { orgId, branchId: d.branchId, event: 'delivery_completed', memberId: d.memberId, vars: { delivery_summary: summary(d.sent.length, 0) }, ref: { deliveryId } });
-    }
-    recordAudit(tx, { actorUid: 'system' }, orgId, {
-      action: 'delivery.courierDone', entityType: 'delivery', entityId: deliveryId, branchId: d.branchId, memberId: d.memberId,
-      after: { courier: d.provider.key, orderId: d.provider.orderId },
-    });
-  });
-}
-
-/** Asks the courier where an order is (Porter allows one track call per order per minute). */
-export async function syncOne(orgId: string, deliveryId: string, minAgeMs = 60_000): Promise<CourierStatus | null> {
-  const snap = await deliveriesCol(orgId).doc(deliveryId).get();
-  const d = snap.data() as (Delivery & { provider: { syncedAt?: Timestamp } }) | undefined;
-  if (!d?.provider?.orderId || !['OUT', 'RETURNING'].includes(d.status)) return null;
-  if (d.provider.syncedAt && Date.now() - d.provider.syncedAt.toMillis() < minAgeMs) return null;
-  const c = courierFor(d.provider.key)!;
-  const conn = await courierConnection(orgId, d.branchId, c.key);
-  const t = await c.track(conn, d.provider.orderId);
-  await applyTracking(orgId, deliveryId, t);
-  return t.status;
-}
-
-/** Refreshes the branch's courier orders on the board (or one delivery), skipping those checked in the last minute. */
-export const sync = query('deliveries-sync', z.strictObject({ orgId: id, branchId: id, deliveryId: id.nullable().default(null) }), async ({ actor, input }) => {
-  await actor.require('delivery.manage', input.orgId, input.branchId);
-  const ids = input.deliveryId
-    ? [input.deliveryId]
-    : (await deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('status', '==', 'OUT').limit(30).get()).docs
-        .filter((d) => d.get('provider.orderId'))
-        .slice(0, 10)
-        .map((d) => d.id);
-  const updated: Record<string, string> = {};
-  const failed: string[] = [];
-  for (const deliveryId of ids) {
-    try {
-      const s = await syncOne(input.orgId, deliveryId);
-      if (s) updated[deliveryId] = s;
-    } catch (e) {
-      failed.push(e instanceof Error ? e.message : String(e));
-    }
-  }
-  if (input.deliveryId && failed.length) throw errors.conflict('COURIER_ERROR', failed[0]);
-  return { updated, failed: failed.length };
-});
 
 // ------------------------------------------------------------------ at the door
 
@@ -503,7 +296,7 @@ export const report = command(
     if (!delivered && input.collectedLoanIds.length) throw errors.invalid('Nothing is collected on a visit that did not happen.');
     if (!collects(d.kind) && input.collectedLoanIds.length) throw errors.invalid('This delivery does not collect books.');
     if (input.fee && (!delivered || d.fee.status !== 'DUE')) throw errors.invalid('There is no delivery fee to collect.');
-    if (input.fee && input.fee.method !== 'OFFLINE_CASH' && input.fee.reference.length < 4) throw errors.invalid('Enter the UPI or card reference for the fee.');
+    if (input.fee) checkFeeReference(input.fee.method, input.fee.reference);
     const loans = await Promise.all(input.collectedLoanIds.map((l) => tx.get(db.doc(`orgs/${input.orgId}/loans/${l}`))));
     for (const l of loans) {
       if (!l.exists || l.get('memberId') !== d.memberId || l.get('status') !== 'ACTIVE') throw errors.conflict('NOT_ON_LOAN', 'One of the collected books is not on loan to this member.');
@@ -513,17 +306,7 @@ export const report = command(
     const collected: Item[] = loans.map((l) => ({ loanId: l.id, copyId: l.get('copyId'), copyCode: l.get('copyCode'), bookTitle: l.get('bookTitle') }));
     const comingBack = collected.length + (delivered ? 0 : d.sent.length);
     const status = comingBack ? 'RETURNING' : delivered ? 'COMPLETED' : 'FAILED';
-    let fee = d.fee;
-    if (input.fee) {
-      const payRef = db.collection(`orgs/${input.orgId}/payments`).doc();
-      tx.create(payRef, {
-        memberId: d.memberId, memberCode: payer!.code, branchId: d.branchId, subscriptionId: null, deliveryId: input.deliveryId,
-        purpose: 'DELIVERY_FEE', direction: 'IN', lines: [{ type: 'DELIVERY_FEE', amountMinor: d.fee.amountMinor }], amountMinor: d.fee.amountMinor,
-        currency: 'INR', method: input.fee.method, reference: input.fee.reference || null, gateway: null, status: 'SUCCESS', recordedBy: actor.uid,
-        at: FieldValue.serverTimestamp(),
-      });
-      fee = { ...d.fee, status: 'PAID', paymentId: payRef.id, method: input.fee.method };
-    }
+    const fee = input.fee ? collectFee(tx, input.orgId, input.deliveryId, d, payer!.code, input.fee.method, input.fee.reference, actor.uid) : d.fee;
     tx.update(ref, {
       status, outcome: input.outcome, collected, fee, failReason: delivered ? null : input.failReason, handedTo: input.handedTo || null,
       reportedAt: FieldValue.serverTimestamp(), reportedBy: actor.uid, updatedAt: FieldValue.serverTimestamp(),
@@ -534,7 +317,8 @@ export const report = command(
       : { orgId: input.orgId, branchId: d.branchId, event: 'delivery_failed', memberId: d.memberId, vars: { reason: input.failReason }, ref: { deliveryId: input.deliveryId } });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: delivered ? 'delivery.delivered' : 'delivery.failed', entityType: 'delivery', entityId: input.deliveryId, branchId: d.branchId, memberId: d.memberId,
-      before: { status: 'OUT' }, after: { status, collected: collected.map((c) => c.copyCode), feePaid: !!input.fee, reason: input.failReason || null },
+      before: { status: 'OUT' },
+      after: { status, collected: collected.map((c) => c.copyCode), feePaid: !!input.fee, feePaymentId: fee.paymentId ?? null, reason: input.failReason || null },
     });
     return { status };
   },
@@ -575,11 +359,12 @@ export const receive = command('deliveries-receive', z.strictObject({ orgId: id,
   return { status, returned: total };
 });
 
-// ------------------------------------------------------------------ cancel and fee
+// ------------------------------------------------------------------ cancel
 
 /**
  * Cancels a delivery. Before dispatch it simply closes; once out, anything
- * sent comes back to the branch (to be received) and a booked courier is cancelled.
+ * sent comes back to the branch (to be received) and a booked courier is
+ * cancelled. A fee still due is waived: the visit didn't happen.
  */
 export async function cancelDelivery(
   { actor, input, requestId }: CallContext<{ orgId: string; deliveryId: string; reason: string }>,
@@ -593,27 +378,19 @@ export async function cancelDelivery(
     throw errors.conflict('CANNOT_CANCEL', onlyRequested ? 'It is already on the way: call the branch to change it.' : 'Only a delivery that is booked or out can be cancelled.');
   }
   const status = d.status === 'OUT' && d.sent.length ? 'RETURNING' : 'CANCELLED';
+  const waive = d.fee.status === 'DUE';
   tx.update(ref, {
     status, cancelReason: input.reason, cancelledAt: FieldValue.serverTimestamp(), cancelledBy: actor.uid, updatedAt: FieldValue.serverTimestamp(),
+    ...(waive ? { fee: WAIVED_FEE } : {}),
     ...(d.status === 'OUT' ? { outcome: 'FAILED', failReason: `Cancelled: ${input.reason}` } : {}),
     ...(status === 'CANCELLED' ? { closedAt: FieldValue.serverTimestamp() } : {}),
   });
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
     action: 'delivery.cancel', entityType: 'delivery', entityId: input.deliveryId, branchId: d.branchId, memberId: d.memberId,
-    before: { status: d.status }, after: { status }, reason: input.reason,
+    before: { status: d.status, fee: d.fee.status }, after: { status, fee: waive ? 'FREE' : d.fee.status }, reason: input.reason,
   });
   const cancelCourier = d.status === 'OUT' && d.provider?.orderId && !['DELIVERED', 'CANCELLED'].includes(d.provider.status) ? d.provider : null;
   return { status, cancelCourier: cancelCourier ? { key: cancelCourier.key, orderId: cancelCourier.orderId!, branchId: d.branchId } : null };
-}
-
-async function cancelAtCourier(orgId: string, deliveryId: string, c: { key: string; orderId: string; branchId: string } | null) {
-  if (!c) return;
-  try {
-    await courierFor(c.key)!.cancel(await courierConnection(orgId, c.branchId, c.key), c.orderId);
-    await deliveriesCol(orgId).doc(deliveryId).update({ 'provider.status': 'CANCELLED', 'provider.error': null });
-  } catch (e) {
-    await deliveriesCol(orgId).doc(deliveryId).update({ 'provider.error': `Cancel it in ${courierFor(c.key)?.label ?? c.key} too: ${(e as Error).message}` });
-  }
 }
 
 export const cancel = command(
@@ -622,83 +399,3 @@ export const cancel = command(
   (ctx, tx) => cancelDelivery(ctx, tx, (d) => ctx.actor.require('delivery.manage', ctx.input.orgId, d.branchId, tx)),
   async (r, ctx) => cancelAtCourier(ctx.input.orgId, ctx.input.deliveryId, r.cancelCourier),
 );
-
-/** Records the delivery fee paid at the counter later, or waives it. */
-export const recordFee = command(
-  'deliveries-recordFee',
-  z.strictObject({ orgId: id, deliveryId: id, method: z.enum([...FEE_METHODS, 'WAIVED']), reference: z.string().trim().max(60).default('') }),
-  async ({ actor, input, requestId }, tx) => {
-    const { ref, d } = await loadDelivery(tx, input.orgId, input.deliveryId);
-    await actor.require('delivery.manage', input.orgId, d.branchId, tx);
-    if (d.fee.status !== 'DUE') throw errors.conflict('NO_FEE_DUE', 'No delivery fee is due on this delivery.');
-    if (input.method !== 'WAIVED' && input.method !== 'OFFLINE_CASH' && input.reference.length < 4) throw errors.invalid('Enter the UPI or card reference.');
-    let fee: Delivery['fee'] = { amountMinor: 0, status: 'FREE', method: 'WAIVED' };
-    if (input.method !== 'WAIVED') {
-      const { member } = await loadMember(tx, input.orgId, d.memberId);
-      const payRef = db.collection(`orgs/${input.orgId}/payments`).doc();
-      tx.create(payRef, {
-        memberId: d.memberId, memberCode: member.code, branchId: d.branchId, subscriptionId: null, deliveryId: input.deliveryId,
-        purpose: 'DELIVERY_FEE', direction: 'IN', lines: [{ type: 'DELIVERY_FEE', amountMinor: d.fee.amountMinor }], amountMinor: d.fee.amountMinor,
-        currency: 'INR', method: input.method, reference: input.reference || null, gateway: null, status: 'SUCCESS', recordedBy: actor.uid,
-        at: FieldValue.serverTimestamp(),
-      });
-      fee = { ...d.fee, status: 'PAID', paymentId: payRef.id, method: input.method };
-    }
-    tx.update(ref, { fee, updatedAt: FieldValue.serverTimestamp() });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'delivery.fee', entityType: 'delivery', entityId: input.deliveryId, branchId: d.branchId, memberId: d.memberId,
-      before: { fee: d.fee.status, amount: rupeesText(d.fee.amountMinor) }, after: { fee: fee.status, method: input.method },
-    });
-    return { fee: fee.status };
-  },
-);
-
-// ------------------------------------------------------------------ lists
-
-/** The branch's delivery board: everything open, and what closed in the last two weeks. */
-export const list = query('deliveries-list', z.strictObject({ orgId: id, branchId: id }), async ({ actor, input }) => {
-  await actor.require('delivery.manage', input.orgId, input.branchId);
-  const since = Timestamp.fromMillis(Date.now() - 14 * 86_400_000);
-  const [open, closed] = await Promise.all([
-    deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('status', 'in', [...OPEN_STATUSES]).orderBy('requestedAt', 'asc').limit(200).get(),
-    deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('closedAt', '>=', since).orderBy('closedAt', 'desc').limit(60).get(),
-  ]);
-  return { open: open.docs.map(row), closed: closed.docs.map(row) };
-});
-
-/** The rider's run: deliveries assigned to the caller that are out. */
-export const mine = query('deliveries-mine', z.strictObject({ orgId: id }), async ({ actor, input }) => {
-  const snap = await deliveriesCol(input.orgId).where('rider.uid', '==', actor.uid).where('status', '==', 'OUT').limit(50).get();
-  const rows = snap.docs.map(row);
-  // Books the member has out, so the rider can tick what they collect.
-  const loans = await Promise.all(
-    snap.docs.map((d) =>
-      collects(d.get('kind'))
-        ? db.collection(`orgs/${input.orgId}/loans`).where('memberId', '==', d.get('memberId')).where('status', '==', 'ACTIVE').limit(20).get()
-        : null,
-    ),
-  );
-  return {
-    deliveries: rows.map((r, i) => ({
-      ...r,
-      memberLoans: loans[i]?.docs.filter((l) => l.get('deliveryId') !== r.id).map((l) => ({ loanId: l.id, copyCode: l.get('copyCode'), bookTitle: l.get('bookTitle') })) ?? [],
-    })),
-  };
-});
-
-/** One delivery with the member's books out (for the dispatch and report dialogs). */
-export const get = query('deliveries-get', z.strictObject({ orgId: id, deliveryId: id }), async ({ actor, input }) => {
-  const snap = await deliveriesCol(input.orgId).doc(input.deliveryId).get();
-  if (!snap.exists) throw errors.notFound('Delivery');
-  const d = snap.data() as Delivery;
-  if (d.rider?.uid !== actor.uid) await actor.require('delivery.manage', input.orgId, d.branchId);
-  const [loans, holds] = await Promise.all([
-    db.collection(`orgs/${input.orgId}/loans`).where('memberId', '==', d.memberId).where('status', '==', 'ACTIVE').limit(20).get(),
-    db.collection(`orgs/${input.orgId}/reservations`).where('memberId', '==', d.memberId).where('status', '==', 'ALLOCATED').limit(20).get(),
-  ]);
-  return {
-    delivery: row(snap),
-    memberLoans: loans.docs.map((l) => ({ loanId: l.id, copyCode: l.get('copyCode'), bookTitle: l.get('bookTitle'), deliveryId: l.get('deliveryId') ?? null })),
-    holds: holds.docs.filter((h) => h.get('branchId') === d.branchId).map((h) => ({ reservationId: h.id, bookTitle: h.get('bookTitle'), copyCode: h.get('allocatedCopyCode') })),
-  };
-});

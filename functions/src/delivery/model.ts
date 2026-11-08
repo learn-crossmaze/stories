@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import type { DocumentSnapshot, Transaction } from 'firebase-admin/firestore';
+import { type DocumentSnapshot, Timestamp, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { errors } from '../core/errors.js';
@@ -164,8 +164,40 @@ export interface Delivery {
     fareMinor: number | null;
     partner: { name: string | null; phone: string | null; vehicleNumber: string | null } | null;
     error: string | null;
+    /** Booking attempts so far. */
+    attempts?: number;
+    /** Which request id the last booking used (1 = the delivery id, n = `<deliveryId>-n`). */
+    requestNo?: number;
+    /** The last request is known to have made no live order (refused, or its order was cancelled): the next booking needs a new request id. */
+    requestSpent?: boolean;
   } | null;
   outcome: 'DELIVERED' | 'FAILED' | null;
   failReason: string | null;
   requestedBy: 'MEMBER' | 'STAFF';
+}
+
+// ------------------------------------------------------------------ shared by the order modules
+
+export const branchRef = (orgId: string, branchId: string) => db.doc(`orgs/${orgId}/branches/${branchId}`);
+/** The visit takes books to the member. */
+export const sends = (kind: string) => kind !== 'PICKUP';
+/** The visit brings books back. */
+export const collects = (kind: string) => kind !== 'DELIVER';
+/** Booked through a courier app's API (not the branch's own staff or a courier entered by hand). */
+export const isCourier = (m: string | null) => !!m && m !== 'OWN' && m !== 'MANUAL';
+
+/** Firestore values → JSON the app can read (timestamps as ISO strings). */
+function plain(v: unknown): unknown {
+  if (v instanceof Timestamp) return v.toDate().toISOString();
+  if (Array.isArray(v)) return v.map(plain);
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
+  return v;
+}
+export const row = (d: DocumentSnapshot) => plain({ id: d.id, ...d.data() }) as Record<string, unknown>;
+
+export async function loadDelivery(tx: Pick<Transaction, 'get'> | null, orgId: string, deliveryId: string) {
+  const ref = deliveriesCol(orgId).doc(deliveryId);
+  const snap = tx ? await tx.get(ref) : await ref.get();
+  if (!snap.exists) throw errors.notFound('Delivery');
+  return { ref, snap, d: snap.data() as Delivery };
 }

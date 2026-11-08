@@ -25,7 +25,10 @@ export interface Stop {
 }
 
 export interface Trip {
-  /** Our delivery id: sent as the courier's request id so a retried booking is not booked twice. */
+  /**
+   * The courier's idempotency key: our delivery id (`<id>-n` after a refused or cancelled booking, see
+   * courierBooking.nextRequest). A retried booking sends the same one, so the courier never books twice.
+   */
   requestId: string;
   pickup: Stop;
   drop: Stop;
