@@ -14,7 +14,7 @@ export class ApiError extends Error {
   }
 }
 
-const passThrough = new Set(['invalid-argument', 'failed-precondition', 'permission-denied', 'not-found', 'unauthenticated']);
+const passThrough = new Set(['invalid-argument', 'failed-precondition', 'permission-denied', 'not-found', 'unauthenticated', 'aborted']);
 
 /** Maps a Functions error to an ApiError. Server messages for domain errors are written for users. */
 export function toApiError(e: unknown): ApiError {
@@ -62,12 +62,61 @@ export async function callAction<R = unknown>(fns: Functions, action: string, da
 }
 
 /**
- * Calls a mutating Cloud Function (a "command"). A fresh requestId makes the
- * call safe to retry: the server returns the stored result instead of
- * repeating the change.
+ * Failures after which the change may or may not have happened, and that are
+ * safe to retry with the same requestId (the server returns the stored result
+ * instead of repeating the change): Firestore contention or a step after the
+ * commit (`aborted`), an overloaded backend (`unavailable`), a timeout, and a
+ * dropped connection (the SDK reports it as `internal` with no server message).
  */
-export const command = <R = unknown>(name: string, data: Record<string, unknown>, requestId = crypto.randomUUID()): Promise<R> =>
-  call<R>(name, { ...data, requestId });
+export function isRetryable(e: unknown): boolean {
+  if (!(e instanceof FirebaseError)) return false;
+  const code = e.code.replace(/^functions\//, '');
+  return code === 'aborted' || code === 'unavailable' || code === 'deadline-exceeded' || (code === 'internal' && /^internal$/i.test(e.message.trim()));
+}
+
+const RETRY_DELAYS_MS = [400, 1600];
+const REMEMBER_MS = 10 * 60_000;
+/** requestIds of commands whose outcome is unknown, by action + input, so an identical retry by the user is recognised. */
+const unsettled = new Map<string, { requestId: string; at: number }>();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const keyOf = (name: string, data: Record<string, unknown>) =>
+  `${name}:${JSON.stringify(data, (_k, v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v))}`;
+
+/**
+ * Calls a mutating Cloud Function (a "command") exactly once, even when the
+ * network or the backend fails part-way:
+ * - transient failures are retried automatically with the same requestId;
+ * - if they persist, the requestId is remembered for this action and input for
+ *   10 minutes, so pressing the button again replays the same request (the
+ *   server returns its stored result) instead of doing the change twice.
+ * Pass `requestId` to manage it yourself (e.g. one per dialog).
+ */
+export async function command<R = unknown>(name: string, data: Record<string, unknown>, requestId?: string): Promise<R> {
+  const key = requestId ? null : keyOf(name, data);
+  const prior = key ? unsettled.get(key) : undefined;
+  const id = requestId ?? (prior && Date.now() - prior.at < REMEMBER_MS ? prior.requestId : crypto.randomUUID());
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const result = await callAction<R>(services().fns, name, { ...data, requestId: id });
+      if (key) unsettled.delete(key);
+      return result;
+    } catch (e) {
+      const retryable = isRetryable(e);
+      if (retryable && attempt < RETRY_DELAYS_MS.length) {
+        await sleep(RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      if (key) {
+        if (retryable) {
+          if (unsettled.size > 100) unsettled.delete(unsettled.keys().next().value!);
+          unsettled.set(key, { requestId: id, at: Date.now() });
+        } else unsettled.delete(key);
+      }
+      throw toApiError(e);
+    }
+  }
+}
 
 /** Calls an action once (reads, and jobs that are safe to repeat); failures arrive as ApiError. */
 export async function call<R = unknown>(action: string, data: Record<string, unknown>): Promise<R> {
