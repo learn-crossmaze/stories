@@ -1,5 +1,4 @@
-import type { DocumentSnapshot } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
@@ -10,6 +9,7 @@ import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCop
 import { getBook } from '../../data/catalogue';
 import { BookCover } from '../../shared/BookCover';
 import { useDebounced } from '../../shared/useDebounced';
+import { usePagedQuery } from '../../shared/usePagedQuery';
 import { useAsync } from '../../shared/useAsync';
 import { money, when } from '../../shared/format';
 import { paths } from '../../paths';
@@ -56,39 +56,22 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
   const [q, setQ] = useState('');
   const title = useDebounced(q.trim());
   const searching = title.length >= 2;
-  const [copies, setCopies] = useState<Copy[]>([]);
-  const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
-  const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
-  const [attempt, setAttempt] = useState(0);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
   const [elsewhere, setElsewhere] = useState<CopyWhereabouts | null>(null);
   const locations = useAsync(() => listLocations(orgId, branchId), [orgId, branchId]);
   const [newLoc, setNewLoc] = useState(false);
   const manage = can(claims, 'copies.manage', orgId, branchId);
 
-  const load = async (after?: DocumentSnapshot) => {
-    setState({ loading: true, error: null });
-    try {
-      if (searching) {
-        // Title search: every matching copy at once, filtered by status here.
-        const found = await searchCopiesByTitle(orgId, branchId, title);
-        setCopies(status ? found.filter((c) => c.status === status) : found);
-        setCursor(undefined);
-      } else {
-        const page = await listCopies(orgId, branchId, status, after);
-        setCopies((prev) => (after ? [...prev, ...page.items] : page.items));
-        setCursor(page.cursor);
-      }
-      setState({ loading: false, error: null });
-    } catch (e) {
-      console.error(e);
-      setState({ loading: false, error: t.errorLoad });
-    }
-  };
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, branchId, status, title, attempt]);
+  const list = usePagedQuery<Copy>(
+    async (after) => {
+      if (!searching) return listCopies(orgId, branchId, status, after);
+      // Title search: every matching copy at once, filtered by status here.
+      const found = await searchCopiesByTitle(orgId, branchId, title);
+      return { items: status ? found.filter((c) => c.status === status) : found };
+    },
+    [orgId, branchId, status, title],
+  );
+  const copies = list.items;
 
   const locName = (id: string | null) => (id ? (locations.data?.find((l) => l.id === id)?.code ?? '—') : '—');
 
@@ -131,9 +114,9 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
           <Link to={paths.adminBook(elsewhere.bookId)}>{lt.viewBook}</Link>
         </Notice>
       )}
-      {state.error && copies.length === 0 ? (
-        <ErrorState message={state.error} onRetry={() => setAttempt((n) => n + 1)} />
-      ) : state.loading && copies.length === 0 ? (
+      {list.error && copies.length === 0 ? (
+        <ErrorState message={list.error} onRetry={list.reload} />
+      ) : list.loading && copies.length === 0 ? (
         <SkeletonRows rows={6} />
       ) : copies.length === 0 ? (
         <EmptyState icon="shelves" title={searching ? lt.noCopiesMatch(title) : lt.copiesEmpty} message="" />
@@ -175,9 +158,10 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
               </tbody>
             </table>
           </TableWrap>
-          {cursor && (
-            <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
-              {state.loading ? t.loading : t.loadMore}
+          {list.error && <p className="form-error" role="alert">{list.error}</p>}
+          {list.hasMore && (
+            <button type="button" className="btn btn-outlined load-more" disabled={list.loading} onClick={list.loadMore}>
+              {list.loading ? t.loading : t.loadMore}
             </button>
           )}
         </>

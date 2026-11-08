@@ -1,4 +1,3 @@
-import type { DocumentSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 
 import { BookCover } from '../shared/BookCover';
@@ -7,6 +6,7 @@ import { type Book, searchBooks } from '../data/catalogue';
 import { label } from '../data/common';
 import { type Membership, reserveBook } from '../data/me';
 import { useDebounced } from '../shared/useDebounced';
+import { usePagedQuery } from '../shared/usePagedQuery';
 import { t } from '../strings';
 import { EmptyState, ErrorState, SkeletonRows } from '../shared/ui';
 import { useMemberData } from './memberData';
@@ -29,35 +29,18 @@ function ExploreBody({ m }: { m: Membership }) {
   const { overview } = useMemberData();
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
-  const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
   const [open, setOpen] = useState<string | null>(null);
-  const load = async (after?: DocumentSnapshot) => {
-    setState({ loading: true, error: null });
-    try {
-      const page = await searchBooks(debounced, m.member.audience === 'ADULTS' ? '' : m.member.audience, after, 'ACTIVE');
-      setBooks((prev) => (after ? [...prev, ...page.items] : page.items));
-      setCursor(page.cursor);
-      setState({ loading: false, error: null });
-    } catch (e) {
-      console.error(e);
-      setState({ loading: false, error: t.errorLoad });
-    }
-  };
-  useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debounced, m.member.audience]);
+  const list = usePagedQuery<Book>((after) => searchBooks(debounced, m.member.audience === 'ADULTS' ? '' : m.member.audience, after, 'ACTIVE'), [debounced, m.member.audience]);
+  const books = list.items;
   return (
     <>
       <div className="toolbar">
         <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t.meSearchBooks} aria-label={t.meSearchBooks} />
       </div>
       {m.member.audience !== 'ADULTS' && <p className="muted small">{t.meShowingFor(label(m.member.audience))}</p>}
-      {state.error && !books.length ? (
-        <ErrorState message={state.error} onRetry={() => void load()} />
-      ) : state.loading && !books.length ? (
+      {list.error && !books.length ? (
+        <ErrorState message={list.error} onRetry={list.reload} />
+      ) : list.loading && !books.length ? (
         <SkeletonRows rows={5} />
       ) : !books.length ? (
         <EmptyState icon="book" title={t.meNoBooksFound} message="" />
@@ -78,9 +61,10 @@ function ExploreBody({ m }: { m: Membership }) {
               </li>
             ))}
           </ul>
-          {cursor && (
-            <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => void load(cursor)}>
-              {state.loading ? t.loading : t.loadMore}
+          {list.error && <p className="form-error" role="alert">{list.error}</p>}
+          {list.hasMore && (
+            <button type="button" className="btn btn-outlined load-more" disabled={list.loading} onClick={list.loadMore}>
+              {list.loading ? t.loading : t.loadMore}
             </button>
           )}
         </>

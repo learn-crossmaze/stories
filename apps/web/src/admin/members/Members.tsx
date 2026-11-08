@@ -1,4 +1,3 @@
-import type { DocumentSnapshot } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
@@ -9,6 +8,7 @@ import { AGE_GROUPS, label } from '../../data/common';
 import { indexMemberList, listMembers, type Member, memberCounts, type MemberFilters, RENEWAL_DUE_DAYS, type RenewalFilter, renewalState, searchMembers } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { useDebounced } from '../../shared/useDebounced';
+import { usePagedQuery } from '../../shared/usePagedQuery';
 import { day, relativeDays } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
@@ -164,9 +164,6 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
   const [params] = useSearchParams();
   const [filters, setFilters] = useState<MemberFilters>(() => ({ status: '', audience: '', renewal: RENEWAL_FILTERS.find((r) => r === params.get('renewal')) ?? '' }));
   const [registering, setRegistering] = useState(false);
-  const [rows, setRows] = useState<Member[]>([]);
-  const [cursor, setCursor] = useState<DocumentSnapshot | undefined>();
-  const [state, setState] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
   const [attempt, setAttempt] = useState(0);
   // Older branches get plan and renewal dates filled in once, before the first listing.
   const [indexed, setIndexed] = useState(false);
@@ -188,34 +185,22 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
 
   const counts = useAsync(() => (indexed ? memberCounts(orgId, branchId) : Promise.resolve(null)), [orgId, branchId, indexed, attempt]);
 
-  const load = async (after?: DocumentSnapshot) => {
-    setState({ loading: true, error: null });
-    try {
-      if (searching) {
-        // Search matches name, code or mobile; the filters then narrow those matches.
-        const found = (await searchMembers(orgId, branchId, debounced)).filter(
-          (m) =>
-            (!filters.status || m.status === filters.status) &&
-            (!filters.audience || m.audience === filters.audience) &&
-            (!filters.renewal || renewalState(m) === filters.renewal || (filters.renewal === 'ACTIVE' && renewalState(m) === 'DUE')),
-        );
-        setRows(found);
-        setCursor(undefined);
-      } else {
-        const p = await listMembers(orgId, branchId, filters, after);
-        setRows((prev) => (after ? [...prev, ...p.items] : p.items));
-        setCursor(p.cursor);
-      }
-      setState({ loading: false, error: null });
-    } catch (e) {
-      console.error(e);
-      setState({ loading: false, error: t.errorLoad });
-    }
-  };
-  useEffect(() => {
-    if (indexed) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, branchId, indexed, debounced, filters, attempt]);
+  const list = usePagedQuery<Member>(
+    async (after) => {
+      if (!searching) return listMembers(orgId, branchId, filters, after);
+      // Search matches name, code or mobile; the filters then narrow those matches.
+      const found = (await searchMembers(orgId, branchId, debounced)).filter(
+        (m) =>
+          (!filters.status || m.status === filters.status) &&
+          (!filters.audience || m.audience === filters.audience) &&
+          (!filters.renewal || renewalState(m) === filters.renewal || (filters.renewal === 'ACTIVE' && renewalState(m) === 'DUE')),
+      );
+      return { items: found };
+    },
+    [orgId, branchId, debounced, filters, attempt],
+    { enabled: indexed },
+  );
+  const rows = list.items;
 
   const c = counts.data;
   const chips: { key: RenewalFilter; label: string; n: number | undefined }[] = [
@@ -275,9 +260,9 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
           </button>
         )}
       </div>
-      {state.error && rows.length === 0 ? (
-        <ErrorState message={state.error} onRetry={() => setAttempt((n) => n + 1)} />
-      ) : (!indexed || state.loading) && rows.length === 0 ? (
+      {list.error && rows.length === 0 ? (
+        <ErrorState message={list.error} onRetry={() => setAttempt((n) => n + 1)} />
+      ) : (!indexed || list.loading) && rows.length === 0 ? (
         <SkeletonRows rows={6} />
       ) : rows.length === 0 ? (
         <EmptyState icon="person" title={filtered ? lt.membersEmpty : lt.membersNone} message="" />
@@ -321,9 +306,10 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
               </tbody>
             </table>
           </TableWrap>
-          {cursor && (
-            <button type="button" className="btn btn-outlined load-more" disabled={state.loading} onClick={() => load(cursor)}>
-              {state.loading ? t.loading : t.loadMore}
+          {list.error && <p className="form-error" role="alert">{list.error}</p>}
+          {list.hasMore && (
+            <button type="button" className="btn btn-outlined load-more" disabled={list.loading} onClick={list.loadMore}>
+              {list.loading ? t.loading : t.loadMore}
             </button>
           )}
         </>
