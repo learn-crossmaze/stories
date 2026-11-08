@@ -130,16 +130,30 @@ export function SkeletonRows({ rows = 4 }: { rows?: number }) {
   );
 }
 
-const tone: Record<string, string> = {
-  ACTIVE: 'ok',
-  ARCHIVED: 'muted',
-  REVOKED: 'muted',
-  SUSPENDED: 'warn',
-  UPGRADED: 'info',
-};
+export type Tone = 'ok' | 'warn' | 'info' | 'danger' | 'muted';
 
-/** Status chip: always text (and a dot), never color alone. */
-export function StatusBadge({ status }: { status: string }) {
-  const label = ({ ACTIVE: t.active, ARCHIVED: t.archived, REVOKED: t.revoked, SUSPENDED: t.suspended, UPGRADED: t.upgraded } as Record<string, string>)[status] ?? status;
-  return <span className={`badge badge-${tone[status] ?? 'muted'}`}>{label}</span>;
+/** A chip: always text (and a dot), never colour alone. */
+export function Badge({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string }) {
+  return <span className={`badge badge-${tone}${className ? ` ${className}` : ''}`}>{children}</span>;
 }
+
+/**
+ * A status chip for one kind of record: its tone and words for each status.
+ * Unknown statuses show as they are, in the muted tone.
+ */
+export function makeStatusBadge<S extends string>(tones: Partial<Record<S, Tone>>, labels: Partial<Record<S, string>> | ((status: S) => string)) {
+  const labelOf = typeof labels === 'function' ? labels : (s: S) => labels[s] ?? s;
+  return function StatusChip({ status, className }: { status: S; className?: string }) {
+    return (
+      <Badge tone={tones[status] ?? 'muted'} className={className}>
+        {labelOf(status)}
+      </Badge>
+    );
+  };
+}
+
+/** Status of organizations, branches, staff, members, titles… */
+export const StatusBadge = makeStatusBadge<string>(
+  { ACTIVE: 'ok', ARCHIVED: 'muted', REVOKED: 'muted', SUSPENDED: 'warn', UPGRADED: 'info' },
+  { ACTIVE: t.active, ARCHIVED: t.archived, REVOKED: t.revoked, SUSPENDED: t.suspended, UPGRADED: t.upgraded },
+);

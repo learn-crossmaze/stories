@@ -2,7 +2,6 @@ import { useState } from 'react';
 
 import { command } from '../../data/api';
 import { listPlans, type Plan, pricesFor, startUpgrade, type Subscription, upgradeQuote } from '../../data/billing';
-import { toApiError } from '../../data/api';
 import { PendingUpgrade, UpgradeChooser } from '../../shared/Upgrade';
 import { type Book } from '../../data/catalogue';
 import { DURATION_LABELS, type Duration, planWithOption } from '../../data/common';
@@ -11,19 +10,15 @@ import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
 import { t } from '../../strings';
 import { SkeletonRows } from '../../shared/ui';
-import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
+import { Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { lt } from '../../strings/library';
 import { BookPicker } from '../catalogue/BookPicker';
 
 // Dialogs on the member page: payments, subscriptions, deposit adjustments, refunds, reservations.
 
-const METHODS = [
-  { value: 'OFFLINE_CASH', label: 'Cash' },
-  { value: 'OFFLINE_UPI', label: 'UPI' },
-  { value: 'OFFLINE_CARD', label: 'Card' },
-  { value: 'OFFLINE_BANK_TRANSFER', label: 'Bank transfer' },
-] as const;
-type Method = (typeof METHODS)[number]['value'];
+const METHODS = ['OFFLINE_CASH', 'OFFLINE_UPI', 'OFFLINE_CARD', 'OFFLINE_BANK_TRANSFER'] as const;
+type Method = (typeof METHODS)[number];
+const methodOptions = <M extends string>(methods: readonly M[]) => methods.map((value) => ({ value, label: lt.paymentMethods[value] }));
 
 export function PaymentDialog({ orgId, sub, onClose, onDone }: { orgId: string; sub: Subscription; onClose: () => void; onDone: () => void }) {
   const [method, setMethod] = useState<Method>('OFFLINE_UPI');
@@ -52,7 +47,7 @@ export function PaymentDialog({ orgId, sub, onClose, onDone }: { orgId: string; 
             </dd>
           </dl>
         )}
-        <SelectField label={lt.paymentMethod} value={method} onChange={setMethod} options={[...METHODS]} />
+        <SelectField label={lt.paymentMethod} value={method} onChange={setMethod} options={methodOptions(METHODS)} />
         {method !== 'OFFLINE_CASH' && <TextField label={lt.reference} value={reference} onChange={setReference} />}
         <FormError error={error} />
         <DialogActions busy={busy} submitLabel={`${lt.recordPayment} · ${money(sub.amountDue.totalMinor)}`} onCancel={onClose} />
@@ -64,8 +59,7 @@ export function PaymentDialog({ orgId, sub, onClose, onDone }: { orgId: string; 
 /** Upgrade mid-term: the quote with the pro-rata credit, then an upgrade waiting for payment. */
 export function UpgradeDialog({ orgId, member, onClose, onCreated }: { orgId: string; member: Member; onClose: () => void; onCreated: () => void }) {
   const quote = useAsync(() => upgradeQuote(orgId, member.id), [orgId, member.id]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
   return (
     <Dialog title={lt.upgradeTitle(member.fullName)} onClose={onClose}>
       <p className="muted">{t.upIntro}</p>
@@ -78,21 +72,15 @@ export function UpgradeDialog({ orgId, member, onClose, onCreated }: { orgId: st
       ) : (
         <UpgradeChooser
           quote={quote.data}
-          busy={busy}
-          error={error}
-          onUpgrade={async (o) => {
-            setBusy(true);
-            setError(null);
-            try {
+          busy={action.busy}
+          error={action.error}
+          onUpgrade={(o) =>
+            action.run(async () => {
               await startUpgrade(orgId, member.id, o);
               onCreated();
               onClose();
-            } catch (e) {
-              setError(toApiError(e).message);
-            } finally {
-              setBusy(false);
-            }
-          }}
+            })
+          }
         />
       )}
     </Dialog>
@@ -253,11 +241,7 @@ export function RefundDialog({
           label={lt.paymentMethod}
           value={method}
           onChange={setMethod}
-          options={[
-            { value: 'OFFLINE_CASH', label: 'Cash' },
-            { value: 'OFFLINE_UPI', label: 'UPI' },
-            { value: 'OFFLINE_BANK_TRANSFER', label: 'Bank transfer' },
-          ]}
+          options={methodOptions(['OFFLINE_CASH', 'OFFLINE_UPI', 'OFFLINE_BANK_TRANSFER'] as const)}
         />
         {method !== 'OFFLINE_CASH' && <TextField label={lt.reference} value={reference} onChange={setReference} />}
         <FormError error={error} />

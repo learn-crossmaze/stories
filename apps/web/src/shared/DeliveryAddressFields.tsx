@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { TextField } from '../admin/components/Dialog';
+import { TextField } from './fields';
 import { coordsFromText, currentPosition, type DeliveryAddress, type Geo } from '../data/delivery';
 import { dt } from '../strings/delivery';
 

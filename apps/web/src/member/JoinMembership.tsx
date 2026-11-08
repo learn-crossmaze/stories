@@ -6,7 +6,8 @@ import { addChild, joinLibrary, loadJoinOptions, type Membership } from '../data
 import { ErrorState, SkeletonRows } from '../shared/ui';
 import { useAsync } from '../shared/useAsync';
 import { t } from '../strings';
-import { FormError, SelectField, TextField } from '../admin/components/Dialog';
+import { FormError } from '../shared/Dialog';
+import { SelectField, TextField } from '../shared/fields';
 import { useMemberData } from './memberData';
 import { aadhaarError, cleanAadhaar } from '../shared/aadhaar';
 
