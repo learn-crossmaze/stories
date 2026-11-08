@@ -126,6 +126,11 @@ export const inspect = command(
       const [waiting] = await nextWaiting(tx, input.orgId, copy.currentBranchId, copy.bookId);
       const { holdHours } = await readCirculationConfig(tx, input.orgId);
       makeAvailable(tx, input.orgId, snap, { condition: input.condition }, event, waiting, holdHours);
+      recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+        action: 'copy.inspected', entityType: 'copy', entityId: input.copyId, branchId: copy.currentBranchId, reason: input.note || null,
+        before: { status: copy.status, condition: copy.condition },
+        after: { status: waiting ? 'RESERVED' : 'AVAILABLE', condition: input.condition, reservationId: waiting?.id ?? null },
+      });
     }
     return { copyId: input.copyId };
   },
@@ -135,13 +140,18 @@ export const inspect = command(
 export const repair = command(
   'copies-repair',
   z.strictObject({ orgId: id, copyId: id, condition: z.enum(CONDITIONS), note }),
-  async ({ actor, input }, tx) => {
+  async ({ actor, input, requestId }, tx) => {
     const { snap, copy } = await loadCopy(tx, input.orgId, input.copyId);
     await actor.require('copies.manage', input.orgId, copy.currentBranchId, tx);
     requireStatus(copy, 'DAMAGED');
     const [waiting] = await nextWaiting(tx, input.orgId, copy.currentBranchId, copy.bookId);
     const { holdHours } = await readCirculationConfig(tx, input.orgId);
     makeAvailable(tx, input.orgId, snap, { condition: input.condition }, { type: 'REPAIRED', actorUid: actor.uid, note: input.note || null }, waiting, holdHours);
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'copy.repair', entityType: 'copy', entityId: input.copyId, branchId: copy.currentBranchId, reason: input.note || null,
+      before: { status: 'DAMAGED', condition: copy.condition },
+      after: { status: waiting ? 'RESERVED' : 'AVAILABLE', condition: input.condition, reservationId: waiting?.id ?? null },
+    });
     return { copyId: input.copyId };
   },
 );

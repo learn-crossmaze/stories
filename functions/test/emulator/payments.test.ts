@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as branches from '../../src/organization/branches.js';
 import { db } from '../../src/core/firebase.js';
+import * as deposits from '../../src/billing/deposits.js';
+import { expireDueSubscriptions } from '../../src/billing/sweep.js';
 import * as members from '../../src/members/members.js';
 import * as orgs from '../../src/organization/orgs.js';
 import * as online from '../../src/billing/online.js';
@@ -17,7 +19,7 @@ let sa: TestUser, lib: TestUser;
 let org: string, central: string, memberId: string, subscriptionId: string, due: number;
 const KEY = { keyId: 'rzp_test_AbCdEf123456', keySecret: 'sekret-123', webhookSecret: 'whsec-456' };
 
-/** Fake Razorpay: records calls; `routes` answers by "METHOD path". Everything else (emulators) is real. */
+/** Fake Razorpay: records calls; `routes` answers by "METHOD path" (status 0 = no answer). Everything else (emulators) is real. */
 function fakeRazorpay(routes: Record<string, (body: Record<string, unknown>) => { status?: number; json: unknown }>) {
   const calls: { method: string; path: string; body: Record<string, unknown>; auth: string | null }[] = [];
   const real = globalThis.fetch;
@@ -31,6 +33,7 @@ function fakeRazorpay(routes: Record<string, (body: Record<string, unknown>) => 
     const route = routes[`${method} ${path}`];
     if (!route) return Response.json({ error: { code: 'BAD_REQUEST_ERROR', description: 'The requested URL was not found on the server.' } }, { status: 400 });
     const r = route(body);
+    if (r.status === 0) throw new TypeError('fetch failed: timeout');
     return Response.json(r.json, { status: r.status ?? 200 });
   });
   return calls;
@@ -266,5 +269,177 @@ describe('refunds', () => {
     expect(r.status).toBe('SUCCESS');
     expect(await deposit()).toBe(0);
     expect(await failure(refundOf(paymentId, { method: 'OFFLINE_CASH', amountMinor: 1000 }))).toBe('FULLY_REFUNDED');
+  });
+
+  const refundHook = (id: string, refundId: string, status: string, amount: number) =>
+    webhook({ event: `refund.${status}`, payload: { refund: { entity: { id, amount, status, notes: { refundId } } } } });
+
+  it('keeps a refund Razorpay may have made (no answer, or a server error) as processing, and settles it from the webhook', async () => {
+    let answer = 0;
+    const { calls, paymentId } = await onlinePayment({
+      'POST /payments/pay_9/refund': () => (answer === 0 ? { status: 0, json: {} } : { status: 503, json: { error: { description: 'Service unavailable' } } }),
+    });
+    const requestId = randomUUID();
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 50000, depositMinor: 40000 }, lib, requestId))).toBe('REFUND_UNCONFIRMED');
+    const refundId = `rf_${requestId}`;
+    expect(await db.doc(`orgs/${org}/payments/${refundId}`).get().then((d) => d.get('status'))).toBe('PROCESSING');
+    // Still counted against the payment, so nobody can refund it again meanwhile.
+    expect((await db.doc(`orgs/${org}/payments/${paymentId}`).get()).get('refundedMinor')).toBe(50000);
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: due - 50000 + 100 }))).toBe('INVALID_INPUT');
+    // A retry answers the same way without asking Razorpay again.
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 50000, depositMinor: 40000 }, lib, requestId))).toBe('REFUND_UNCONFIRMED');
+    expect(calls.filter((c) => c.path === '/payments/pay_9/refund')).toHaveLength(1);
+    // A server error is no answer either.
+    answer = 1;
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 10000 }))).toBe('REFUND_UNCONFIRMED');
+
+    // Razorpay did refund: the webhook settles it and takes the deposit part.
+    expect((await refundHook('rfnd_77', refundId, 'processed', 50000)).status).toBe(200);
+    expect((await db.doc(`orgs/${org}/payments/${refundId}`).get()).data()).toMatchObject({ status: 'SUCCESS', depositTakenMinor: 40000, gateway: { refundId: 'rfnd_77' } });
+    expect(await deposit()).toBe(60000);
+  });
+
+  it('takes from the deposit no more than is left, and a failed refund restores exactly what it took', async () => {
+    const requestId = randomUUID();
+    const refundId = `rf_${requestId}`;
+    const { paymentId } = await onlinePayment({
+      'POST /payments/pay_9/refund': () => ({ status: 0, json: {} }),
+      'GET /payments/pay_9/refunds': () => ({ json: { items: [{ id: 'rfnd_5', amount: 50000, status: 'pending', receipt: refundId }] } }),
+    });
+    await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 50000, depositMinor: 40000 }, lib, requestId));
+    // Meanwhile the member's deposit dropped (e.g. a deduction for a lost book).
+    await db.doc(`orgs/${org}/depositAccounts/${memberId}`).update({ balanceMinor: 10000 });
+    // Check status finds the refund by its receipt: Razorpay took it, the bank hasn't confirmed.
+    expect((await call<{ status: string }>(refunds.checkRefund, lib, { orgId: org, refundId }, null)).status).toBe('PENDING');
+    expect((await db.doc(`orgs/${org}/payments/${refundId}`).get()).data()).toMatchObject({ status: 'PENDING', depositTakenMinor: 10000 });
+    expect(await deposit()).toBe(0);
+    expect((await db.doc(`orgs/${org}/payments/${paymentId}`).get()).get('refundedDepositMinor')).toBe(10000);
+
+    await refundHook('rfnd_5', refundId, 'failed', 50000);
+    expect((await db.doc(`orgs/${org}/payments/${refundId}`).get()).get('status')).toBe('FAILED');
+    expect(await deposit()).toBe(10000); // not 40000: nothing is minted
+    const original = (await db.doc(`orgs/${org}/payments/${paymentId}`).get()).data()!;
+    expect(original).toMatchObject({ refundedMinor: 0, refundedDepositMinor: 0 });
+  });
+
+  it('a refund marked failed that Razorpay later reports refunded counts again and is flagged for finance', async () => {
+    const { paymentId } = await onlinePayment({
+      'POST /payments/pay_9/refund': () => ({ status: 400, json: { error: { code: 'BAD_REQUEST_ERROR', description: 'Not enough balance.' } } }),
+    });
+    const requestId = randomUUID();
+    expect(await failure(refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 30000, depositMinor: 20000 }, lib, requestId))).toBe('GATEWAY_ERROR');
+    expect(await deposit()).toBe(100000);
+    await refundHook('rfnd_late', `rf_${requestId}`, 'processed', 30000);
+    const r = (await db.doc(`orgs/${org}/payments/rf_${requestId}`).get()).data()!;
+    expect(r).toMatchObject({ status: 'NEEDS_ATTENTION', depositTakenMinor: 20000, gateway: { refundId: 'rfnd_late' } });
+    expect((await db.doc(`orgs/${org}/payments/${paymentId}`).get()).get('refundedMinor')).toBe(30000);
+    expect(await deposit()).toBe(80000);
+    const audit = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'payment.refundRevived').get();
+    expect(audit.size).toBe(1);
+  });
+
+  it('two calls with the same request id make one refund', async () => {
+    const { calls, paymentId } = await onlinePayment({ 'POST /payments/pay_9/refund': processed });
+    const requestId = randomUUID();
+    await Promise.allSettled([1, 2].map(() => refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 20000 }, lib, requestId)));
+    expect(calls.filter((c) => c.path === '/payments/pay_9/refund')).toHaveLength(1);
+    const out = await db.collection(`orgs/${org}/payments`).where('purpose', '==', 'REFUND').get();
+    expect(out.docs.map((d) => [d.id, d.get('status')])).toEqual([[`rf_${requestId}`, 'SUCCESS']]);
+    expect((await db.doc(`orgs/${org}/payments/${paymentId}`).get()).get('refundedMinor')).toBe(20000);
+  });
+
+  it('a pending refund confirmed later is recorded with an audit entry', async () => {
+    const { paymentId } = await onlinePayment({ 'POST /payments/pay_9/refund': (body) => ({ json: { id: 'rfnd_p', amount: body.amount, status: 'pending' } }) });
+    const r = await refundOf(paymentId, { method: 'RAZORPAY', amountMinor: 10000 });
+    await refundHook('rfnd_p', r.refundId, 'processed', 10000);
+    expect((await db.doc(`orgs/${org}/payments/${r.refundId}`).get()).get('status')).toBe('SUCCESS');
+    const audit = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'payment.refundProcessed').get();
+    expect(audit.docs.map((d) => d.get('after.refundId'))).toEqual([r.refundId]);
+  });
+});
+
+describe('payment requests and cancelled subscriptions', () => {
+  it('two staff asking at once make one payment link', async () => {
+    await gateway();
+    const calls = fakeRazorpay(link);
+    await Promise.allSettled([createReq('LINK'), createReq('LINK')]);
+    expect(calls.filter((c) => c.path === '/payment_links')).toHaveLength(1);
+    expect((await db.collection(`orgs/${org}/paymentRequests`).get()).size).toBe(1);
+    // The claim is released: the next request reuses the open link.
+    expect((await createReq('LINK')).requestId).toBe('plink_1');
+  });
+
+  it('cancelling the subscription cancels its open link, and a payment that still arrives is flagged, not applied', async () => {
+    await gateway();
+    const calls = fakeRazorpay({ ...link, 'POST /payment_links/plink_1/cancel': () => ({ json: { id: 'plink_1', status: 'cancelled' } }) });
+    await createReq('LINK');
+    await call(subs.cancelPending, lib, { orgId: org, subscriptionId, reason: 'Chose another plan' });
+    expect((await db.doc(`orgs/${org}/paymentRequests/plink_1`).get()).get('status')).toBe('CANCELLED');
+    expect(calls.some((c) => c.path === '/payment_links/plink_1/cancel')).toBe(true);
+
+    expect((await webhook(paidLink(due))).body).toBe('NEEDS_ATTENTION');
+    expect((await db.doc(`orgs/${org}/subscriptions/${subscriptionId}`).get()).get('status')).toBe('CANCELLED');
+    const pay = await db.collection(`orgs/${org}/payments`).where('memberId', '==', memberId).get();
+    expect(pay.docs.map((d) => [d.get('status'), d.get('note')])).toEqual([['NEEDS_ATTENTION', 'The payment request had been cancelled.']]);
+    expect((await db.doc(`orgs/${org}/depositAccounts/${memberId}`).get()).exists).toBe(false);
+  });
+
+  it('cancelling a request Razorpay already closed counts as done', async () => {
+    await gateway();
+    fakeRazorpay({
+      ...link,
+      'POST /payment_links/plink_1/cancel': () => ({ status: 400, json: { error: { code: 'BAD_REQUEST_ERROR', description: 'Payment link has already been cancelled' } } }),
+    });
+    await createReq('LINK');
+    await call(online.cancelRequest, lib, { orgId: org, paymentRequestId: 'plink_1' });
+    expect((await db.doc(`orgs/${org}/paymentRequests/plink_1`).get()).get('status')).toBe('CANCELLED');
+    await call(online.cancelRequest, lib, { orgId: org, paymentRequestId: 'plink_1' }); // again: still fine
+  });
+
+  it('suspending a member cancels the subscription waiting for payment and its link', async () => {
+    await gateway();
+    const calls = fakeRazorpay({ ...link, 'POST /payment_links/plink_1/cancel': () => ({ json: { id: 'plink_1', status: 'cancelled' } }) });
+    await createReq('LINK');
+    await call(members.setStatus, lib, { orgId: org, memberId, status: 'SUSPENDED', reason: 'Asked to pause' });
+    expect((await db.doc(`orgs/${org}/subscriptions/${subscriptionId}`).get()).get('status')).toBe('CANCELLED');
+    expect((await db.doc(`orgs/${org}/paymentRequests/plink_1`).get()).get('status')).toBe('CANCELLED');
+    expect(calls.some((c) => c.path === '/payment_links/plink_1/cancel')).toBe(true);
+    expect((await webhook(paidLink(due))).body).toBe('NEEDS_ATTENTION');
+    expect((await db.doc(`orgs/${org}/members/${memberId}`).get()).get('activeSubscriptionId') ?? null).toBe(null);
+  });
+
+  it('a counter payment for a suspended member is refused', async () => {
+    await db.doc(`orgs/${org}/members/${memberId}`).update({ status: 'SUSPENDED' });
+    expect(await failure(call(subs.recordOfflinePayment, lib, { orgId: org, subscriptionId, method: 'OFFLINE_CASH', amountMinor: due }))).toBe('CANNOT_ACTIVATE');
+  });
+});
+
+describe('deposit settlement', () => {
+  it('waits for unpaid subscriptions, and a member coming back reopens the closed deposit', async () => {
+    await call(subs.recordOfflinePayment, lib, { orgId: org, subscriptionId, method: 'OFFLINE_CASH', amountMinor: due });
+    await expireDueSubscriptions(new Date(Date.now() + 40 * 86_400_000));
+    // A renewal waiting for payment (a link may be out): settlement must wait.
+    const planId = (await db.doc(`orgs/${org}/subscriptions/${subscriptionId}`).get()).get('planId') as string;
+    const renewal = (await call<{ subscriptionId: string }>(subs.create, lib, { orgId: org, memberId, planId })).subscriptionId;
+    expect(await failure(call(deposits.startSettlement, sa, { orgId: org, memberId }))).toBe('PENDING_EXISTS');
+    await call(subs.cancelPending, lib, { orgId: org, subscriptionId: renewal, reason: 'Leaving' });
+    await call(deposits.startSettlement, sa, { orgId: org, memberId });
+
+    // An adjustment approved after the account closed is refused (no money moves on a closed account).
+    await db.doc(`orgs/${org}/config/deposits`).set({ makerCheckerThresholdMinor: 1_000_000 });
+    const adj = (await call<{ adjustmentId: string }>(deposits.proposeAdjustment, sa, { orgId: org, memberId, kind: 'DEDUCTION', amountMinor: 1000, reason: 'Torn cover' })).adjustmentId;
+    await db.doc(`orgs/${org}/depositAccounts/${memberId}`).update({ status: 'CLOSED' });
+    expect(await failure(call(deposits.decideAdjustment, sa, { orgId: org, adjustmentId: adj, decision: 'APPROVE' }))).toBe('DEPOSIT_CLOSED');
+    expect(await failure(call(deposits.proposeAdjustment, sa, { orgId: org, memberId, kind: 'DEDUCTION', amountMinor: 1000, reason: 'Torn cover' }))).toBe('DEPOSIT_CLOSED');
+    await call(deposits.decideAdjustment, sa, { orgId: org, adjustmentId: adj, decision: 'REJECT' });
+    await db.doc(`orgs/${org}/depositAccounts/${memberId}`).update({ status: 'SETTLING' });
+    await call(deposits.refund, sa, { orgId: org, memberId, method: 'OFFLINE_CASH' });
+    expect((await db.doc(`orgs/${org}/depositAccounts/${memberId}`).get()).data()).toMatchObject({ status: 'CLOSED', balanceMinor: 0 });
+
+    // Months later the member subscribes again: paying collects the deposit and the account opens again.
+    const back = await call<{ subscriptionId: string; amountDue: { totalMinor: number; depositMinor: number } }>(subs.create, lib, { orgId: org, memberId, planId });
+    expect(back.amountDue.depositMinor).toBe(100000);
+    await call(subs.recordOfflinePayment, lib, { orgId: org, subscriptionId: back.subscriptionId, method: 'OFFLINE_CASH', amountMinor: back.amountDue.totalMinor });
+    expect((await db.doc(`orgs/${org}/depositAccounts/${memberId}`).get()).data()).toMatchObject({ status: 'OPEN', balanceMinor: 100000 });
   });
 });

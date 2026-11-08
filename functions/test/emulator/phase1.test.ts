@@ -24,6 +24,7 @@ import * as plans from '../../src/billing/plans.js';
 import * as subs from '../../src/billing/subscriptions.js';
 import { prorate, quoteValidUntil } from '../../src/billing/upgrade.js';
 import { expireDueSubscriptions } from '../../src/billing/sweep.js';
+import { clearSwitchboardCache } from '../../src/messaging/whatsapp.js';
 import { address, call, contact, createUser, failure, resetEmulators, type TestUser } from './helpers.js';
 
 let sa: TestUser, lib: TestUser, lib2: TestUser, fin: TestUser, fin2: TestUser, bm: TestUser;
@@ -139,6 +140,27 @@ describe('M1.1 catalogue', () => {
     expect(book.authorNames).toEqual(['R. L. Stevenson']);
     expect(book.searchTokens).toEqual(expect.arrayContaining(['treasure', 'stevenson', '9780306406157']));
   });
+
+  it('refreshes names on every book of a prolific author, page by page', async () => {
+    const total = catalog.REFRESH_PAGE + 50;
+    for (let start = 0; start < total; start += 450) {
+      const batch = db.batch();
+      for (let i = start; i < Math.min(total, start + 450); i++) {
+        batch.set(db.collection('books').doc(), {
+          title: `Volume ${i}`, subtitle: '', keywords: [], code: `BOOK-9${String(i).padStart(5, '0')}`, isbn: null, status: 'ACTIVE',
+          authorIds: [authorId], authorNames: ['Robert Louis Stevenson'], publisherId: null, categoryIds: [], categoryNames: [],
+        });
+      }
+      await batch.commit();
+    }
+    await call(catalog.authors.rename, sa, { id: authorId, name: 'R. L. Stevenson' });
+    const stale = await db.collection('books').where('authorNames', 'array-contains', 'Robert Louis Stevenson').count().get();
+    expect(stale.data().count).toBe(0);
+    const fresh = await db.collection('books').where('authorNames', 'array-contains', 'R. L. Stevenson').count().get();
+    expect(fresh.data().count).toBe(total + 1);
+    const one = (await db.collection('books').where('code', '==', 'BOOK-900007').get()).docs[0].data();
+    expect(one.searchTokens).toEqual(expect.arrayContaining(['volume', 'stevenson', 'book']));
+  });
 });
 
 describe('book covers', () => {
@@ -168,6 +190,27 @@ describe('book covers', () => {
   it('only catalogue editors may change covers, and only images are accepted', async () => {
     expect(await failure(call(covers.setCover, fin, { bookId, image: png }))).toBe('FORBIDDEN');
     expect(await failure(call(covers.setCover, sa, { bookId, image: Buffer.from('<svg onload=alert(1)>').toString('base64') }))).toBe('INVALID_INPUT');
+  });
+
+  it('uploads once per request, and removes the upload when the change is not saved', async () => {
+    const requestId = randomUUID();
+    const a = await call<{ coverUrl: string }>(covers.setCover, sa, { bookId, image: png }, requestId);
+    const b = await call<{ coverUrl: string }>(covers.setCover, sa, { bookId, image: png }, requestId);
+    expect(b.coverUrl).toBe(a.coverUrl);
+    expect((await db.doc(`books/${bookId}`).get()).get('coverPath')).toBe(`covers/${bookId}/${requestId}.png`);
+    const audit = await db.collection('platformAuditLogs').where('action', '==', 'book.cover.set').get();
+    expect(audit.size).toBe(1);
+
+    // The saving transaction fails (e.g. contention): the file just uploaded is deleted, the old cover stays.
+    const real = db.runTransaction.bind(db);
+    let n = 0;
+    vi.spyOn(db, 'runTransaction').mockImplementation(((fn: never, opts?: never) => (++n === 2 ? Promise.reject(new Error('aborted')) : real(fn, opts))) as never);
+    const other = randomUUID();
+    await failure(call(covers.setCover, sa, { bookId, image: png }, other));
+    vi.restoreAllMocks();
+    expect(await exists(`covers/${bookId}/${other}.png`)).toBe(false);
+    expect((await db.doc(`books/${bookId}`).get()).get('coverPath')).toBe(`covers/${bookId}/${requestId}.png`);
+    expect(await exists(`covers/${bookId}/${requestId}.png`)).toBe(true);
   });
 });
 
@@ -678,6 +721,53 @@ describe('M1.6 reservations and transfers', () => {
     await issue(b, [code]);
     const resB = await db.collection(`orgs/${org}/reservations`).where('memberId', '==', b).get();
     expect(resB.docs[0].get('status')).toBe('FULFILLED');
+  });
+
+  it('new copies go to members already waiting, who are told the book is ready', async () => {
+    await db.doc(`orgs/${org}/config/whatsapp`).set({ branches: { [central]: ['reservation_ready'] } });
+    clearSwitchboardCache();
+    const a = await register('Ava Rao');
+    await subscribe(a);
+    const r = await call<{ reservationId: string; status: string }>(res.place, lib, { orgId: org, memberId: a, bookId, branchId: central });
+    expect(r.status).toBe('WAITING');
+    const [code] = await acquire(bookId, 1);
+    expect(await get(`reservations/${r.reservationId}`)).toMatchObject({ status: 'ALLOCATED', allocatedCopyCode: code });
+    expect(await get(`members/${a}`)).toMatchObject({ allocatedCount: 1, waitingCount: 0 });
+    const copyId = (await db.doc(`orgs/${org}/barcodes/${code}`).get()).get('copyId') as string;
+    expect(await get(`copies/${copyId}`)).toMatchObject({ status: 'RESERVED', activeReservationId: r.reservationId });
+    const ready = await db.collection(`orgs/${org}/whatsappOutbox`).where('event', '==', 'reservation_ready').get();
+    expect(ready.docs.map((d) => d.get('ref.reservationId'))).toEqual([r.reservationId]);
+
+    // A reservation that finds a copy on the shelf is set aside the same way.
+    const b = await register('Ben Das');
+    await subscribe(b);
+    await acquire(bookId, 1);
+    const rb = await call<{ reservationId: string; status: string }>(res.place, lib, { orgId: org, memberId: b, bookId, branchId: central });
+    expect(rb.status).toBe('ALLOCATED');
+    expect(await get(`members/${b}`)).toMatchObject({ allocatedCount: 1, waitingCount: 0 });
+    expect(await get(`reservations/${rb.reservationId}`)).toMatchObject({ status: 'ALLOCATED', memberId: b });
+  });
+
+  it('records inspections, repairs and shelf changes in the audit log', async () => {
+    const [code] = await acquire(bookId, 1);
+    const a = await register('Ava Rao');
+    await subscribe(a);
+    const copyId = (await db.doc(`orgs/${org}/barcodes/${code}`).get()).get('copyId') as string;
+    await issue(a, [code]);
+    await giveBack([code]);
+    await call(copies.inspect, lib, { orgId: org, copyId, outcome: 'DAMAGED', condition: 'POOR', note: 'Torn spine' });
+    await call(copies.repair, lib, { orgId: org, copyId, condition: 'FAIR', note: 'Taped' });
+    await issue(a, [code]);
+    await giveBack([code]);
+    await call(copies.inspect, lib, { orgId: org, copyId, outcome: 'PASS', condition: 'FAIR', note: '' });
+    expect(await get(`copies/${copyId}`)).toMatchObject({ status: 'AVAILABLE', condition: 'FAIR' });
+    const { locationId } = await call<{ locationId: string }>(locations.create, lib, { orgId: org, branchId: central, code: 'KID-1', label: 'Children, bay 1', kind: 'SHELF' });
+    await call(locations.archive, lib, { orgId: org, branchId: central, locationId });
+    const audit = (await db.collection(`orgs/${org}/auditLogs`).get()).docs.map((d) => d.data());
+    expect(audit.find((e) => e.action === 'copy.repair')).toMatchObject({ entityId: copyId, after: { status: 'AVAILABLE', condition: 'FAIR' } });
+    expect(audit.find((e) => e.action === 'copy.inspected')).toMatchObject({ entityId: copyId, after: { status: 'AVAILABLE' } });
+    expect(audit.find((e) => e.action === 'location.create')).toMatchObject({ entityId: locationId, after: { code: 'KID-1' } });
+    expect(audit.find((e) => e.action === 'location.archive')).toMatchObject({ entityId: locationId, after: { status: 'ARCHIVED' } });
   });
 
   it('transfers move location but never ownership; foreign copies are rejected on receipt', async () => {

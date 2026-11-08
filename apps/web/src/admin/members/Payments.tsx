@@ -20,7 +20,7 @@ import { useWorkspace } from '../Workspace';
 /** "UPI", "Razorpay link"… */
 export const methodLabel = (m: string) => lt.paymentMethods[m] ?? label(m.replace(/^(OFFLINE|ONLINE)_/, ''));
 /** Refund status in words: always text, never colour alone. */
-export const RefundBadge = makeStatusBadge<string>({ SUCCESS: 'ok', PENDING: 'info', PROCESSING: 'info', FAILED: 'danger' }, (s) => lt.refundStatus[s] ?? label(s));
+export const RefundBadge = makeStatusBadge<string>({ SUCCESS: 'ok', PENDING: 'info', PROCESSING: 'info', FAILED: 'danger', NEEDS_ATTENTION: 'warn' }, (s) => lt.refundStatus[s] ?? label(s));
 
 /**
  * Refunds (part of) a payment. A Razorpay payment goes back through Razorpay
@@ -222,7 +222,7 @@ function BranchPayments({ orgId, branchId }: { orgId: string; branchId: string }
                   </td>
                   <td>
                     <RefundBadge status={p.status} />
-                    {p.failure && <div className="muted small">{p.failure}</div>}
+                    {(p.failure || p.note) && <div className="muted small">{p.failure || p.note}</div>}
                   </td>
                   <td>
                     {p.reason}

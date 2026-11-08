@@ -1,6 +1,7 @@
 import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
+import { cancelAtGateway, markRequestsCancelled, readOpenRequests } from '../billing/requests.js';
 import { searchTokens } from '../catalogue/search.js';
 import { aadhaarInput, aadhaarKey } from '../core/aadhaar.js';
 import { recordAudit } from '../core/audit.js';
@@ -242,7 +243,9 @@ export const revealAadhaar = command(
 
 /**
  * Suspends, reactivates or closes a membership. Closing requires every book
- * returned and the deposit settled (balance zero).
+ * returned and the deposit settled (balance zero). Suspending or closing
+ * cancels any subscription still waiting for payment, with its open payment
+ * links / QR codes (at Razorpay after the commit).
  */
 export const setStatus = command(
   'members-setStatus',
@@ -256,16 +259,27 @@ export const setStatus = command(
       if (member.activeLoanCount > 0) throw errors.conflict('LOANS_OUTSTANDING', 'All borrowed books must be returned first.');
       if ((deposit.get('balanceMinor') ?? 0) > 0) throw errors.conflict('DEPOSIT_HELD', 'Settle and refund the security deposit first.');
     }
+    const pending = input.status === 'ACTIVE'
+      ? []
+      : (await tx.get(db.collection(`orgs/${input.orgId}/subscriptions`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING_PAYMENT'))).docs;
+    const requests = await readOpenRequests(tx, input.orgId, pending.map((p) => p.id));
+
     tx.update(snap.ref, { status: input.status, updatedAt: FieldValue.serverTimestamp() });
     if (input.status === 'CLOSED' && member.phone) tx.delete(db.doc(`orgs/${input.orgId}/phoneIndex/${member.phone}`));
+    const why = `Membership ${input.status === 'CLOSED' ? 'closed' : 'suspended'}`;
+    for (const p of pending) tx.update(p.ref, { status: 'CANCELLED', cancelReason: why, updatedAt: FieldValue.serverTimestamp() });
+    markRequestsCancelled(tx, requests, actor.uid, why);
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'member.setStatus', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
-      before: { status: member.status }, after: { status: input.status }, reason: input.reason,
+      before: { status: member.status },
+      after: { status: input.status, ...(pending.length ? { subscriptionsCancelled: pending.map((p) => p.id), paymentRequestsCancelled: requests.map((r) => r.id) } : {}) },
+      reason: input.reason,
     });
     const statusText = { ACTIVE: 'active again', SUSPENDED: 'paused', CLOSED: 'closed' }[input.status];
     queueWhatsApp(tx, { orgId: input.orgId, branchId: member.homeBranchId, event: 'membership_status', memberId: input.memberId, vars: { status: statusText }, ref: { memberId: input.memberId } });
-    return { memberId: input.memberId };
+    return { memberId: input.memberId, cancelledRequestIds: requests.map((r) => r.id) };
   },
+  (r, ctx) => cancelAtGateway(ctx.input.orgId, r.cancelledRequestIds),
 );
 
 /**

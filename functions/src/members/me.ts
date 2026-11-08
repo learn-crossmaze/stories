@@ -13,7 +13,7 @@ import { createMember, profile } from './members.js';
 import { requestOnlinePayment, settleOpenRequests } from '../billing/online.js';
 import { type Plan, pricesFor } from '../billing/plans.js';
 import { publicSettings, settingsOf } from '../delivery/model.js';
-import { cancelPendingSubscription, createSchema, startSubscription } from '../billing/subscriptions.js';
+import { afterCancel, cancelPendingSubscription, createSchema, startSubscription } from '../billing/subscriptions.js';
 import { quoteSchema, startUpgrade, upgradeQuote, upgradeSchema } from '../billing/upgrade.js';
 
 // Member self-service ("me-*"): a signed-in member sees and acts on their own
@@ -278,10 +278,14 @@ export const upgrade = command('me-upgrade', upgradeSchema, (ctx, tx) =>
 );
 
 /** Drops the member's own unpaid subscription (to choose a different plan). */
-export const cancelPending = command('me-cancelPending', z.strictObject({ orgId: id, subscriptionId: id }), (ctx, tx) =>
-  cancelPendingSubscription({ ...ctx, input: { ...ctx.input, reason: MEMBER_REASON } }, tx, (sub) =>
-    requireOwnerOf(ctx.actor, ctx.input.orgId, sub.get('memberId'), tx),
-  ),
+export const cancelPending = command(
+  'me-cancelPending',
+  z.strictObject({ orgId: id, subscriptionId: id }),
+  (ctx, tx) =>
+    cancelPendingSubscription({ ...ctx, input: { ...ctx.input, reason: MEMBER_REASON } }, tx, (sub) =>
+      requireOwnerOf(ctx.actor, ctx.input.orgId, sub.get('memberId'), tx),
+    ),
+  afterCancel,
 );
 
 /**

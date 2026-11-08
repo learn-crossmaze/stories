@@ -114,4 +114,18 @@ describe('receiving a delivery', () => {
     expect(await copiesOf(existingId)).toHaveLength(0);
     expect((await db.doc(`isbnIndex/${B}`).get()).exists).toBe(false);
   });
+
+  it('refuses, with a clear message, a delivery too big to record in one transaction', async () => {
+    // 25 new titles, each with five new authors and a new publisher, four copies each: more than 500 writes.
+    const items = Array.from({ length: 25 }, (_, i) => ({
+      book: item(isbn(`97820000${String(i).padStart(4, '0')}`), `Anthology ${i}`, [1, 2, 3, 4, 5].map((k) => `Writer ${i}-${k}`), `Press ${i}`),
+      quantity: 4,
+      acquisitionCostMinor: 100,
+    }));
+    expect(await failure(receiveAs(lib, items))).toBe('RECEIVE_TOO_LARGE');
+    expect((await db.collection('authors').get()).size).toBe(1);
+    // Half of it fits.
+    const half = await receiveAs(lib, items.slice(0, 12));
+    expect(half.copies).toBe(48);
+  });
 });

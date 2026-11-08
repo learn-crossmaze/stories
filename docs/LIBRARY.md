@@ -16,7 +16,7 @@ Catalogue page filters by Active / Archived.
 |---|---|
 | `code` | `BOOK-000001…` from `counters/books`, allocated inside the create transaction; pattern configurable ([NUMBERING.md](NUMBERING.md)) |
 | `isbn` | optional; ISBN-10 or ISBN-13 accepted, stored as ISBN-13 digits; unique via `isbnIndex/{isbn}` |
-| `authorIds` / `authorNames` | 1–5 authors; names denormalized for display and search, refreshed when an author is renamed |
+| `authorIds` / `authorNames` | 1–5 authors; names denormalized for display and search, refreshed when an author (publisher, category) is renamed: after the rename commits, every book referring to it is updated page by page in write batches of 400 (no transaction; each write applies only if the book is unchanged since it was read, and a page with a book edited meanwhile is redone from fresh reads). A failure is logged and never fails the rename |
 | `genres` | 1–3 of FICTION, FANTASY, MYSTERY, ADVENTURE, SCIENCE, BIOGRAPHY, SELF_HELP, CLASSICS, COMICS, EDUCATIONAL |
 | `ageGroup`, `minAge`, `readingLevel` | CHILDREN / TEENS / ADULTS; EARLY_READER … ADVANCED |
 | `replacementPriceMinor` | paise; charged against the deposit if a copy is lost (else the copy's cost) |
@@ -52,7 +52,10 @@ the catalogue) takes a delivery in one pass, for staff who look after copies at 
   (copies of several titles sharing one counter get consecutive numbers), barcodes, `ACQUIRED` events, and members
   already waiting for a title get the new copies first. An ISBN that turns out to be in the catalogue just gets
   copies; the same title listed twice is one line. Then covers are imported and **Print N labels** opens the label
-  sheet for exactly the new copies.
+  sheet for exactly the new copies. Firestore takes at most 500 writes per transaction: the writes a batch needs
+  (three per copy, about five more per copy handed to a waiting member, plus new titles, authors and publishers) are
+  counted first, and a batch that would go over is refused whole with "Receive it in two or more parts"
+  (`RECEIVE_TOO_LARGE`) instead of failing half-way.
 - `copies-receive` shares its code with `books-bulkCreate` (planning new titles) and `copies-acquire` (planning
   copies), so receiving, "Add by ISBN" and *Add copies* on a book page number and record copies the same way.
 
@@ -67,8 +70,10 @@ ISBNs already in the catalogue are skipped, authors and publishers are reused by
 **Covers:** catalogue editors (Super Admin, head office) add a photo or scan on the book page (**Add cover** /
 **Change cover** / **Remove**). The browser shrinks it to a JPEG of at most 800 px (~100 KB) and sends it to
 `books-setCover`, which checks the permission and the file type (JPEG, PNG or WebP by content, 1.5 MB at most),
-stores it at `covers/{bookId}/{requestId}.{ext}` in Cloud Storage, and saves `coverUrl`/`coverPath` on the book. The
-previous file is deleted after the change commits. Covers are public (Storage rules allow reads under `covers/`; no
+uploads it **once, before any transaction**, to `covers/{bookId}/{requestId}.{ext}` in Cloud Storage, then saves
+`coverUrl`/`coverPath` on the book in a short transaction that re-checks the permission. If saving fails, the
+uploaded file is deleted; once saved, the previous file is. A retried request finds its own file already set and
+returns it. Covers are public (Storage rules allow reads under `covers/`; no
 client writes). Titles without a cover show a generated placeholder (title + colour). Only upload artwork you have the
 right to use.
 
@@ -80,9 +85,9 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
 - **Acquire** (`copies-acquire`, `copies.manage` at the branch): 1–50 copies of an active title. Codes are
   `COPY-<book number>-NN` per organization by default (each branch can set its own pattern, see [NUMBERING.md](NUMBERING.md)); the barcode defaults to the code, or pre-printed barcodes can be scanned in.
   Barcodes are unique per organization via `orgs/{o}/barcodes/{barcode}`. New copies go straight to members waiting
-  for that title at the branch.
+  for that title at the branch, who are told the book is ready (as when any copy comes back to the shelf).
 - **Shelf locations:** `orgs/{o}/branches/{b}/locations` (code, label, kind). Leave the code blank to number it with the
-  branch's shelf pattern.
+  branch's shelf pattern. Creating and archiving a shelf are audited (`location.create` / `location.archive`).
 - **Shelve books** (Collection → *Shelve books*, `/ops/inventory/shelve`, `copies-shelve`, `copies.manage` at the
   branch): lists every copy at the branch that is **available but not on a shelf** (`locationId == null`): new stock
   received without a shelf, and returned books that passed inspection (issuing clears a copy's shelf). Pick the shelf,

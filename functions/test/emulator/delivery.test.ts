@@ -6,9 +6,12 @@ import * as catalog from '../../src/catalogue/books.js';
 import * as res from '../../src/circulation/reservations.js';
 import * as circ from '../../src/circulation/circulation.js';
 import { db } from '../../src/core/firebase.js';
+import * as courier from '../../src/delivery/courierBooking.js';
 import { setCourierTransport, type HttpReply } from '../../src/delivery/couriers.js';
+import * as fees from '../../src/delivery/fees.js';
 import * as dmember from '../../src/delivery/member.js';
 import { istDate } from '../../src/delivery/model.js';
+import * as lists from '../../src/delivery/orderQueries.js';
 import * as orders from '../../src/delivery/orders.js';
 import * as dsettings from '../../src/delivery/settings.js';
 import { handleDeliveryWebhook } from '../../src/delivery/webhook.js';
@@ -69,6 +72,7 @@ function fakeCourier(routes: Record<string, (body: Record<string, unknown>) => {
     const route = routes[`${method} ${path}`];
     if (!route) return { status: 404, body: JSON.stringify({ message: 'not found' }) };
     const r = route(parsed);
+    if (r.status === 0) throw new Error('timeout'); // no answer
     return { status: r.status ?? 200, body: JSON.stringify(r.json) };
   });
   return calls;
@@ -186,7 +190,7 @@ describe('own rider', () => {
     const done = await delivery(deliveryId);
     expect(done).toMatchObject({ status: 'COMPLETED', outcome: 'DELIVERED', fee: { status: 'PAID', method: 'OFFLINE_CASH' } });
     expect(await get(`payments/${done.fee.paymentId}`)).toMatchObject({ purpose: 'DELIVERY_FEE', amountMinor: 5000, direction: 'IN', deliveryId });
-    const mine = await call<{ deliveries: unknown[] }>(orders.mine, rider, { orgId: org }, null);
+    const mine = await call<{ deliveries: unknown[] }>(lists.mine, rider, { orgId: org }, null);
     expect(mine.deliveries).toHaveLength(0);
   });
 
@@ -202,7 +206,7 @@ describe('own rider', () => {
     expect((await delivery(deliveryId)).fee).toEqual({ amountMinor: 0, status: 'FREE' });
 
     await call(orders.dispatch, lib, { orgId: org, deliveryId, method: 'OWN', riderUid: rider.uid, barcodes: [c] });
-    const mine = await call<{ deliveries: { id: string; memberLoans: { loanId: string }[] }[] }>(orders.mine, rider, { orgId: org }, null);
+    const mine = await call<{ deliveries: { id: string; memberLoans: { loanId: string }[] }[] }>(lists.mine, rider, { orgId: org }, null);
     expect(mine.deliveries[0].memberLoans.map((l) => l.loanId).sort()).toEqual(loans.map((l) => l.id).sort());
     await call(orders.report, rider, { orgId: org, deliveryId, outcome: 'DELIVERED', collectedLoanIds: [giveBack] });
     expect(await delivery(deliveryId)).toMatchObject({ status: 'RETURNING', collected: [{ copyCode: a }] });
@@ -233,7 +237,7 @@ describe('own rider', () => {
     expect(await get(`loans/${d.sent[0].loanId}`)).toMatchObject({ status: 'RETURNED', returnReason: 'DELIVERY_FAILED' });
     expect(await get(`members/${memberId}`)).toMatchObject({ activeLoanCount: 0 });
     // The fee was never collected: it can be waived.
-    await call(orders.recordFee, lib, { orgId: org, deliveryId, method: 'WAIVED' });
+    await call(fees.recordFee, lib, { orgId: org, deliveryId, method: 'WAIVED' });
     expect((await delivery(deliveryId)).fee).toMatchObject({ status: 'FREE' });
   });
 });
@@ -257,7 +261,7 @@ describe('courier apps (Porter)', () => {
     await call(orders.cancel, lib, { orgId: org, deliveryId: noPin, reason: 'Wrong address' });
 
     const { deliveryId } = await request(memberId);
-    const q = await call<{ fares: { vehicle: string; fareMinor: number; etaMinutes: number }[] }>(orders.quote, lib, { orgId: org, deliveryId, courier: 'PORTER' }, null);
+    const q = await call<{ fares: { vehicle: string; fareMinor: number; etaMinutes: number }[] }>(courier.quote, lib, { orgId: org, deliveryId, courier: 'PORTER' }, null);
     expect(q.fares).toEqual([{ vehicle: '2 Wheeler', fareMinor: 8556, etaMinutes: 9 }]);
     expect(calls[0]).toMatchObject({ method: 'GET', key: 'porter-key-123', body: { pickup_details: BRANCH_AT, drop_details: home.geo } });
 
@@ -302,15 +306,76 @@ describe('courier apps (Porter)', () => {
     expect((await delivery(deliveryId)).provider).toMatchObject({ status: 'BOOKING_FAILED', error: 'Porter: Drop location is not serviceable', orderId: null });
 
     fail = false;
-    await call(orders.book, lib, { orgId: org, deliveryId }, null);
+    await call(courier.book, lib, { orgId: org, deliveryId }, null);
     expect(calls.filter((c) => c.path === '/v1/orders/create').map((c) => c.body.request_id)).toEqual([deliveryId, `${deliveryId}-2`]);
     expect((await delivery(deliveryId)).provider).toMatchObject({ status: 'BOOKED', orderId: 'CRN9' });
-    expect(await failure(call(orders.book, lib, { orgId: org, deliveryId }, null))).toBe('ALREADY_BOOKED');
+    expect(await failure(call(courier.book, lib, { orgId: org, deliveryId }, null))).toBe('ALREADY_BOOKED');
 
     await call(orders.cancel, lib, { orgId: org, deliveryId, reason: 'Member called to postpone' });
     expect(calls.some((c) => c.path === '/v1/orders/CRN9/cancel')).toBe(true);
     expect(await delivery(deliveryId)).toMatchObject({ status: 'RETURNING', outcome: 'FAILED', provider: { status: 'CANCELLED' } });
     await call(orders.receive, lib, { orgId: org, deliveryId });
     expect(await delivery(deliveryId)).toMatchObject({ status: 'FAILED' });
+  });
+
+  it('a booking with no answer is retried with the same request id; a new one only once the courier cancelled', async () => {
+    await settings({ couriers: { PORTER: { enabled: true, environment: 'LIVE', apiKey: 'porter-key-123' } } });
+    let mode: 'timeout' | 'server' | 'ok' = 'timeout';
+    let n = 0;
+    const calls = fakeCourier({
+      'POST /v1/orders/create': () => (mode === 'timeout' ? { status: 0, json: {} } : mode === 'server' ? { status: 502, json: { message: 'Bad gateway' } } : { json: { order_id: `CRN${++n}` } }),
+    });
+    const memberId = await register('Asha Rao');
+    await subscribe(memberId);
+    const [a] = await acquire('Time Stops at Shamli');
+    const { deliveryId } = await request(memberId);
+    await call(orders.dispatch, lib, { orgId: org, deliveryId, method: 'PORTER', barcodes: [a] });
+    expect((await delivery(deliveryId)).provider).toMatchObject({ status: 'BOOKING_FAILED', orderId: null, requestNo: 1, requestSpent: false });
+    // Porter may have booked it: retries send the same request id, so Porter can't book a second rider.
+    mode = 'server';
+    expect(await failure(call(courier.book, lib, { orgId: org, deliveryId }, null))).toBe('COURIER_ERROR');
+    mode = 'ok';
+    await call(courier.book, lib, { orgId: org, deliveryId }, null);
+    const ids = () => calls.filter((c) => c.path === '/v1/orders/create').map((c) => c.body.request_id);
+    expect(ids()).toEqual([deliveryId, deliveryId, deliveryId]);
+    expect((await delivery(deliveryId)).provider).toMatchObject({ status: 'BOOKED', orderId: 'CRN1' });
+
+    // Porter cancelled that order: booking again needs a fresh request id.
+    await courier.applyTracking(org, deliveryId, { status: 'CANCELLED', raw: 'cancelled', trackingUrl: null, fareMinor: null, partner: null });
+    await call(courier.book, lib, { orgId: org, deliveryId }, null);
+    expect(ids()).toEqual([deliveryId, deliveryId, deliveryId, `${deliveryId}-2`]);
+    expect((await delivery(deliveryId)).provider).toMatchObject({ status: 'BOOKED', orderId: 'CRN2', requestNo: 2 });
+  });
+});
+
+describe('delivery fee', () => {
+  it('is taken only for a visit that happened; cancelling waives it', async () => {
+    await settings();
+    const memberId = await register('Asha Rao');
+    await subscribe(memberId);
+    const [a, b] = await acquire('Grandfather’s Private Zoo', 2);
+
+    const first = (await request(memberId)).deliveryId;
+    await call(orders.cancel, lib, { orgId: org, deliveryId: first, reason: 'Member is away' });
+    expect((await delivery(first)).fee).toMatchObject({ status: 'FREE', method: 'WAIVED' });
+    expect(await failure(call(fees.recordFee, lib, { orgId: org, deliveryId: first, method: 'OFFLINE_CASH' }))).toBe('NO_FEE_DUE');
+
+    // A visit that failed: no fee can be taken (it can be waived).
+    const second = (await request(memberId)).deliveryId;
+    await call(orders.dispatch, lib, { orgId: org, deliveryId: second, method: 'OWN', riderUid: rider.uid, barcodes: [a] });
+    await call(orders.report, rider, { orgId: org, deliveryId: second, outcome: 'FAILED', failReason: 'Gate locked' });
+    expect(await failure(call(fees.recordFee, lib, { orgId: org, deliveryId: second, method: 'OFFLINE_CASH' }))).toBe('NOT_DELIVERED');
+    await call(orders.receive, lib, { orgId: org, deliveryId: second });
+    expect(await failure(call(fees.recordFee, lib, { orgId: org, deliveryId: second, method: 'OFFLINE_UPI', reference: 'UPI98765' }))).toBe('NOT_DELIVERED');
+
+    // Delivered without collecting the fee at the door: it is recorded at the counter later.
+    const third = (await request(memberId)).deliveryId;
+    await call(orders.dispatch, lib, { orgId: org, deliveryId: third, method: 'OWN', riderUid: rider.uid, barcodes: [b] });
+    await call(orders.report, rider, { orgId: org, deliveryId: third, outcome: 'DELIVERED' });
+    expect(await failure(call(fees.recordFee, lib, { orgId: org, deliveryId: third, method: 'OFFLINE_UPI', reference: '' }))).toBe('INVALID_INPUT');
+    await call(fees.recordFee, lib, { orgId: org, deliveryId: third, method: 'OFFLINE_CASH' });
+    const done = await delivery(third);
+    expect(done.fee).toMatchObject({ status: 'PAID', method: 'OFFLINE_CASH' });
+    expect(await get(`payments/${done.fee.paymentId}`)).toMatchObject({ purpose: 'DELIVERY_FEE', amountMinor: 5000, deliveryId: third });
   });
 });

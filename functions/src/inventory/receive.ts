@@ -14,9 +14,17 @@ import { type AcquisitionLine, planAcquisition } from './acquisition.js';
 import { activeBranch, activeLocation } from './copies.js';
 import { CONDITIONS } from './copyState.js';
 
-/** Titles per call and copies per call (each copy writes three documents; a transaction takes 500). */
+/** Titles per call and copies per call. */
 export const RECEIVE_MAX_TITLES = 25;
 export const RECEIVE_MAX_COPIES = 100;
+/**
+ * Firestore takes at most 500 writes in one transaction. Each copy writes
+ * three documents and each copy handed to a waiting member about five more,
+ * so a large delivery for a long queue can need more: it is counted before
+ * writing (with the audit entry and the idempotency record) and refused with
+ * a clear message instead of failing.
+ */
+export const TRANSACTION_WRITE_LIMIT = 500;
 
 const counts = { quantity: z.number().int().min(1).max(50), acquisitionCostMinor: money };
 const item = z.union([z.strictObject({ bookId: id, ...counts }), z.strictObject({ book: bulkBookSchema, ...counts })]);
@@ -72,6 +80,12 @@ export const receive = command(
         : { bookId, bookCode: snap!.get('code') as string, bookNumber: bookNumber(snap!), title: snap!.get('title') as string, quantity: l.quantity, acquisitionCostMinor: l.cost };
     });
     const plan = await planAcquisition(tx, { orgId: input.orgId, branch, locationId: input.locationId, condition: input.condition, actorUid: actor.uid, lines: acquisition });
+    if (books.writes + plan.writes + 2 > TRANSACTION_WRITE_LIMIT) {
+      throw errors.conflict(
+        'RECEIVE_TOO_LARGE',
+        `This delivery adds ${acquisition.reduce((n, l) => n + l.quantity, 0)} copies${plan.allocated ? ` and hands ${plan.allocated} of them to members waiting for them` : ''}, which is too much to record in one go. Receive it in two or more parts.`,
+      );
+    }
 
     books.write();
     plan.write();

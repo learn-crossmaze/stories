@@ -65,7 +65,12 @@ REQUESTED ──dispatch──▶ OUT ──visit reported──▶ RETURNING �
   inspection, the member's count drops. Books from a failed delivery are marked `returnReason: DELIVERY_FAILED`.
   A reservation filled by a failed delivery is not restored: the member reserves again.
 - **Cancel**: before dispatch the visit just closes. Once out, the books sent come back to be received, and a booked
-  courier is cancelled through its API (if that fails, the board says to cancel it in the courier's app too).
+  courier is cancelled through its API (if that fails, the board says to cancel it in the courier's app too). A fee
+  still due is waived (`fee: FREE, method: WAIVED`): the visit didn't happen.
+- **Fee later** (`deliveries-recordFee`, `delivery.manage`): a fee not collected at the door can be recorded at the
+  counter only for a visit that happened (COMPLETED, or RETURNING after a delivered visit); a failed or cancelled
+  visit can't be charged (`NOT_DELIVERED`). Waiving is always possible. The fee payment is written by one helper
+  (`delivery/fees.ts`) whether it is taken at the door or at the counter.
 
 The Operations dashboard lists visits to dispatch and bags to receive.
 
@@ -82,12 +87,13 @@ Porter's business API books two-wheelers within its cities. Ask Porter for API a
 3. Members' addresses need a **map pin** (they can use *Use my current location* in the app; staff can paste a Google
    Maps link).
 
-How it works (`functions/src/delivery/couriers.ts`):
+How it works (`functions/src/delivery/couriers.ts` talks to Porter; `courierBooking.ts` books, tracks and cancels
+for a delivery):
 
 | Call | Porter API v1 (`x-api-key` header) |
 |---|---|
 | Fare | `GET /v1/get_quote` with pickup and drop coordinates and the customer's mobile; Stories shows each vehicle's fare and pickup time |
-| Book | `POST /v1/orders/create` with `request_id` = the delivery id (a retry uses `<id>-2`, `-3`…), pickup and drop addresses with coordinates and contacts, and instructions |
+| Book | `POST /v1/orders/create` with `request_id` = the delivery id, pickup and drop addresses with coordinates and contacts, and instructions. The request id is the idempotency key: a retry after no answer or a server error **reuses it** (Porter may have booked the first time); only after Porter refused the booking (4xx) or cancelled the order does the next booking use `<id>-2`, `-3`… (`provider.requestNo`, `provider.requestSpent`) |
 | Track | `GET /v1/orders/{order_id}`: status, rider (name, phone, vehicle), fare |
 | Cancel | `POST /v1/orders/{order_id}/cancel` |
 
@@ -132,12 +138,16 @@ child), `kind`, `status`, `address` (lines, landmark, city, state, PIN, `geo`), 
 `holdTitles`, `collectLoanIds` + `collectTitles`, `sent[]` and `collected[]` (`loanId`, `copyId`, `copyCode`,
 `bookTitle`), `fee` (`amountMinor`, `status` FREE/DUE/PAID, `paymentId`, `method`), `method` (OWN, MANUAL, PORTER),
 `rider`, `courier`, `provider` (`key`, `orderId`, `status`, `raw`, `trackingUrl`, `fareMinor`, `partner`, `error`,
-`attempts`, `syncedAt`), `outcome`, `failReason`, `handedTo`, `requestedBy` and timestamps (`requestedAt`,
+`attempts`, `requestNo`, `requestSpent`, `syncedAt`), `outcome`, `failReason`, `handedTo`, `requestedBy` and timestamps (`requestedAt`,
 `dispatchedAt`, `reportedAt`, `receivedAt`, `cancelledAt`, `closedAt`). Indexes: member + status, member +
 requestedAt, branch + status + requestedAt, branch + closedAt, rider + status.
 
 Callables: `deliveries-*` on the `circulation` router (settings, saveSettings, create, list, get, mine, dispatch, quote,
 book, sync, report, receive, cancel, recordFee); `me-requestDelivery` and `me-cancelDelivery` on the `members` router.
+Code (`functions/src/delivery/`): `orders.ts` (request, dispatch, report, receive, cancel), `courierBooking.ts`
+(book, quote, track, sync, cancel at the courier), `fees.ts` (the fee), `orderQueries.ts` (board, rider's run, one
+delivery), `messages.ts` (what the member is told), `model.ts` (types, settings and shared helpers), `couriers.ts`
+(courier adapters), `member.ts` (member app), `webhook.ts`.
 HTTP: `deliveryWebhook`. WhatsApp events (docs/WHATSAPP.md): *Home delivery booked*, *Books on the way*, *Pickup on
 the way*, *Delivery completed*, *Delivery not completed*.
 
