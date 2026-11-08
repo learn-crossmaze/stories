@@ -19,7 +19,7 @@ import {
   syncTemplates,
 } from '../../data/whatsapp';
 import { when } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
+import { EmptyState, ErrorState, makeStatusBadge, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { wt } from '../../strings/messaging';
@@ -31,8 +31,8 @@ import { useWorkspace } from '../Workspace';
 // Meta), the notifications it sends (added from the list of transactions,
 // each with an editable template), test sends and the message log.
 
-const STATUS_TONE: Record<string, string> = { APPROVED: 'ok', PENDING: 'info', REJECTED: 'danger', PAUSED: 'warn', DISABLED: 'danger', NOT_SUBMITTED: 'muted' };
-const LOG_TONE: Record<string, string> = { SENT: 'info', DELIVERED: 'ok', READ: 'ok', FAILED: 'danger', SKIPPED: 'warn', QUEUED: 'muted', SENDING: 'muted' };
+const TemplateStatusBadge = makeStatusBadge<string>({ APPROVED: 'ok', PENDING: 'info', REJECTED: 'danger', PAUSED: 'warn', DISABLED: 'danger', NOT_SUBMITTED: 'muted' }, wt.status);
+const LogStatusBadge = makeStatusBadge<string>({ SENT: 'info', DELIVERED: 'ok', READ: 'ok', FAILED: 'danger', SKIPPED: 'warn', QUEUED: 'muted', SENDING: 'muted' }, wt.logStatus);
 
 function webhookUrl(path: string) {
   const { fns } = services();
@@ -203,7 +203,7 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
         </p>
         {event.added && (
           <p className="wa-dialog-status">
-            <span className={`badge badge-${STATUS_TONE[tpl.status] ?? 'muted'}`}>{wt.status[tpl.status] ?? tpl.status}</span>
+            <TemplateStatusBadge status={tpl.status} />
             <span className="muted small mono">
               {tpl.name} · {tpl.language}
             </span>
@@ -399,7 +399,7 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
                     {tpl.reason && <span className="wa-row-reason"> · {tpl.reason}</span>}
                   </span>
                 </button>
-                <span className={`badge badge-${STATUS_TONE[tpl.status] ?? 'muted'}`}>{wt.status[tpl.status] ?? tpl.status}</span>
+                <TemplateStatusBadge status={tpl.status} />
                 <label className="switch" title={tpl.enabled ? wt.on : wt.off_}>
                   <input type="checkbox" role="switch" checked={tpl.enabled} disabled={busy !== null} onChange={() => void toggle(e)} aria-label={`${wt.sendThis}: ${e.label}`} />
                   <span className="small">{tpl.enabled ? wt.on : wt.off_}</span>
@@ -465,7 +465,7 @@ function LogCard({ orgId, branchId, events }: { orgId: string; branchId: string;
                     {m.to && <div className="muted small mono">{m.to}</div>}
                   </td>
                   <td>
-                    <span className={`badge badge-${LOG_TONE[m.status] ?? 'muted'}`}>{wt.logStatus[m.status] ?? m.status}</span>
+                    <LogStatusBadge status={m.status} />
                     {m.error && <div className="muted small">{m.error}</div>}
                   </td>
                 </tr>

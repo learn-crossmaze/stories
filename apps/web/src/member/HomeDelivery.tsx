@@ -7,6 +7,7 @@ import { paths } from '../paths';
 import { useAction } from '../shared/Dialog';
 import { DeliveryRequestForm } from '../shared/DeliveryRequestForm';
 import { day, money } from '../shared/format';
+import { Badge } from '../shared/ui';
 import { dt } from '../strings/delivery';
 import { useMemberData } from './memberData';
 
@@ -25,7 +26,7 @@ function Current({ m, d }: { m: Membership; d: Delivery }) {
     <div className="card">
       <p>
         <strong>{dt.kind[d.kind]}</strong> · {day(d.date)}
-        {d.slot && `, ${d.slot}`} · <span className="badge badge-info">{dt.status[d.status]}</span>
+        {d.slot && `, ${d.slot}`} · <Badge tone="info">{dt.status[d.status]}</Badge>
       </p>
       {d.status === 'OUT' && d.rider && (
         <p className="small">

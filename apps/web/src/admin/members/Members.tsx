@@ -12,7 +12,7 @@ import { usePagedQuery } from '../../shared/usePagedQuery';
 import { day, relativeDays } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap, type Tone } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { NeedBranch } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -138,7 +138,7 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
 }
 
 const RENEWAL_FILTERS: RenewalFilter[] = ['ACTIVE', 'DUE', 'EXPIRED', 'NONE'];
-const RENEWAL_TONE: Record<Exclude<RenewalFilter, ''>, string> = { ACTIVE: 'ok', DUE: 'warn', EXPIRED: 'danger', NONE: 'muted' };
+const RENEWAL_TONE: Record<Exclude<RenewalFilter, ''>, Tone> = { ACTIVE: 'ok', DUE: 'warn', EXPIRED: 'danger', NONE: 'muted' };
 
 /** Plan and renewal date, with how soon it is (text, never colour alone). */
 function RenewalCell({ m }: { m: Member }) {
@@ -148,7 +148,9 @@ function RenewalCell({ m }: { m: Member }) {
     <>
       <span className="nowrap">{day(m.renewalDueAt)}</span>
       <div>
-        <span className={`badge badge-${RENEWAL_TONE[state]} nowrap`}>{state === 'EXPIRED' ? lt.expiredAgo(relativeDays(m.renewalDueAt)) : relativeDays(m.renewalDueAt)}</span>
+        <Badge tone={RENEWAL_TONE[state]} className="nowrap">
+          {state === 'EXPIRED' ? lt.expiredAgo(relativeDays(m.renewalDueAt)) : relativeDays(m.renewalDueAt)}
+        </Badge>
       </div>
     </>
   );

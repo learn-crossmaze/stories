@@ -12,7 +12,7 @@ import { useAsync } from '../../shared/useAsync';
 import { day, money, since, when } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog } from '../components/Dialog';
 import { Notice, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
@@ -252,7 +252,7 @@ export function MemberDetailPage() {
                 ) : (
                   <>
                     <p className="lead">
-                      {money(acct?.balanceMinor ?? 0)} {acct && acct.status !== 'OPEN' && <span className="badge badge-warn">{label(acct.status)}</span>}
+                      {money(acct?.balanceMinor ?? 0)} {acct && acct.status !== 'OPEN' && <Badge tone="warn">{label(acct.status)}</Badge>}
                     </p>
                     {pendingAdj.length > 0 && (
                       <p className="small">

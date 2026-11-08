@@ -14,20 +14,17 @@ import { useAsync } from '../../shared/useAsync';
 import { money, when } from '../../shared/format';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, makeStatusBadge, SkeletonRows, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice, QrTag, ScanInput } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 
-const TONE: Record<CopyStatus, string> = {
-  AVAILABLE: 'ok', RESERVED: 'info', ISSUED: 'info', IN_TRANSIT: 'info', UNDER_INSPECTION: 'warn', DAMAGED: 'warn', LOST: 'danger', RETIRED: 'muted',
-};
-
 /** Status chip with text (never colour alone). */
-export function CopyStatusBadge({ status }: { status: CopyStatus }) {
-  return <span className={`badge badge-${TONE[status]}`}>{label(status)}</span>;
-}
+export const CopyStatusBadge = makeStatusBadge<CopyStatus>(
+  { AVAILABLE: 'ok', RESERVED: 'info', ISSUED: 'info', IN_TRANSIT: 'info', UNDER_INSPECTION: 'warn', DAMAGED: 'warn', LOST: 'danger', RETIRED: 'muted' },
+  label,
+);
 
 function LocationDialog({ orgId, branchId, onClose, onSaved }: { orgId: string; branchId: string; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({ code: '', label: '', kind: 'SHELF' as 'SHELF' | 'DISPLAY' | 'DESK' | 'BACKROOM' });

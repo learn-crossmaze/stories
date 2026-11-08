@@ -17,7 +17,7 @@ import {
 import { useAsync } from '../shared/useAsync';
 import { PendingUpgrade, UpgradeChooser } from '../shared/Upgrade';
 import { day, money } from '../shared/format';
-import { TableWrap } from '../shared/ui';
+import { Badge, TableWrap } from '../shared/ui';
 import { t } from '../strings';
 import { AddChild } from './JoinMembership';
 import { useMemberData } from './memberData';
@@ -296,7 +296,7 @@ function PlanCard({ plan, busy, disabled, onChoose }: { plan: MyPlan; busy: bool
             <label key={o.duration} className="check">
               <input type="radio" name={`opt-${plan.id}`} checked={pick === o.duration} onChange={() => setPick(o.duration)} />
               {DURATION_LABELS[o.duration]} · {money(o.priceMinor)}
-              {o.discountLabel && <span className="badge badge-ok">{o.discountLabel}</span>}
+              {o.discountLabel && <Badge tone="ok">{o.discountLabel}</Badge>}
             </label>
           ))}
         </fieldset>

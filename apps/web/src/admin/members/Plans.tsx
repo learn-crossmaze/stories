@@ -8,7 +8,7 @@ import { AGE_GROUPS, DURATION_LABELS, DURATIONS, type Duration, label } from '..
 import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, MultiPick, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
@@ -167,7 +167,7 @@ export function PlanPrices({ plan }: { plan: Plan }) {
           <span>{DURATION_LABELS[p.duration]}</span>
           <span>
             {p.discountMinor > 0 && <s className="muted small">{money(p.listPriceMinor)}</s>} <strong>{money(p.priceMinor)}</strong>
-            {p.discountLabel && <span className="badge badge-ok">{p.discountLabel}</span>}
+            {p.discountLabel && <Badge tone="ok">{p.discountLabel}</Badge>}
           </span>
         </li>
       ))}

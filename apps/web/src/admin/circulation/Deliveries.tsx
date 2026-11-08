@@ -25,7 +25,7 @@ import {
 import { type Member, searchMembers } from '../../data/members';
 import { DeliveryRequestForm } from '../../shared/DeliveryRequestForm';
 import { day, money, when } from '../../shared/format';
-import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { Badge, EmptyState, ErrorState, NoOrgState, SkeletonRows, type Tone } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { dt } from '../../strings/delivery';
@@ -39,7 +39,7 @@ import { useWorkspace } from '../Workspace';
 // Operations → Circulation → Deliveries: the branch's home-delivery board
 // (docs/DELIVERY.md), and Staff → My deliveries for riders.
 
-const STATUS_TONE: Record<string, string> = {
+const STATUS_TONE: Record<string, Tone> = {
   REQUESTED: 'warn',
   OUT: 'info',
   RETURNING: 'info',
@@ -47,7 +47,7 @@ const STATUS_TONE: Record<string, string> = {
   FAILED: 'danger',
   CANCELLED: 'muted',
 };
-const FEE_TONE: Record<string, string> = {
+const FEE_TONE: Record<string, Tone> = {
   FREE: 'muted',
   DUE: 'warn',
   PAID: 'ok',
@@ -107,7 +107,7 @@ function HowItGoes({ d }: { d: Delivery }) {
       {p && (
         <>
           {' · '}
-          <span className={`badge badge-${p.status === 'BOOKING_FAILED' || p.status === 'CANCELLED' ? 'danger' : 'info'}`}>{dt.courierStatus[p.status] ?? p.status}</span>
+          <Badge tone={p.status === 'BOOKING_FAILED' || p.status === 'CANCELLED' ? 'danger' : 'info'}>{dt.courierStatus[p.status] ?? p.status}</Badge>
           {p.partner && ` ${dt.partner(p.partner.name, p.partner.phone, p.partner.vehicleNumber)}`}
           {p.fareMinor != null && ` · ${money(p.fareMinor)}`}
         </>
@@ -540,10 +540,8 @@ function DeliveryCard({ orgId, branchId, d, onAct, onChanged }: { orgId: string;
           </p>
         </div>
         <div className="dl-badges">
-          <span className={`badge badge-${STATUS_TONE[d.status]}`}>
-            {d.outcome && d.status !== 'REQUESTED' && d.status !== 'OUT' ? dt.outcome[d.outcome] : dt.status[d.status]}
-          </span>
-          {d.fee.amountMinor > 0 && <span className={`badge badge-${FEE_TONE[d.fee.status]}`}>{`${dt.fee[d.fee.status]} ${money(d.fee.amountMinor)}`}</span>}
+          <Badge tone={STATUS_TONE[d.status]}>{d.outcome && d.status !== 'REQUESTED' && d.status !== 'OUT' ? dt.outcome[d.outcome] : dt.status[d.status]}</Badge>
+          {d.fee.amountMinor > 0 && <Badge tone={FEE_TONE[d.fee.status]}>{`${dt.fee[d.fee.status]} ${money(d.fee.amountMinor)}`}</Badge>}
         </div>
       </div>
       <p className="small">
@@ -748,7 +746,7 @@ export function MyDeliveriesPage() {
                     {d.dispatchedAt && ` · ${when(d.dispatchedAt)}`}
                   </p>
                 </div>
-                {d.fee.status === 'DUE' && <span className="badge badge-warn">{`${dt.fee.DUE} ${money(d.fee.amountMinor)}`}</span>}
+                {d.fee.status === 'DUE' && <Badge tone="warn">{`${dt.fee.DUE} ${money(d.fee.amountMinor)}`}</Badge>}
               </div>
               <p className="small">
                 {oneLine(d.address)} · <Contact d={d} />
