@@ -7,7 +7,8 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { bulkCreateBooks, type BulkItem, importCover, lookupIsbn, type ReceiveItem, receiveStock } from '../../data/bulkBooks';
+import { errorText } from '../../data/api';
+import { bulkCreateBooks, type BulkItem, type BulkResult, type ChunkRange, importCover, lookupIsbn, type ReceiveItem, type ReceiveResult, receiveStock } from '../../data/bulkBooks';
 import { AGE_GROUPS, type AgeGroup, CONDITIONS, type Condition, GENRES, type Genre, label, LANGUAGES, READING_LEVELS } from '../../data/common';
 import { listLocations } from '../../data/inventory';
 import { paths } from '../../paths';
@@ -108,6 +109,15 @@ export function BulkAddBooksPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const enqueue = usePool();
+  // One requestId per group of rows sent together, kept until that call is known to have
+  // gone through: a retry of the same rows after an unknown outcome can't add them twice.
+  const requestIds = useRef(new Map<string, string>());
+  const requestIdFor = (keys: number[]) => {
+    const k = keys.join(',');
+    let id = requestIds.current.get(k);
+    if (!id) requestIds.current.set(k, (id = crypto.randomUUID()));
+    return id;
+  };
 
   useEffect(() => {
     if (focusKey !== null) {
@@ -152,7 +162,7 @@ export function BulkAddBooksPage() {
           return { state: 'found', candidate: c, genre: (c.genres[0] as Genre | undefined) ?? defaults.genre };
         });
       } catch (e) {
-        patch(key, (r) => (r.checked === isbn ? { state: 'error', message: e instanceof Error ? e.message : t.errorGeneric } : {}));
+        patch(key, (r) => (r.checked === isbn ? { state: 'error', message: errorText(e) } : {}));
       }
     });
     return false;
@@ -261,33 +271,53 @@ export function BulkAddBooksPage() {
     setError(null);
     setNotice(null);
     setLabels([]);
-    const items: ReceiveItem[] = ready.map((v) => ({
+    const sent = ready;
+    const items: ReceiveItem[] = sent.map((v) => ({
       ...(v.r.state === 'exists' ? { bookId: v.r.bookId! } : { book: bookOf(v) }),
       quantity: Number(v.r.quantity),
       acquisitionCostMinor: v.price,
     }));
-    try {
-      setBusy(lt.receiveSaving(0, items.length));
-      const res = await receiveStock({ orgId: org.id, branchId: branch.id, locationId: delivery.locationId || null, condition: delivery.condition }, items, (done) =>
-        setBusy(lt.receiveSaving(done, items.length)),
-      );
+    const keysOf = (range: ChunkRange) => sent.slice(range.start, range.end).map((v) => v.r.key);
+    const priceOf = new Map(sent.map((v) => [v.r.key, v.price]));
+    // What has been received so far: every call that went through, even if a later one fails.
+    const got: ReceiveResult = { received: [], newTitles: [], copies: 0, allocated: 0 };
+    let done = 0;
+    const committed = (res: ReceiveResult, range: ChunkRange) => {
+      const keys = keysOf(range);
+      requestIds.current.delete(keys.join(','));
+      got.received.push(...res.received);
+      got.newTitles.push(...res.newTitles);
+      got.copies += res.copies;
+      got.allocated += res.allocated;
+      done += keys.length;
+      setBusy(lt.receiveSaving(done, items.length));
       const newByIsbn = new Map(res.newTitles.map((n) => [n.isbn, n]));
       const byBook = new Map(res.received.map((r) => [r.bookId, r]));
-      const priceOf = new Map(ready.map((v) => [v.r.key, v.price]));
       setRows((rs) =>
         rs.map((r) => {
-          if (!priceOf.has(r.key)) return r;
+          if (!keys.includes(r.key)) return r;
           const made = newByIsbn.get(normalizeIsbn(r.raw) ?? '');
           const bookId = made?.bookId ?? r.bookId;
-          const got = bookId ? byBook.get(bookId) : undefined;
-          return got ? { ...r, state: 'added', bookId, code: made?.code ?? null, copies: got.codes, pricePaid: priceOf.get(r.key) ?? null, candidate: r.candidate ?? typedIn(r) } : r;
+          const arrived = bookId ? byBook.get(bookId) : undefined;
+          return arrived ? { ...r, state: 'added', bookId, code: made?.code ?? null, copies: arrived.codes, pricePaid: priceOf.get(r.key) ?? null, candidate: r.candidate ?? typedIn(r) } : r;
         }),
       );
-      await addCovers(res.newTitles);
-      setLabels(res.received.flatMap((r) => r.copyIds));
-      setNotice(lt.receiveDone(res.copies, res.received.length, res.newTitles.length, res.allocated));
+    };
+    try {
+      setBusy(lt.receiveSaving(0, items.length));
+      await receiveStock({ orgId: org.id, branchId: branch.id, locationId: delivery.locationId || null, condition: delivery.condition }, items, {
+        onChunk: committed,
+        requestId: (range) => requestIdFor(keysOf(range)),
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
+      setError(errorText(e));
+    }
+    try {
+      if (got.copies || got.newTitles.length) {
+        await addCovers(got.newTitles);
+        setLabels(got.received.flatMap((r) => r.copyIds));
+        setNotice(lt.receiveDone(got.copies, got.received.length, got.newTitles.length, got.allocated));
+      }
     } finally {
       setBusy(null);
     }
@@ -297,14 +327,23 @@ export function BulkAddBooksPage() {
     if (!ready.length || busy) return;
     setError(null);
     setNotice(null);
-    const items: BulkItem[] = ready.map(bookOf);
-    try {
-      setBusy(lt.bulkSaving(0, items.length));
-      const res = await bulkCreateBooks(items, (done) => setBusy(lt.bulkSaving(done, items.length)));
+    const sent = ready;
+    const items: BulkItem[] = sent.map(bookOf);
+    const keysOf = (range: ChunkRange) => sent.slice(range.start, range.end).map((v) => v.r.key);
+    const got: BulkResult = { created: [], skipped: [] };
+    let done = 0;
+    const committed = (res: BulkResult, range: ChunkRange) => {
+      const keys = keysOf(range);
+      requestIds.current.delete(keys.join(','));
+      got.created.push(...res.created);
+      got.skipped.push(...res.skipped);
+      done += keys.length;
+      setBusy(lt.bulkSaving(done, items.length));
       const byIsbn = new Map(res.created.map((c) => [c.isbn, c]));
-      const skippedBy = new Map(res.skipped.map((s) => [s.isbn, s]));
+      const skippedBy = new Map(res.skipped.map((x) => [x.isbn, x]));
       setRows((rs) =>
         rs.map((r) => {
+          if (!keys.includes(r.key)) return r;
           const isbn = normalizeIsbn(r.raw);
           const made = isbn ? byIsbn.get(isbn) : undefined;
           if (made) return { ...r, state: 'added', code: made.code, bookId: made.bookId, candidate: r.candidate ?? typedIn(r) };
@@ -312,10 +351,18 @@ export function BulkAddBooksPage() {
           return skip ? { ...r, state: 'skipped', message: skip.reason } : r;
         }),
       );
-      await addCovers(res.created);
-      setNotice(`${lt.bulkDone(res.created.length, res.skipped.length)} ${lt.bulkNextStep}`);
+    };
+    try {
+      setBusy(lt.bulkSaving(0, items.length));
+      await bulkCreateBooks(items, { onChunk: committed, requestId: (range) => requestIdFor(keysOf(range)) });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
+      setError(errorText(e));
+    }
+    try {
+      if (got.created.length || got.skipped.length) {
+        await addCovers(got.created);
+        setNotice(`${lt.bulkDone(got.created.length, got.skipped.length)} ${lt.bulkNextStep}`);
+      }
     } finally {
       setBusy(null);
     }
