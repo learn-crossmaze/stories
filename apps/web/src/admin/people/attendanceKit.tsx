@@ -1,19 +1,18 @@
 // Pieces shared by the attendance pages: status badge, dialogs and the month table.
 import { useState } from 'react';
 
-import { command } from '../../data/api';
+import { command, errorText } from '../../data/api';
 import { type AttendanceRecord, type Correction, hhmm, hours, type Shift, timeOf, type Weekday, WEEKDAYS } from '../../data/attendance';
 import type { Employee } from '../../data/hr';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
-import { TableWrap } from '../../shared/ui';
+import { makeStatusBadge, TableWrap } from '../../shared/ui';
 
-const TONE: Record<string, string> = { PRESENT: 'ok', HALF_DAY: 'warn', ABSENT: 'danger', WEEKLY_OFF: 'muted', HOLIDAY: 'info', ON_LEAVE: 'info', IN_PROGRESS: 'info', NOT_IN: 'muted' };
-
-export function DayBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${TONE[status] ?? 'muted'}`}>{ht.dayStatus[status] ?? status}</span>;
-}
+export const DayBadge = makeStatusBadge<string>(
+  { PRESENT: 'ok', HALF_DAY: 'warn', ABSENT: 'danger', WEEKLY_OFF: 'muted', HOLIDAY: 'info', ON_LEAVE: 'info', IN_PROGRESS: 'info', NOT_IN: 'muted' },
+  ht.dayStatus,
+);
 
 /** Late, left early, missing check-out. */
 export function DayFlags({ r }: { r: Pick<AttendanceRecord, 'late' | 'lateMinutes' | 'earlyExit' | 'missedCheckout' | 'status'> }) {
@@ -145,7 +144,7 @@ export function useCorrectionDecision(orgId: string, onDone: () => void) {
       await command('attendance-decideCorrection', { orgId, correctionId: c.id, decision: 'APPROVE' });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
+      setError(errorText(e));
     }
   };
   const dialog = rejecting && (

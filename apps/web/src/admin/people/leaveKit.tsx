@@ -2,7 +2,7 @@
 import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 
-import { command } from '../../data/api';
+import { command, errorText } from '../../data/api';
 import { todayIST } from '../../shared/dates';
 import { applyLeave, available, daysLabel, type HalfDay, type LeaveBalance, type LeaveRequest, type LeaveType, type LedgerEntry } from '../../data/leave';
 import { paths } from '../../paths';
@@ -10,13 +10,9 @@ import { day as dayFmt } from '../../shared/format';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
-import { TableWrap } from '../../shared/ui';
+import { makeStatusBadge, TableWrap } from '../../shared/ui';
 
-const TONE: Record<string, string> = { PENDING: 'info', APPROVED: 'ok', REJECTED: 'danger', CANCELLED: 'muted' };
-
-export function LeaveBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${TONE[status] ?? 'muted'}`}>{ht.leaveStatus[status] ?? status}</span>;
-}
+export const LeaveBadge = makeStatusBadge<string>({ PENDING: 'info', APPROVED: 'ok', REJECTED: 'danger', CANCELLED: 'muted' }, ht.leaveStatus);
 
 /** One card per active type: days left, and what makes it up. */
 export function BalanceCards({ types, balance }: { types: LeaveType[]; balance: LeaveBalance | null }) {
@@ -159,7 +155,7 @@ export function useLeaveDecision(orgId: string, onDone: () => void) {
       await command('leave-decide', { orgId, leaveId: r.id, decision: 'APPROVE' });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
+      setError(errorText(e));
     }
   };
   const dialog = rejecting && (

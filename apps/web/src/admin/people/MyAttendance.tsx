@@ -3,20 +3,20 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import { employeeMonth, myCorrections, punch, timeOf } from '../../data/attendance';
+import { type Correction, employeeMonth, myCorrections, punch, timeOf } from '../../data/attendance';
 import { monthIST, todayIST } from '../../shared/dates';
 import { myEmployee } from '../../data/hr';
 import { paths } from '../../paths';
-import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, makeStatusBadge, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
-import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { FormError } from '../components/Dialog';
+import { FormError, useAction } from '../components/Dialog';
 import { Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 import { CorrectionRequestDialog, DayFlags, MonthRecords } from './attendanceKit';
 
 const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
+const CorrectionBadge = makeStatusBadge<Correction['status']>({ PENDING: 'info', APPROVED: 'ok', REJECTED: 'danger' }, ht.correctionStatus);
 
 /** Check in / check out for today. Renders nothing for people without an employee record. */
 export function CheckInCard({ compact }: { compact?: boolean }) {
@@ -29,22 +29,14 @@ export function CheckInCard({ compact }: { compact?: boolean }) {
     const today = (await employeeMonth(org.id, me.id, monthIST(), { ownUid: user.uid })).find((r) => r.date === todayIST()) ?? null;
     return { me, today };
   }, [org?.id, user?.uid]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
   if (!data.data) return null;
   const { me, today } = data.data;
-  const act = async (action: 'IN' | 'OUT') => {
-    setBusy(true);
-    setError(null);
-    try {
+  const act = (action: 'IN' | 'OUT') =>
+    run(async () => {
       await punch(org!.id, action);
       data.reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
   const status = today?.checkOut ? ht.checkedOutAt(timeOf(today.checkOut)) : today?.checkIn ? ht.checkedInAt(timeOf(today.checkIn)) : ht.notCheckedIn;
   return (
     <section className={compact ? 'card checkin-card' : 'card checkin-card checkin-card-lg'} aria-labelledby="checkin-title">
@@ -130,7 +122,7 @@ export function MyAttendancePage() {
                       <strong>{c.date}</strong> · {ht.requested(c.checkIn ?? '', c.checkOut ?? '')}
                       {c.decisionNote && <span className="muted small"> · {c.decisionNote}</span>}
                     </span>
-                    <span className={`badge badge-${c.status === 'APPROVED' ? 'ok' : c.status === 'REJECTED' ? 'danger' : 'info'}`}>{ht.correctionStatus[c.status]}</span>
+                    <CorrectionBadge status={c.status} />
                   </li>
                 ))}
               </ul>

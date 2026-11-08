@@ -10,7 +10,7 @@ import { todayIST } from '../../shared/dates';
 import { useAsync } from '../../shared/useAsync';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
+import { EmptyState, ErrorState, Icon, makeStatusBadge, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { ht } from '../../strings/hr';
 import { Notice } from '../components/kit';
@@ -20,18 +20,10 @@ import { RolesDialog } from '../organization/Staff';
 import { useWorkspace } from '../Workspace';
 import { EmployeeAvatar } from './EmployeePhoto';
 
-const STATUS_TONE: Record<string, string> = {
-  DRAFT: 'muted',
-  ONBOARDING: 'info',
-  ACTIVE: 'ok',
-  NOTICE_PERIOD: 'warn',
-  OFFBOARDING: 'warn',
-  OFFBOARDED: 'muted',
-};
-
-export function EmployeeStatusBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${STATUS_TONE[status] ?? 'muted'}`}>{ht.status[status] ?? status}</span>;
-}
+export const EmployeeStatusBadge = makeStatusBadge<string>(
+  { DRAFT: 'muted', ONBOARDING: 'info', ACTIVE: 'ok', NOTICE_PERIOD: 'warn', OFFBOARDING: 'warn', OFFBOARDED: 'muted' },
+  ht.status,
+);
 
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 

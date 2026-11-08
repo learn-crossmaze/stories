@@ -10,12 +10,12 @@ import { monthIST } from '../../shared/dates';
 import { monthName, type Payslip, prepareRun, getRun, runPayslips, submitRun } from '../../data/payroll';
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
-import { ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
+import { Badge, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { ConfirmWithReason, Dialog, DialogActions, FormError, useSubmit } from '../components/Dialog';
+import { ConfirmWithReason, Dialog, DialogActions, FormError, useAction, useSubmit } from '../components/Dialog';
 import { Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 import { InputsDialog, PayslipButton, RunBadge } from './payrollKit';
@@ -39,8 +39,7 @@ export function PayrollPage() {
     return { run, finalized: lock?.status === 'FINALIZED', slips };
   }, [org?.id, month, where]);
   const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, error, run: runAction } = useAction();
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [inputsFor, setInputsFor] = useState<Payslip | null>(null);
@@ -53,19 +52,12 @@ export function PayrollPage() {
   const ownRun = !!run && (run.preparedBy === user?.uid || run.submittedBy === user?.uid || (!!user && !!run.contributors?.includes(user.uid)));
   const editable = status === 'NONE' || status === 'DRAFT';
   const whereLabel = choices.find((c) => c.value === where)?.label ?? '';
-  const act = async (fn: () => Promise<string | null>) => {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
+  const act = (fn: () => Promise<string | null>) =>
+    runAction(async () => {
+      setNotice(null);
       setNotice(await fn());
       data.reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.errorGeneric);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
 
   return (
     <>
@@ -205,7 +197,7 @@ export function PayrollPage() {
                     <tr key={s.id}>
                       <td>
                         <Link to={paths.adminEmployee(s.employeeId)}>{s.employeeName}</Link>
-                        {s.missingSalary && <span className="badge badge-danger"> {ht.noSalary}</span>}
+                        {s.missingSalary && <Badge tone="danger"> {ht.noSalary}</Badge>}
                         {s.tds > 0 && <div className="muted small">TDS {rupees(s.tds)}</div>}
                       </td>
                       <td className="num">

@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
-import { call, command } from '../../data/api';
+import { call, command, errorText } from '../../data/api';
 import { type ChecklistItem, type Employee, type PrivateProfile } from '../../data/hr';
 import { listStaff, type Org } from '../../data/org';
 import { useAsync } from '../../shared/useAsync';
@@ -11,7 +11,7 @@ import { when } from '../../shared/format';
 import { ROLES } from '../../generated/rbac';
 import { paths } from '../../paths';
 import { t } from '../../strings';
-import { SkeletonRows } from '../../shared/ui';
+import { Badge, SkeletonRows } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { ht } from '../../strings/hr';
 import { useWorkspace } from '../Workspace';
@@ -72,7 +72,7 @@ export function Checklist({
                     onChanged();
                   } catch (err) {
                     setPending(({ [i.key]: _, ...rest }) => rest);
-                    setError(err instanceof Error ? err.message : t.errorGeneric);
+                    setError(errorText(err));
                   } finally {
                     setBusyKey(null);
                   }
@@ -80,7 +80,7 @@ export function Checklist({
               />
               <span>
                 {i.label}
-                {i.required && <span className="badge badge-warn"> {ht.required}</span>}
+                {i.required && <Badge tone="warn"> {ht.required}</Badge>}
                 {isDone(i) && i.doneBy && <span className="muted small"> · {ht.doneBy(i.doneBy, i.doneAt ? when(new Date(i.doneAt)) : '')}</span>}
               </span>
             </label>

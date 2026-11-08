@@ -8,13 +8,10 @@ import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
+import { Dialog, DialogActions, FormError, TextField, useAction, useSubmit } from '../components/Dialog';
+import { Badge, makeStatusBadge } from '../../shared/ui';
 
-const TONE: Record<string, string> = { NONE: 'muted', DRAFT: 'info', SUBMITTED: 'warn', APPROVED: 'ok' };
-
-export function RunBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${TONE[status] ?? 'muted'}`}>{ht.runStatus[status] ?? status}</span>;
-}
+export const RunBadge = makeStatusBadge<string>({ NONE: 'muted', DRAFT: 'info', SUBMITTED: 'warn', APPROVED: 'ok' }, ht.runStatus);
 
 const whole = (v: string) => /^\d+$/.test(v.trim());
 
@@ -163,8 +160,7 @@ function InputsForm({ orgId, employee, month, initial, onClose, onDone }: { orgI
 
 /** A PDF download button with its own error message. */
 export function PayslipButton({ orgId, slip, label }: { orgId: string; slip: Pick<Payslip, 'employeeId' | 'employeeName' | 'month'>; label?: string }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, run } = useAction();
   return (
     <>
       <button
@@ -172,17 +168,7 @@ export function PayslipButton({ orgId, slip, label }: { orgId: string; slip: Pic
         className="btn btn-text"
         disabled={busy}
         aria-label={ht.downloadPayslipFor(slip.employeeName, monthName(slip.month))}
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            await downloadPayslip(orgId, slip.employeeId, slip.month);
-          } catch (e) {
-            setError(e instanceof Error ? e.message : t.errorGeneric);
-          } finally {
-            setBusy(false);
-          }
-        }}
+        onClick={() => run(() => downloadPayslip(orgId, slip.employeeId, slip.month))}
       >
         {busy ? t.saving : (label ?? ht.downloadPayslip)}
       </button>
@@ -208,7 +194,7 @@ export function PayslipList({ orgId, slips }: { orgId: string; slips: Payslip[] 
               {' '}
               · {ht.colGross} {rupees(s.gross)} · {ht.colPayable} {s.days.payable}/{s.days.inMonth}
             </span>
-            {!s.published && <span className="badge badge-info"> {ht.draftSlip}</span>}
+            {!s.published && <Badge tone="info"> {ht.draftSlip}</Badge>}
           </span>
           <PayslipButton orgId={orgId} slip={s} />
         </li>
