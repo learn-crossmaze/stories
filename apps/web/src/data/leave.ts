@@ -57,6 +57,8 @@ export interface TypeBalance {
   adjusted: number;
   used: number;
   pending: number;
+  /** Days carried into the next year (they left this year's balance). */
+  carriedOut?: number;
 }
 
 export interface LeaveBalance {
@@ -72,7 +74,7 @@ export interface LeaveBalance {
 export interface LedgerEntry {
   id: string;
   typeId: string;
-  kind: 'ACCRUAL' | 'CARRY' | 'ADJUST' | 'TAKEN' | 'RETURNED';
+  kind: 'ACCRUAL' | 'CARRY' | 'CARRY_OUT' | 'ADJUST' | 'TAKEN' | 'RETURNED';
   days: number;
   period: string | null;
   note: string | null;
@@ -82,8 +84,8 @@ export interface LedgerEntry {
 const branchFilter = (scope: string[] | 'ALL'): QueryConstraint[] => (scope === 'ALL' ? [] : [where('branchId', 'in', scope.slice(0, 30))]);
 const toRequest = (id: string, d: Record<string, unknown>) => ({ ...d, id }) as LeaveRequest;
 
-/** Days left of a type: credited + adjusted − used − pending. */
-export const available = (b: Partial<TypeBalance> | undefined) => Math.round(((b?.credited ?? 0) + (b?.adjusted ?? 0) - (b?.used ?? 0) - (b?.pending ?? 0)) * 100) / 100;
+/** Days left of a type: credited + adjusted − used − pending − carried into the next year. */
+export const available = (b: Partial<TypeBalance> | undefined) => Math.round(((b?.credited ?? 0) + (b?.adjusted ?? 0) - (b?.used ?? 0) - (b?.pending ?? 0) - (b?.carriedOut ?? 0)) * 100) / 100;
 
 export async function listLeaveTypes(orgId: string): Promise<LeaveType[]> {
   const snap = await getDocs(collection(db(), `orgs/${orgId}/leaveTypes`));

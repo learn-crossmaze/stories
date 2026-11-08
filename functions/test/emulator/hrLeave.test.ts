@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../src/core/firebase.js';
 import * as att from '../../src/hr/attendance.js';
 import { businessDate, datesOfMonth, weekdayOf } from '../../src/hr/attendanceRules.js';
+import * as emp from '../../src/hr/employees.js';
 import * as leave from '../../src/hr/leave.js';
 import * as schedule from '../../src/hr/schedule.js';
 import * as branches from '../../src/organization/branches.js';
@@ -82,6 +83,52 @@ describe('leave balances', () => {
     expect(types.earned).toBeUndefined();
     await opening(typeId, thisMonth.slice(0, 4), 182);
     expect((await balance(thisMonth.slice(0, 4))).types[typeId]).toMatchObject({ adjusted: 182 });
+  });
+
+  it('credits someone still joining only once they have a joining date', async () => {
+    const y = thisMonth.slice(0, 4);
+    const { employeeId } = await call<{ employeeId: string }>(emp.create, hr, { orgId: org, fullName: 'Neha Kapoor', branchId: central });
+    await call(emp.transition, hr, { orgId: org, employeeId, transition: 'START_ONBOARDING' });
+    await call(leave.accrue, hr, { orgId: org, month: thisMonth }, null);
+    expect((await db.doc(`orgs/${org}/leaveBalances/${employeeId}_${y}`).get()).exists).toBe(false);
+    expect((await db.collection(`orgs/${org}/leaveLedger`).where('employeeId', '==', employeeId).get()).empty).toBe(true);
+
+    // Joining this month: the yearly type is a share of the year, not the full quota.
+    await call(emp.update, hr, { orgId: org, employeeId, fullName: 'Neha Kapoor', branchId: central, joiningDate: `${thisMonth}-01` });
+    await call(leave.accrue, hr, { orgId: org, month: thisMonth }, null);
+    const share = Math.floor(((12 * (12 - Number(thisMonth.slice(5, 7)) + 1)) / 12) * 2) / 2;
+    expect((await db.doc(`orgs/${org}/leaveBalances/${employeeId}_${y}`).get()).get('types.sick.credited')).toBe(share);
+  });
+
+  it('days carried into the new year leave the old year, so they are spent only once', async () => {
+    const y = thisMonth.slice(0, 4);
+    const prev = String(Number(y) - 1);
+    await opening('earned', prev, 10);
+    await call(leave.accrue, hr, { orgId: org, month: `${y}-01` }, null);
+    expect((await balance(y)).types.earned).toMatchObject({ credited: 10 + 1.25 });
+    expect((await balance(prev)).types.earned).toMatchObject({ adjusted: 10, carriedOut: 10 });
+    const kinds = (await db.collection(`orgs/${org}/leaveLedger`).where('employeeId', '==', workerId).where('year', '==', prev).get()).docs.map((d) => d.get('kind')).sort();
+    expect(kinds).toEqual(['ADJUST', 'CARRY_OUT']);
+    // Backdated leave in the old year can't use the carried days again.
+    const lateDecember = datesOfMonth(`${prev}-12`).filter((d) => weekdayOf(d) !== 'SUN').at(-1)!;
+    expect(await failure(call(leave.apply, worker, { orgId: org, typeId: 'earned', from: lateDecember, to: lateDecember, reason: 'Forgot to apply' }))).toBe('INSUFFICIENT_BALANCE');
+    expect(await failure(opening('earned', prev, -1))).toBe('INSUFFICIENT_BALANCE');
+    // Running it again carries nothing more.
+    await call(leave.accrue, hr, { orgId: org, month: `${y}-01` }, null);
+    expect((await balance(prev)).types.earned.carriedOut).toBe(10);
+  });
+
+  it('the daily accrual covers active organizations only, and one bad record does not stop the rest', async () => {
+    const other = (await call<{ orgId: string }>(orgs.create, sa, { name: 'Suspended Org', type: 'CORPORATE' })).orgId;
+    await db.doc(`orgs/${other}/employees/e1`).set({ orgId: other, code: 'S1', fullName: 'Sleeping', status: 'ACTIVE', joiningDate: null, uid: null, branchId: null });
+    await call(orgs.update, sa, { orgId: other, status: 'SUSPENDED' });
+    // A damaged record (no employee code) fails on its own.
+    await db.doc(`orgs/${org}/employees/broken`).set({ orgId: org, fullName: 'Broken', status: 'ACTIVE', joiningDate: null, uid: null, branchId: central });
+
+    const summary = await leave.accrueAll();
+    expect(summary).toMatchObject({ orgs: 1, employees: 4, failedEmployees: 1, failedOrgs: 0 });
+    expect((await balance(thisMonth.slice(0, 4))).types.casual).toMatchObject({ credited: 1 });
+    expect((await db.collection(`orgs/${other}/leaveLedger`).get()).empty).toBe(true);
   });
 });
 
