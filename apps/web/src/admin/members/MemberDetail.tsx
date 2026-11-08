@@ -70,7 +70,8 @@ export function MemberDetailPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   if (member.loading) return <SkeletonRows rows={5} />;
-  if (member.error) return <ErrorState message={member.error} onRetry={member.reload} />;
+  // A failed refresh keeps the page (and any open dialog); only a member we couldn't load at all gives way to the error.
+  if (member.error && !m) return <ErrorState message={member.error} onRetry={member.reload} />;
   if (!m) return <EmptyState page icon="person" title={t.notFoundTitle} message="" />;
 
   const refresh = () => {
@@ -159,6 +160,7 @@ export function MemberDetailPage() {
         </div>
       </header>
       {notice && <Notice tone="ok">{notice}</Notice>}
+      {member.error && <Notice tone="error">{member.error}</Notice>}
 
       <Tabs
         value={tab}

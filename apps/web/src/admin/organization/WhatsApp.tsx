@@ -440,8 +440,8 @@ function LogCard({ orgId, branchId, events }: { orgId: string; branchId: string;
     <section className="section" aria-labelledby="wa-log">
       <div className="page-header-row">
         <h2 id="wa-log">{wt.log}</h2>
-        <button type="button" className="btn btn-text" onClick={log.reload}>
-          {wt.refresh}
+        <button type="button" className="btn btn-text" onClick={log.reload} disabled={log.refreshing} aria-busy={log.refreshing}>
+          {log.refreshing ? t.loading : wt.refresh}
         </button>
       </div>
       {log.loading ? (

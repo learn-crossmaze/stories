@@ -175,8 +175,17 @@ function NewDeliveryDialog({ orgId, branchId, view, onClose, onSaved }: { orgId:
             </button>
           </div>
         </>
-      ) : extras.loading || !extras.data ? (
+      ) : extras.loading ? (
         <SkeletonRows rows={3} />
+      ) : extras.error || !extras.data ? (
+        <>
+          <ErrorState message={extras.error ?? t.errorLoad} onRetry={extras.reload} />
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-text" onClick={onClose}>
+              {t.cancel}
+            </button>
+          </div>
+        </>
       ) : (
         <>
           <p>
@@ -362,8 +371,41 @@ function DispatchDialog({ orgId, delivery, view, onClose, onSaved }: { orgId: st
   );
 }
 
+type ReportProps = { orgId: string; delivery: Delivery; onClose: () => void; onSaved: () => void };
+
 /** How the visit went: by the rider at the door, or by the branch for them. */
-export function ReportDialog({ orgId, delivery, loans, onClose, onSaved }: { orgId: string; delivery: Delivery; loans: MemberLoan[]; onClose: () => void; onSaved: () => void }) {
+export function ReportDialog({ loans, ...props }: ReportProps & { loans: MemberLoan[] }) {
+  return (
+    <Dialog title={dt.reportTitle(props.delivery.memberName)} onClose={props.onClose}>
+      <ReportForm {...props} loans={loans} />
+    </Dialog>
+  );
+}
+
+/** The report from the board: opens straight away and loads the member's books itself. */
+function BoardReportDialog(props: ReportProps) {
+  const loans = useAsync(() => getDelivery(props.orgId, props.delivery.id).then((r) => r.memberLoans), [props.orgId, props.delivery.id]);
+  return (
+    <Dialog title={dt.reportTitle(props.delivery.memberName)} onClose={props.onClose}>
+      {loans.loading ? (
+        <SkeletonRows rows={3} />
+      ) : loans.error || !loans.data ? (
+        <>
+          <ErrorState message={loans.error ?? t.errorLoad} onRetry={loans.reload} />
+          <div className="dialog-actions">
+            <button type="button" className="btn btn-text" onClick={props.onClose}>
+              {t.cancel}
+            </button>
+          </div>
+        </>
+      ) : (
+        <ReportForm {...props} loans={loans.data} />
+      )}
+    </Dialog>
+  );
+}
+
+function ReportForm({ orgId, delivery, loans, onClose, onSaved }: ReportProps & { loans: MemberLoan[] }) {
   const [outcome, setOutcome] = useState<'DELIVERED' | 'FAILED'>('DELIVERED');
   const [handedTo, setHandedTo] = useState('');
   const [collected, setCollected] = useState<string[]>(delivery.collectLoanIds);
@@ -384,63 +426,61 @@ export function ReportDialog({ orgId, delivery, loans, onClose, onSaved }: { org
     onClose();
   });
   return (
-    <Dialog title={dt.reportTitle(delivery.memberName)} onClose={onClose}>
-      <form onSubmit={submit} noValidate>
-        <fieldset className="checklist">
-          <legend>{dt.report}</legend>
-          {(['DELIVERED', 'FAILED'] as const).map((o) => (
-            <label key={o} className="check">
-              <input type="radio" name="outcome" checked={outcome === o} onChange={() => setOutcome(o)} /> {o === 'DELIVERED' ? dt.delivered : dt.notDelivered}
-            </label>
-          ))}
-        </fieldset>
-        {outcome === 'DELIVERED' ? (
-          <>
-            <TextField label={dt.handedTo} value={handedTo} onChange={setHandedTo} />
-            {collects && (
-              <fieldset className="checklist">
-                <legend>{dt.collectedNow}</legend>
-                {candidates.length === 0 ? (
-                  <p className="muted small">{dt.noLoans}</p>
-                ) : (
-                  candidates.map((l) => (
-                    <label key={l.loanId} className="check">
-                      <input
-                        type="checkbox"
-                        checked={collected.includes(l.loanId)}
-                        onChange={(e) => setCollected(e.target.checked ? [...collected, l.loanId] : collected.filter((x) => x !== l.loanId))}
-                      />
-                      {l.bookTitle} <span className="mono small">{l.copyCode}</span>
-                    </label>
-                  ))
-                )}
-              </fieldset>
-            )}
-            {delivery.fee.status === 'DUE' && (
-              <div className="form-grid">
-                <SelectField
-                  label={`${dt.collectFee} (${money(delivery.fee.amountMinor)})`}
-                  value={feeMethod}
-                  onChange={setFeeMethod}
-                  options={[
-                    { value: '', label: dt.feeNotCollected },
-                    ...FEE_METHODS.map((m) => ({
-                      value: m,
-                      label: lt.paymentMethods[m],
-                    })),
-                  ]}
-                />
-                {feeMethod && feeMethod !== 'OFFLINE_CASH' && <TextField label={dt.feeRef} value={feeRef} onChange={setFeeRef} />}
-              </div>
-            )}
-          </>
-        ) : (
-          <TextField label={dt.failReason} hint={dt.failHint} value={reason} onChange={setReason} />
-        )}
-        <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
-      </form>
-    </Dialog>
+    <form onSubmit={submit} noValidate>
+      <fieldset className="checklist">
+        <legend>{dt.report}</legend>
+        {(['DELIVERED', 'FAILED'] as const).map((o) => (
+          <label key={o} className="check">
+            <input type="radio" name="outcome" checked={outcome === o} onChange={() => setOutcome(o)} /> {o === 'DELIVERED' ? dt.delivered : dt.notDelivered}
+          </label>
+        ))}
+      </fieldset>
+      {outcome === 'DELIVERED' ? (
+        <>
+          <TextField label={dt.handedTo} value={handedTo} onChange={setHandedTo} />
+          {collects && (
+            <fieldset className="checklist">
+              <legend>{dt.collectedNow}</legend>
+              {candidates.length === 0 ? (
+                <p className="muted small">{dt.noLoans}</p>
+              ) : (
+                candidates.map((l) => (
+                  <label key={l.loanId} className="check">
+                    <input
+                      type="checkbox"
+                      checked={collected.includes(l.loanId)}
+                      onChange={(e) => setCollected(e.target.checked ? [...collected, l.loanId] : collected.filter((x) => x !== l.loanId))}
+                    />
+                    {l.bookTitle} <span className="mono small">{l.copyCode}</span>
+                  </label>
+                ))
+              )}
+            </fieldset>
+          )}
+          {delivery.fee.status === 'DUE' && (
+            <div className="form-grid">
+              <SelectField
+                label={`${dt.collectFee} (${money(delivery.fee.amountMinor)})`}
+                value={feeMethod}
+                onChange={setFeeMethod}
+                options={[
+                  { value: '', label: dt.feeNotCollected },
+                  ...FEE_METHODS.map((m) => ({
+                    value: m,
+                    label: lt.paymentMethods[m],
+                  })),
+                ]}
+              />
+              {feeMethod && feeMethod !== 'OFFLINE_CASH' && <TextField label={dt.feeRef} value={feeRef} onChange={setFeeRef} />}
+            </div>
+          )}
+        </>
+      ) : (
+        <TextField label={dt.failReason} hint={dt.failHint} value={reason} onChange={setReason} />
+      )}
+      <FormError error={error} />
+      <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+    </form>
   );
 }
 
@@ -572,7 +612,6 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
   const [notice, setNotice] = useState<string | null>(null);
   const view = useAsync(() => deliverySettings(orgId, branchId), [orgId, branchId]);
   const data = useAsync(() => listDeliveries(orgId, branchId), [orgId, branchId]);
-  const reportLoans = useAsync(() => (open?.kind === 'report' ? getDelivery(orgId, open.d.id).then((r) => r.memberLoans) : Promise.resolve(null)), [orgId, open?.kind, open?.d.id]);
   // Courier orders: ask the courier for news when the board opens (at most once a minute per order).
   useEffect(() => {
     void syncDeliveries(orgId, branchId)
@@ -581,9 +620,11 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, branchId]);
   if (view.loading || data.loading) return <SkeletonRows rows={5} />;
-  if (view.error || data.error) return <ErrorState message={(view.error ?? data.error)!} onRetry={() => (view.reload(), data.reload())} />;
-  const v = view.data!;
-  const all = data.data!;
+  // Only a board with nothing to show gives way to the error: a failed refresh keeps the board (and an open dialog).
+  if (!view.data || !data.data) return <ErrorState message={view.error ?? data.error ?? t.errorLoad} onRetry={() => (view.reload(), data.reload())} />;
+  const v = view.data;
+  const all = data.data;
+  const refreshError = view.error ?? data.error;
   const rows = tab === 'CLOSED' ? all.closed : all.open.filter((d) => d.status === tab);
   const count = (s: string) => all.open.filter((d) => d.status === s).length;
   const changed = () => data.reload();
@@ -605,6 +646,7 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
         </button>
       </div>
       {notice && <Notice tone="ok">{notice}</Notice>}
+      {refreshError && <Notice tone="error">{refreshError}</Notice>}
       {rows.length === 0 ? (
         <EmptyState icon="truck" title={dt.empty[tab]} message="" />
       ) : (
@@ -616,7 +658,7 @@ function Board({ orgId, branchId }: { orgId: string; branchId: string }) {
       )}
       {adding && <NewDeliveryDialog orgId={orgId} branchId={branchId} view={v} onClose={() => setAdding(false)} onSaved={changed} />}
       {open?.kind === 'dispatch' && <DispatchDialog orgId={orgId} delivery={open.d} view={v} onClose={() => setOpen(null)} onSaved={changed} />}
-      {open?.kind === 'report' && reportLoans.data && <ReportDialog orgId={orgId} delivery={open.d} loans={reportLoans.data} onClose={() => setOpen(null)} onSaved={changed} />}
+      {open?.kind === 'report' && <BoardReportDialog orgId={orgId} delivery={open.d} onClose={() => setOpen(null)} onSaved={changed} />}
       {open?.kind === 'fee' && <FeeDialog orgId={orgId} delivery={open.d} onClose={() => setOpen(null)} onSaved={changed} />}
       {open?.kind === 'cancel' && (
         <ConfirmWithReason
