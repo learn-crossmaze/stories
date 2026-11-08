@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { db } from '../../src/core/firebase.js';
 import * as att from '../../src/hr/attendance.js';
+import * as emp from '../../src/hr/employees.js';
 import { businessDate, datesOfMonth, weekdayOf } from '../../src/hr/attendanceRules.js';
 import * as schedule from '../../src/hr/schedule.js';
 import * as branches from '../../src/organization/branches.js';
@@ -130,5 +131,52 @@ describe('month finalization', () => {
     await call(att.finalize, hr, { orgId: org, month: lastMonth, branchId: central }, null);
     const again = (await db.doc(`orgs/${org}/attendanceSummaries/${workerId}_${lastMonth}`).get()).data()!;
     expect(again).toMatchObject({ present: 2, holidays: 0, stale: false });
+  });
+});
+
+describe('finalizing safely', () => {
+  it('follows people who moved branch, keeps their punches, and drops summaries a branch no longer covers', async () => {
+    const north = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'NOR', name: 'North', address, contact })).branchId;
+    await adjust(bm, workerId, d1, '09:30', '18:00'); // stamped with Central
+    await call(att.finalize, hr, { orgId: org, month: lastMonth, branchId: central }, null);
+    expect((await db.doc(`orgs/${org}/attendanceSummaries/${workerId}_${lastMonth}`).get()).get('branchId')).toBe(central);
+    await call(att.reopen, hr, { orgId: org, month: lastMonth, branchId: central, reason: 'Transfer back-dated' });
+
+    // The worker moves to North; Central's month no longer covers them.
+    await call(emp.update, hr, { orgId: org, employeeId: workerId, fullName: 'Worker', branchId: north });
+    expect((await call<{ employees: number }>(att.finalize, hr, { orgId: org, month: lastMonth, branchId: central }, null)).employees).toBe(2);
+    expect((await db.doc(`orgs/${org}/attendanceSummaries/${workerId}_${lastMonth}`).get()).exists).toBe(false);
+
+    // North's month counts the day recorded at Central, and finalizing never clears the punches.
+    expect((await call<{ employees: number }>(att.finalize, hr, { orgId: org, month: lastMonth, branchId: north }, null)).employees).toBe(1);
+    const summary = (await db.doc(`orgs/${org}/attendanceSummaries/${workerId}_${lastMonth}`).get()).data()!;
+    expect(summary).toMatchObject({ branchId: north, present: 1, stale: false });
+    const day = await rec(workerId, d1);
+    expect(day).toMatchObject({ status: 'PRESENT', finalized: true, source: 'ADJUSTED' });
+    expect(day.checkIn).not.toBeNull();
+    expect(day.checkOut).not.toBeNull();
+  });
+
+  it('closes the month before reading it: nothing changes while it is being finalized', async () => {
+    const lock = db.doc(`orgs/${org}/attendanceLocks/${lastMonth}_${central}`);
+    await lock.set({ orgId: org, month: lastMonth, branchId: central, status: 'FINALIZING', finalizeId: 'other', previousStatus: null, finalizingAt: new Date() });
+    expect(await failure(adjust(bm, workerId, d1, '09:30', '18:00'))).toBe('MONTH_FINALIZED');
+    expect(await failure(call(att.requestCorrection, worker, { orgId: org, date: d2, checkIn: '09:30', checkOut: '18:00', reason: 'Forgot' }))).toBe('MONTH_FINALIZED');
+    expect(await failure(call(att.finalize, hr, { orgId: org, month: lastMonth, branchId: central }, null))).toBe('MONTH_FINALIZING');
+    expect(await failure(call(att.reopen, hr, { orgId: org, month: lastMonth, branchId: central, reason: 'Stuck' }))).toBe('NOT_FINALIZED');
+
+    // A run that never finished is taken over after a while.
+    await lock.update({ finalizingAt: new Date(Date.now() - 60 * 60_000) });
+    await call(att.finalize, hr, { orgId: org, month: lastMonth, branchId: central }, null);
+    const done = (await lock.get()).data()!;
+    expect(done.status).toBe('FINALIZED');
+    expect(done.finalizingAt).toBeUndefined();
+    expect(done.finalizeId).not.toBe('other');
+
+    // A refused finalization leaves the month as it was.
+    await call(att.reopen, hr, { orgId: org, month: lastMonth, branchId: central, reason: 'Late entries' });
+    await call(att.requestCorrection, worker, { orgId: org, date: d2, checkIn: '09:30', checkOut: '18:00', reason: 'Forgot' });
+    expect(await failure(call(att.finalize, hr, { orgId: org, month: lastMonth, branchId: central }, null))).toBe('CORRECTIONS_PENDING');
+    expect((await lock.get()).get('status')).toBe('REOPENED');
   });
 });

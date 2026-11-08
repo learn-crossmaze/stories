@@ -3,6 +3,7 @@
  * unit tested. All times are India time: a business date is 'YYYY-MM-DD' and a
  * shift time is 'HH:MM' on that date.
  */
+import { dateKeyIST } from '../core/time.js';
 
 export type Weekday = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
 export const WEEKDAYS: Weekday[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
@@ -30,8 +31,6 @@ export interface ShiftRules {
 /** Used when an employee has no shift: no lateness, 8 hours for a full day. */
 export const DEFAULT_RULES: ShiftRules = { start: '09:00', end: '17:00', breakMinutes: 0, graceMinutes: 0, halfDayMinutes: 240, fullDayMinutes: 480 };
 
-const IST_OFFSET_MS = 330 * 60_000;
-
 /** Instant of 'HH:MM' India time on a business date. */
 export const atIST = (date: string, time: string) => Date.parse(`${date}T${time}:00+05:30`);
 
@@ -46,8 +45,8 @@ export function datesOfMonth(month: string): string[] {
   return Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
-/** The business date (India) of an instant. */
-export const businessDate = (ms: number) => new Date(ms + IST_OFFSET_MS).toISOString().slice(0, 10);
+/** The business date (India) of an instant (core/time.ts dateKeyIST). */
+export const businessDate = (ms: number) => dateKeyIST(new Date(ms));
 
 export interface DayResult {
   status: DayStatus;

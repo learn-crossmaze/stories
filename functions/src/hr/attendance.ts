@@ -1,4 +1,7 @@
-import { FieldValue, type DocumentSnapshot, Timestamp, type Transaction } from 'firebase-admin/firestore';
+import { randomUUID } from 'node:crypto';
+
+import { FieldValue, type DocumentReference, type DocumentSnapshot, Timestamp, type Transaction, type WriteBatch } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { z } from 'zod';
 
 import { recordAudit, recordAuditNow } from '../core/audit.js';
@@ -8,19 +11,8 @@ import { LINKS, notify } from '../core/notify.js';
 import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
-import {
-  atIST,
-  businessDate,
-  datesOfMonth,
-  type DayLeave,
-  DEFAULT_RULES,
-  evaluateDay,
-  monthOf,
-  type ShiftRules,
-  summarize,
-  type Weekday,
-  weekdayOf,
-} from './attendanceRules.js';
+import { atIST, businessDate, datesOfMonth, type DayLeave, DEFAULT_RULES, evaluateDay, monthOf, type ShiftRules, summarize, weekdayOf } from './attendanceRules.js';
+import { auditCtx, date, holidayApplies, month, time, WORKING, weeklyOffsOf } from './common.js';
 import { canFor, employeesCol, loadEmployee, requireFor } from './model.js';
 
 /**
@@ -31,16 +23,18 @@ import { canFor, employeesCol, loadEmployee, requireFor } from './model.js';
  * no longer changes until it is reopened.
  */
 
-const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a date (YYYY-MM-DD)');
-const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'must be HH:MM');
-const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'must be a month (YYYY-MM)');
-
 export const recordRef = (orgId: string, employeeId: string, day: string) => db.doc(`orgs/${orgId}/attendance/${employeeId}_${day}`);
 export const lockId = (m: string, branchId: string | null) => `${m}_${branchId ?? 'HO'}`;
 export const lockRef = (orgId: string, m: string, branchId: string | null) => db.doc(`orgs/${orgId}/attendanceLocks/${lockId(m, branchId)}`);
-const auditCtx = (actor: Actor, requestId?: string) => ({ actorUid: actor.uid, actorEmail: actor.email, requestId });
 
-const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
+/**
+ * A month no longer changes while it is being finalized (FINALIZING, set
+ * before finalization reads anything) and once it is finalized.
+ */
+const CLOSED = ['FINALIZING', 'FINALIZED'];
+export const isClosed = (lock: DocumentSnapshot) => lock.exists && CLOSED.includes(lock.get('status'));
+/** A finalization that has not finished in this long is taken to have failed; finalizing again takes over. */
+const FINALIZING_TIMEOUT_MS = 15 * 60_000;
 
 export interface DayContext {
   rules: ShiftRules;
@@ -61,15 +55,13 @@ export async function dayContext(tx: Transaction, orgId: string, employee: Docum
     tx.get(db.doc(`orgs/${orgId}/holidays/${day}`)),
     tx.get(lockRef(orgId, monthOf(day), branchId)),
   ]);
-  const offs = ((employee.get('weeklyOffs') as Weekday[] | null | undefined) ?? (branch?.get('weeklyOffs') as Weekday[] | undefined) ?? []) as Weekday[];
-  const hb = holiday.exists ? ((holiday.get('branchIds') as string[]) ?? []) : null;
   return {
     rules: shift?.exists ? (shift.data() as ShiftRules) : DEFAULT_RULES,
     shiftId: shift?.exists ? shiftId : null,
     shiftName: shift?.exists ? (shift.get('name') as string) : null,
-    weeklyOff: offs.includes(weekdayOf(day)),
-    holiday: hb !== null && (hb.length === 0 || (!!branchId && hb.includes(branchId))),
-    locked: lock.exists && lock.get('status') === 'FINALIZED',
+    weeklyOff: weeklyOffsOf(employee, branch).includes(weekdayOf(day)),
+    holiday: holiday.exists && holidayApplies(holiday.get('branchIds') as string[] | undefined, branchId),
+    locked: isClosed(lock),
   };
 }
 
@@ -121,7 +113,7 @@ export async function ownEmployee(tx: Transaction, orgId: string, actor: Actor) 
 }
 
 export function ensureWorking(employee: DocumentSnapshot) {
-  if (!WORKING.includes(employee.get('status'))) throw errors.conflict('NOT_WORKING', `${employee.get('fullName')} is not currently employed here.`);
+  if (!WORKING.includes(employee.get('status') as string)) throw errors.conflict('NOT_WORKING', `${employee.get('fullName')} is not currently employed here.`);
 }
 
 /**
@@ -325,13 +317,27 @@ async function employeesFor(orgId: string, branchId: string | null, m: string) {
 
 const BATCH = 400;
 
+/** The fields of a day record that finalization sets: its evaluation, never the punches or leave. */
+function evaluationOf(record: ReturnType<typeof recordFor>) {
+  const { checkIn: _in, checkOut: _out, leave: _leave, ...rest } = record;
+  return rest;
+}
+
 /**
  * Closes a month for a branch (`branchId: null` = head office staff): every
- * employed day gets a final record (missing days become absent, weekly off or
- * holiday; a missing check-out counts as a half day), each employee gets a
+ * employed day gets a final evaluation (missing days become absent, weekly off
+ * or holiday; a missing check-out counts as a half day), each employee gets a
  * monthly summary with payable days, and the month is locked. Refused while
- * corrections wait for a decision. Safe to repeat after a reopen: record ids
- * are fixed and each run rewrites them.
+ * corrections or leave wait for a decision.
+ *
+ * The month is closed first (lock FINALIZING, in the transaction that checks
+ * nothing is pending), so punches, corrections and leave decisions for it are
+ * refused while records are read and evaluated; a last transaction marks it
+ * FINALIZED (a failure puts the lock back as it was). Records are read per
+ * employee, so someone who moved here during the month keeps the days
+ * recorded at their old branch. Only evaluation fields are written: punches
+ * and leave on a record are never touched. Safe to repeat after a reopen:
+ * summaries of people the month no longer covers are removed.
  */
 export const finalize = query(
   'attendance-finalize',
@@ -339,107 +345,142 @@ export const finalize = query(
   async ({ actor, input }) => {
     const { orgId, branchId } = input;
     const m = input.month;
-    await db.runTransaction(async (tx) => requireFor(actor, 'attendance.finalize', orgId, branchId, tx));
-    if (m >= monthOf(businessDate(Date.now()))) throw errors.invalid('A month can be finalized once it is over.');
-    const lock = await lockRef(orgId, m, branchId).get();
-    if (lock.exists && lock.get('status') === 'FINALIZED') throw errors.conflict('MONTH_FINALIZED', 'This month is already finalized.');
-    const pending = await db
-      .collection(`orgs/${orgId}/attendanceCorrections`)
-      .where('month', '==', m)
-      .where('branchId', '==', branchId)
-      .where('status', '==', 'PENDING')
-      .get();
-    if (!pending.empty) throw errors.conflict('CORRECTIONS_PENDING', `Decide the ${pending.size} correction${pending.size === 1 ? '' : 's'} waiting for approval first.`);
-    const leave = await db
-      .collection(`orgs/${orgId}/leaveRequests`)
-      .where('months', 'array-contains', m)
-      .where('branchId', '==', branchId)
-      .where('status', '==', 'PENDING')
-      .get();
-    if (!leave.empty) throw errors.conflict('LEAVE_PENDING', `Decide the ${leave.size} leave request${leave.size === 1 ? '' : 's'} waiting for approval first.`);
+    const ref = lockRef(orgId, m, branchId);
+    const finalizeId = randomUUID();
+    const previous = await db.runTransaction(async (tx) => {
+      await requireFor(actor, 'attendance.finalize', orgId, branchId, tx);
+      if (m >= monthOf(businessDate(Date.now()))) throw errors.invalid('A month can be finalized once it is over.');
+      const [lock, pending, leave] = await Promise.all([
+        tx.get(ref),
+        tx.get(db.collection(`orgs/${orgId}/attendanceCorrections`).where('month', '==', m).where('branchId', '==', branchId).where('status', '==', 'PENDING')),
+        tx.get(db.collection(`orgs/${orgId}/leaveRequests`).where('months', 'array-contains', m).where('branchId', '==', branchId).where('status', '==', 'PENDING')),
+      ]);
+      const status = (lock.get('status') as string | undefined) ?? null;
+      if (status === 'FINALIZED') throw errors.conflict('MONTH_FINALIZED', 'This month is already finalized.');
+      if (status === 'FINALIZING' && Date.now() - (ms(lock.get('finalizingAt')) ?? 0) < FINALIZING_TIMEOUT_MS)
+        throw errors.conflict('MONTH_FINALIZING', 'This month is being finalized. Try again in a few minutes.');
+      if (!pending.empty) throw errors.conflict('CORRECTIONS_PENDING', `Decide the ${pending.size} correction${pending.size === 1 ? '' : 's'} waiting for approval first.`);
+      if (!leave.empty) throw errors.conflict('LEAVE_PENDING', `Decide the ${leave.size} leave request${leave.size === 1 ? '' : 's'} waiting for approval first.`);
+      // What to go back to if this run fails (taking over a stalled run: what that run would have gone back to).
+      const before = status === 'FINALIZING' ? ((lock.get('previousStatus') as string | null | undefined) ?? null) : status;
+      tx.set(ref, { orgId, month: m, branchId, status: 'FINALIZING', finalizeId, previousStatus: before, finalizingBy: actor.uid, finalizingAt: FieldValue.serverTimestamp() }, { merge: true });
+      return before;
+    });
 
-    const days = datesOfMonth(m);
-    const [employees, shifts, holidays, branch, records] = await Promise.all([
-      employeesFor(orgId, branchId, m),
-      db.collection(`orgs/${orgId}/shifts`).get(),
-      db.collection(`orgs/${orgId}/holidays`).where('date', '>=', days[0]).where('date', '<=', days.at(-1)!).get(),
-      branchId ? db.doc(`orgs/${orgId}/branches/${branchId}`).get() : null,
-      db.collection(`orgs/${orgId}/attendance`).where('month', '==', m).where('branchId', '==', branchId).get(),
-    ]);
-    const shiftById = new Map(shifts.docs.map((s) => [s.id, s]));
-    const holidayOn = new Map(holidays.docs.map((h) => [h.id, (h.get('branchIds') as string[]) ?? []]));
-    const existing = new Map(records.docs.map((r) => [r.id, r]));
-    const branchOffs = ((branch?.get('weeklyOffs') as Weekday[] | undefined) ?? []) as Weekday[];
+    let covered = 0;
+    let totalPayable = 0;
+    try {
+      const days = datesOfMonth(m);
+      const [employees, shifts, holidays, branch, oldSummaries] = await Promise.all([
+        employeesFor(orgId, branchId, m),
+        db.collection(`orgs/${orgId}/shifts`).get(),
+        db.collection(`orgs/${orgId}/holidays`).where('date', '>=', days[0]).where('date', '<=', days.at(-1)!).get(),
+        branchId ? db.doc(`orgs/${orgId}/branches/${branchId}`).get() : null,
+        db.collection(`orgs/${orgId}/attendanceSummaries`).where('month', '==', m).where('branchId', '==', branchId).get(),
+      ]);
+      covered = employees.length;
+      const shiftById = new Map(shifts.docs.map((s) => [s.id, s]));
+      const holidayOn = new Map(holidays.docs.map((h) => [h.id, h.get('branchIds') as string[] | undefined]));
 
-    let batch = db.batch();
-    let ops = 0;
-    const put = async (ref: FirebaseFirestore.DocumentReference, data: Record<string, unknown>) => {
-      batch.set(ref, data, { merge: true });
-      if (++ops >= BATCH) {
-        await batch.commit();
+      let batch = db.batch();
+      let ops = 0;
+      const flush = async () => {
+        if (ops) await batch.commit();
         batch = db.batch();
         ops = 0;
+      };
+      const put = async (write: (b: WriteBatch) => void) => {
+        write(batch);
+        if (++ops >= BATCH) await flush();
+      };
+      for (const e of employees) {
+        const shift = e.get('shiftId') ? shiftById.get(e.get('shiftId')) : undefined;
+        const offs = weeklyOffsOf(e, branch);
+        const joined = (e.get('joiningDate') as string | null) ?? null;
+        const exit = (e.get('exitDate') as string | null) ?? null;
+        const employed = days.filter((day) => !((joined && day < joined) || (exit && day > exit)));
+        const records = employed.length ? await db.getAll(...employed.map((day) => recordRef(orgId, e.id, day))) : [];
+        const results = [];
+        for (const [i, day] of employed.entries()) {
+          const ctx: DayContext = {
+            rules: shift ? (shift.data() as ShiftRules) : DEFAULT_RULES,
+            shiftId: shift ? shift.id : null,
+            shiftName: shift ? (shift.get('name') as string) : null,
+            weeklyOff: offs.includes(weekdayOf(day)),
+            holiday: holidayOn.has(day) && holidayApplies(holidayOn.get(day), branchId),
+            locked: false,
+          };
+          const prior = records[i].exists ? records[i] : undefined;
+          const record = recordFor(orgId, e, day, ctx, ms(prior?.get('checkIn')), ms(prior?.get('checkOut')), (prior?.get('source') as string | undefined) ?? 'FINALIZE', leaveOf(prior), true);
+          results.push(record);
+          await put((b) => b.set(records[i].ref, { ...evaluationOf(record), finalized: true }, { merge: true }));
+        }
+        const summary = summarize(results);
+        totalPayable += summary.payableDays;
+        await put((b) =>
+          b.set(db.doc(`orgs/${orgId}/attendanceSummaries/${e.id}_${m}`), {
+            orgId,
+            employeeId: e.id,
+            employeeName: e.get('fullName'),
+            employeeCode: e.get('code'),
+            employeeUid: e.get('uid') ?? null,
+            branchId,
+            month: m,
+            ...summary,
+            stale: false,
+            finalizeId,
+            finalizedAt: FieldValue.serverTimestamp(),
+          }),
+        );
       }
-    };
-    let totalPayable = 0;
-    for (const e of employees) {
-      const shift = e.get('shiftId') ? shiftById.get(e.get('shiftId')) : undefined;
-      const offs = ((e.get('weeklyOffs') as Weekday[] | null | undefined) ?? branchOffs) as Weekday[];
-      const joined = (e.get('joiningDate') as string | null) ?? null;
-      const exit = (e.get('exitDate') as string | null) ?? null;
-      const results = [];
-      for (const day of days) {
-        if ((joined && day < joined) || (exit && day > exit)) continue;
-        const hb = holidayOn.get(day);
-        const ctx: DayContext = {
-          rules: shift ? (shift.data() as ShiftRules) : DEFAULT_RULES,
-          shiftId: shift ? shift.id : null,
-          shiftName: shift ? (shift.get('name') as string) : null,
-          weeklyOff: offs.includes(weekdayOf(day)),
-          holiday: hb !== undefined && (hb.length === 0 || (!!branchId && hb.includes(branchId))),
-          locked: false,
-        };
-        const prior = existing.get(`${e.id}_${day}`);
-        const record = recordFor(orgId, e, day, ctx, ms(prior?.get('checkIn')), ms(prior?.get('checkOut')), (prior?.get('source') as string | undefined) ?? 'FINALIZE', leaveOf(prior), true);
-        results.push(record);
-        await put(recordRef(orgId, e.id, day), { ...record, finalized: true });
-      }
-      const summary = summarize(results);
-      totalPayable += summary.payableDays;
-      await put(db.doc(`orgs/${orgId}/attendanceSummaries/${e.id}_${m}`), {
-        orgId,
-        employeeId: e.id,
-        employeeName: e.get('fullName'),
-        employeeCode: e.get('code'),
-        employeeUid: e.get('uid') ?? null,
-        branchId,
-        month: m,
-        ...summary,
-        stale: false,
-        finalizedAt: FieldValue.serverTimestamp(),
+      // People this month no longer covers here (moved to another branch, or not employed in it after all).
+      const keep = new Set(employees.map((e) => e.id));
+      for (const s of oldSummaries.docs) if (!keep.has(s.get('employeeId'))) await put((b) => b.delete(s.ref));
+      await flush();
+
+      await db.runTransaction(async (tx) => {
+        const lock = await tx.get(ref);
+        if (lock.get('status') !== 'FINALIZING' || lock.get('finalizeId') !== finalizeId)
+          throw errors.conflict('FINALIZE_INTERRUPTED', 'Someone else finalized this month meanwhile. Check it before trying again.');
+        tx.update(ref, {
+          status: 'FINALIZED',
+          employees: employees.length,
+          finalizedBy: actor.uid,
+          finalizedByEmail: actor.email,
+          finalizedAt: FieldValue.serverTimestamp(),
+          previousStatus: FieldValue.delete(),
+          finalizingBy: FieldValue.delete(),
+          finalizingAt: FieldValue.delete(),
+        });
       });
+    } catch (e) {
+      await restoreLock(ref, finalizeId, previous);
+      throw e;
     }
-    await put(lockRef(orgId, m, branchId), {
-      orgId,
-      month: m,
-      branchId,
-      status: 'FINALIZED',
-      employees: employees.length,
-      finalizedBy: actor.uid,
-      finalizedByEmail: actor.email,
-      finalizedAt: FieldValue.serverTimestamp(),
-    });
-    if (ops) await batch.commit();
     await recordAuditNow(auditCtx(actor), orgId, {
       action: 'attendance.finalize',
       entityType: 'attendanceMonth',
       entityId: lockId(m, branchId),
       branchId,
-      after: { month: m, employees: employees.length, payableDays: totalPayable },
+      after: { month: m, employees: covered, payableDays: totalPayable },
     });
-    return { month: m, employees: employees.length };
+    return { month: m, employees: covered };
   },
 );
+
+/** Puts back the lock of a month whose finalization failed (unless another run has taken it over). */
+async function restoreLock(ref: DocumentReference, finalizeId: string, previous: string | null) {
+  try {
+    await db.runTransaction(async (tx) => {
+      const lock = await tx.get(ref);
+      if (lock.get('status') !== 'FINALIZING' || lock.get('finalizeId') !== finalizeId) return;
+      if (previous === null) tx.delete(ref);
+      else tx.update(ref, { status: previous, previousStatus: FieldValue.delete(), finalizingBy: FieldValue.delete(), finalizingAt: FieldValue.delete() });
+    });
+  } catch (e) {
+    logger.error(`attendance-finalize: could not restore ${ref.path} after a failure`, e);
+  }
+}
 
 /** Reopens a finalized month so days can be corrected; summaries are marked out of date until it is finalized again. */
 export const reopen = command(
@@ -454,7 +495,7 @@ export const reopen = command(
     // Payroll is worked out from this month: an approved or submitted run fixes it; a draft must be prepared again.
     const run = await tx.get(db.doc(`orgs/${input.orgId}/payrollRuns/${ref.id}`));
     if (run.exists && ['SUBMITTED', 'APPROVED'].includes(run.get('status'))) throw errors.conflict('PAYROLL_LOCKED', `Payroll for ${input.month} is ${run.get('status') === 'APPROVED' ? 'approved' : 'waiting for approval'}, so attendance can no longer change.`);
-    if (run.exists) tx.update(run.ref, { stale: true });
+    if (run.exists) tx.update(run.ref, { stale: true, version: FieldValue.increment(1) });
     tx.update(ref, { status: 'REOPENED', reopenedBy: actor.uid, reopenReason: input.reason, reopenedAt: FieldValue.serverTimestamp() });
     for (const s of summaries.docs) tx.update(s.ref, { stale: true });
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
