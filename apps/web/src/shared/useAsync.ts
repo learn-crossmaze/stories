@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { errorText } from '../data/api';
 import { t } from '../strings';
+import { reportError } from './reportError';
 
 export interface AsyncState<T> {
   data: T | undefined;
@@ -25,11 +27,9 @@ export function useAsync<T>(load: () => Promise<T>, deps: unknown[]): AsyncState
     run().then(
       (data) => live && setState({ data, error: null, loading: false }),
       (e: unknown) => {
-        console.error(e);
-        const code = (e as { code?: string }).code;
-        // failed-precondition: a database index is missing or still building (after a deploy).
-        const message = code === 'permission-denied' ? t.errorForbidden : code === 'failed-precondition' ? t.errorIndex : t.errorLoad;
-        if (live) setState({ error: message, loading: false });
+        reportError(e, 'load');
+        // Plain words for missing permission, a database index still building (after a deploy), or no connection.
+        if (live) setState({ error: errorText(e, t.errorLoad), loading: false });
       },
     );
     return () => {

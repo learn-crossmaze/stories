@@ -29,11 +29,16 @@
   "hosting": {
     "public": "apps/web/dist",
     "ignore": [
-      "**/.*"
+      "**/.*",
+      "**/*.map"
     ],
     "rewrites": [
       {
-        "source": "**",
+        "source": "/!(assets)",
+        "destination": "/index.html"
+      },
+      {
+        "source": "/!(assets)/**",
         "destination": "/index.html"
       }
     ],

@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from './auth/AuthContext';
 import { homeViewFor, isStaff, type ViewId } from './auth/claims';
 import { MemberShell } from './member/MemberShell';
+import { RouteError } from './shared/RouteError';
 import { SetupPage } from './public/Setup';
 import { SignInPage } from './public/SignIn';
 import { authRedirect, paths, viewHome } from './paths';
@@ -41,6 +42,8 @@ function StaffGate({ view }: { view: ViewId }) {
 export const routes = [
   {
     element: <AuthGate />,
+    // A page that fails to render or load (e.g. a chunk from before a deploy) shows this, not a blank screen.
+    errorElement: <RouteError />,
     children: [
       { path: paths.signIn, element: <SignInPage /> },
       { path: paths.setup, element: <SetupPage /> },

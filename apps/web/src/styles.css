@@ -176,6 +176,9 @@ h2 { font-size: 22px; line-height: 1.25; }
 .empty-state p { color: var(--on-surface-muted); margin: 0; }
 .empty-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: var(--secondary-container); margin-bottom: 8px; }
 .empty-icon .icon { width: 32px; height: 32px; }
+.route-error { padding: 0 16px; }
+.route-error h1:focus { outline: none; }
+.route-error .row { justify-content: center; margin-top: 8px; }
 .profile { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .profile .btn { margin-top: 16px; }
 
