@@ -9,7 +9,8 @@ import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id } from '../core/schemas.js';
 import { handleRefundEvent } from './refunds.js';
-import { readSettlement, writeSettlement } from './subscriptions.js';
+import { cancelAtGateway, closeAtRazorpay, requestRef } from './requests.js';
+import { readSettlement, settlementProblem, writeSettlement } from './subscriptions.js';
 import { upgradeProblem } from './upgrade.js';
 import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 import {
@@ -27,9 +28,10 @@ import {
 
 const LINK_DAYS = 7;
 const QR_MINUTES = 30;
+/** How long a claim to make a payment request for a subscription lasts if its call dies before finishing. */
+const LOCK_MS = 120_000;
 
 export type Channel = 'LINK' | 'QR' | 'QR_LINK';
-const requestRef = (orgId: string, gatewayId: string) => db.doc(`orgs/${orgId}/paymentRequests/${gatewayId}`);
 
 // ------------------------------------------------------------------ branch settings
 
@@ -122,16 +124,45 @@ export async function requestOnlinePayment(
     const replay = await col.where('requestId', '==', input.requestId).limit(1).get();
     if (!replay.empty) return describe(replay.docs[0]);
 
-    const sub = await db.doc(`orgs/${input.orgId}/subscriptions/${input.subscriptionId}`).get();
-    if (!sub.exists) throw errors.notFound('Subscription');
+    // Read and claim: only one call at a time may ask Razorpay for this subscription and channel
+    // (two at once would make two payment links). The lock lapses by itself if this call dies.
+    const subRef = db.doc(`orgs/${input.orgId}/subscriptions/${input.subscriptionId}`);
+    const lockRef = db.doc(`orgs/${input.orgId}/paymentRequestLocks/${input.subscriptionId}_${input.channel}`);
+    const claimed = await db.runTransaction(async (tx) => {
+      const sub = await tx.get(subRef);
+      if (!sub.exists) throw errors.notFound('Subscription');
+      await authorize(sub);
+      if (sub.get('status') !== 'PENDING_PAYMENT') throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment (it may already be paid).');
+      const [open, lock] = await Promise.all([tx.get(col.where('subscriptionId', '==', input.subscriptionId).where('status', '==', 'OPEN')), tx.get(lockRef)]);
+      const reusable = open.docs.find((d) => (input.channel === 'LINK' ? d.get('channel') === 'LINK' : d.get('channel') !== 'LINK') && (d.get('expiresAt') as Timestamp).toMillis() > Date.now() + 60_000);
+      if (reusable) return { reusable, sub };
+      if (lock.exists && (lock.get('expiresAt') as Timestamp).toMillis() > Date.now()) {
+        throw errors.conflict('REQUEST_IN_PROGRESS', 'A payment request for this subscription is being made right now. Try again in a moment.');
+      }
+      tx.set(lockRef, { requestId: input.requestId, createdAt: FieldValue.serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + LOCK_MS) });
+      return { reusable: null, sub };
+    });
+    if (claimed.reusable) return describe(claimed.reusable);
+    try {
+      return await makeRequest({ actor, input }, claimed.sub, lockRef, notify);
+    } catch (e) {
+      // Release the claim (if it is still ours) so the next try doesn't wait for it to lapse.
+      await db.runTransaction(async (tx) => {
+        const lock = await tx.get(lockRef);
+        if (lock.get('requestId') === input.requestId) tx.delete(lockRef);
+      }).catch(() => undefined);
+      throw e;
+    }
+}
+
+/** Asks Razorpay for the link / QR code, then records it (the caller holds the subscription's claim). */
+async function makeRequest(
+  { actor, input }: Pick<CallContext<z.infer<typeof createRequestSchema>>, 'actor' | 'input'>,
+  sub: FirebaseFirestore.DocumentSnapshot,
+  lockRef: FirebaseFirestore.DocumentReference,
+  notify: boolean,
+) {
     const branchId = sub.get('branchId') as string;
-    await authorize(sub);
-    if (sub.get('status') !== 'PENDING_PAYMENT') throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment (it may already be paid).');
-
-    const open = await col.where('subscriptionId', '==', input.subscriptionId).where('status', '==', 'OPEN').get();
-    const reusable = open.docs.find((d) => (input.channel === 'LINK' ? d.get('channel') === 'LINK' : d.get('channel') !== 'LINK') && (d.get('expiresAt') as Timestamp).toMillis() > Date.now() + 60_000);
-    if (reusable) return describe(reusable);
-
     // An upgrade's price holds only until its quote lapses; its link closes then too.
     const lapses = sub.get('kind') === 'UPGRADE' ? (sub.get('upgrade.validUntil') as Timestamp).toMillis() : Infinity;
     if (lapses < Date.now() + 20 * 60_000) {
@@ -211,7 +242,11 @@ export async function requestOnlinePayment(
     }
 
     const ref = requestRef(input.orgId, gatewayId!);
-    await db.runTransaction(async (tx) => {
+    // Record it, unless the subscription was cancelled or paid meanwhile: then the new link is cancelled at once.
+    const stillPending = await db.runTransaction(async (tx) => {
+      const [now, lock] = await Promise.all([tx.get(sub.ref), tx.get(lockRef)]);
+      const pending = now.get('status') === 'PENDING_PAYMENT';
+      if (lock.get('requestId') === input.requestId) tx.delete(lockRef);
       tx.create(ref, {
         gateway: 'razorpay',
         mode: creds.settings.mode,
@@ -225,7 +260,8 @@ export async function requestOnlinePayment(
         memberName: member.get('fullName'),
         branchId,
         amountMinor: amount,
-        status: 'OPEN',
+        status: pending ? 'OPEN' : 'CANCELLED',
+        ...(pending ? {} : { cancelReason: 'The subscription was no longer waiting for payment', cancelledAt: FieldValue.serverTimestamp() }),
         sentTo,
         requestId: input.requestId,
         createdBy: actor.uid,
@@ -233,14 +269,19 @@ export async function requestOnlinePayment(
         expiresAt: Timestamp.fromDate(expiresAt!),
       });
       // Staff sending a link: it also goes on WhatsApp when the branch sends payment links there.
-      if (notify && channel === 'LINK' && url) {
+      if (pending && notify && channel === 'LINK' && url) {
         queueWhatsApp(tx, { orgId: input.orgId, branchId, event: 'payment_link', memberId: member.id, vars: { amount: rupeesText(amount), payment_link: url }, ref: { subscriptionId: input.subscriptionId } });
       }
       recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId: input.requestId }, input.orgId, {
         action: 'payment.requestOnline', entityType: 'subscription', entityId: input.subscriptionId, branchId, memberId: member.id,
-        after: { channel, gatewayId: gatewayId!, amountMinor: amount, sentTo },
+        after: { channel, gatewayId: gatewayId!, amountMinor: amount, sentTo, ...(pending ? {} : { cancelled: true }) },
       });
+      return pending;
     });
+    if (!stillPending) {
+      await cancelAtGateway(input.orgId, [gatewayId!]);
+      throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment any more (it was paid or cancelled just now).');
+    }
     return describe(await ref.get());
 }
 
@@ -288,11 +329,13 @@ export async function applyGatewayPayment(orgId: string, gatewayId: string, paid
     const channel = req.get('channel') as Channel;
     const method = channel === 'LINK' ? 'ONLINE_LINK' : 'ONLINE_UPI_QR';
     const problem =
-      s.status !== 'PENDING_PAYMENT'
-        ? 'The subscription was no longer waiting for payment.'
-        : paid.amountMinor !== s.due.totalMinor
-          ? `Paid ₹${(paid.amountMinor / 100).toFixed(2)} but ₹${(s.due.totalMinor / 100).toFixed(2)} was due.`
-          : upgradeProblem(s.subSnap, s.term?.snap.id ?? null, null);
+      req.get('status') !== 'OPEN'
+        ? 'The payment request had been cancelled.'
+        : s.status !== 'PENDING_PAYMENT'
+          ? 'The subscription was no longer waiting for payment.'
+          : paid.amountMinor !== s.due.totalMinor
+            ? `Paid ₹${(paid.amountMinor / 100).toFixed(2)} but ₹${(s.due.totalMinor / 100).toFixed(2)} was due.`
+            : (settlementProblem(s) ?? upgradeProblem(s.subSnap, s.term?.snap.id ?? null, null));
 
     if (problem) {
       const payRef = db.collection(`orgs/${orgId}/payments`).doc();
@@ -369,27 +412,37 @@ export const checkRequest = query('payments-checkRequest', z.strictObject({ orgI
   return { status: 'PAID', ...r };
 });
 
-/** Cancels an unpaid link / closes an unused QR code. */
-export const cancelRequest = command(
+/**
+ * Cancels an unpaid link / closes an unused QR code. Razorpay is asked first,
+ * outside any transaction (a transaction may run more than once); a short
+ * transaction then records it if the request is still open. Naturally
+ * idempotent: a request already cancelled (here or at Razorpay) is done.
+ */
+export const cancelRequest = query(
   'payments-cancelRequest',
-  z.strictObject({ orgId: id, paymentRequestId: id }),
-  async ({ actor, input, requestId }, tx) => {
+  z.strictObject({ orgId: id, paymentRequestId: id, requestId: requestIdSchema.optional() }),
+  async ({ actor, input }) => {
     const ref = requestRef(input.orgId, input.paymentRequestId);
-    const req = await tx.get(ref);
+    const req = await ref.get();
     if (!req.exists) throw errors.notFound('Payment request');
-    await actor.require('payments.recordOffline', input.orgId, req.get('branchId'), tx);
+    await actor.require('payments.recordOffline', input.orgId, req.get('branchId'));
+    if (req.get('status') === 'CANCELLED') return { requestId: req.id };
     if (req.get('status') !== 'OPEN') throw errors.conflict('NOT_OPEN', 'This payment request is no longer open.');
-    const creds = await loadCredentials(tx, input.orgId, req.get('branchId'), { requireEnabled: false });
+    const creds = await loadCredentials(null, input.orgId, req.get('branchId'), { requireEnabled: false });
     try {
-      if (req.get('channel') === 'QR') await rzp(creds, 'POST', `/payments/qr_codes/${req.id}/close`);
-      else await rzp(creds, 'POST', `/payment_links/${req.id}/cancel`);
+      await closeAtRazorpay(creds, req.get('channel'), req.id);
     } catch (e) {
       gatewayError(e);
     }
-    tx.update(ref, { status: 'CANCELLED', cancelledBy: actor.uid, cancelledAt: FieldValue.serverTimestamp() });
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
-      action: 'payment.requestCancelled', entityType: 'subscription', entityId: req.get('subscriptionId'), branchId: req.get('branchId'), memberId: req.get('memberId'),
-      after: { gatewayId: req.id },
+    await db.runTransaction(async (tx) => {
+      const now = await tx.get(ref);
+      if (now.get('status') === 'CANCELLED') return;
+      if (now.get('status') !== 'OPEN') throw errors.conflict('NOT_OPEN', 'This payment request is no longer open (it was paid just now).');
+      tx.update(ref, { status: 'CANCELLED', cancelledBy: actor.uid, cancelledAt: FieldValue.serverTimestamp() });
+      recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId: input.requestId }, input.orgId, {
+        action: 'payment.requestCancelled', entityType: 'subscription', entityId: req.get('subscriptionId'), branchId: req.get('branchId'), memberId: req.get('memberId'),
+        after: { gatewayId: req.id },
+      });
     });
     return { requestId: req.id };
   },

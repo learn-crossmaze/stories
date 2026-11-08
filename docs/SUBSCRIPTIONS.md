@@ -79,6 +79,13 @@ needed (the whole balance is held until settlement).
   `deposits-decide` (`deposits.approve`, Finance) posts it. The proposer cannot approve their own request above
   `orgs/{o}/config/deposits.makerCheckerThresholdMinor` (default 0 = always a second person). Lost books create a
   proposal automatically.
-- **Settlement:** `deposits-startSettlement` once the term has ended and every book is back (account → SETTLING,
-  new subscriptions blocked) → resolve pending adjustments → `deposits-refund` (`deposits.refund`) pays out the
+- **Settlement:** `deposits-startSettlement` once the term has ended, every book is back and **no subscription is
+  waiting for payment** (cancel or collect it first — a payment link already sent could otherwise pay into a settled
+  deposit) (account → SETTLING, new subscriptions and counter payments blocked; money that still arrives online is
+  flagged `NEEDS_ATTENTION`) → resolve pending adjustments → `deposits-refund` (`deposits.refund`) pays out the
   balance, records an outgoing payment and closes the account (balance 0).
+- **A closed account takes no more adjustments** (`DEPOSIT_CLOSED` on proposing or approving; rejecting is still
+  possible). **A member who comes back** can subscribe again: paying the new subscription collects the deposit and
+  opens the account again (`status: OPEN`, `reopenedAt`; the payment's audit entry says `depositReopened`).
+- Cancelling an unpaid subscription, and suspending or closing a membership (which cancels any subscription waiting
+  for payment), also cancels its open payment links and QR codes (docs/PAYMENTS.md).

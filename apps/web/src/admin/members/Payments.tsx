@@ -19,7 +19,7 @@ import { useWorkspace } from '../Workspace';
 
 /** "UPI", "Razorpay link"… */
 export const methodLabel = (m: string) => lt.paymentMethods[m] ?? label(m.replace(/^(OFFLINE|ONLINE)_/, ''));
-const REFUND_TONE: Record<string, string> = { SUCCESS: 'ok', PENDING: 'info', PROCESSING: 'info', FAILED: 'danger' };
+const REFUND_TONE: Record<string, string> = { SUCCESS: 'ok', PENDING: 'info', PROCESSING: 'info', FAILED: 'danger', NEEDS_ATTENTION: 'warn' };
 
 /** Refund status in words: always text, never colour alone. */
 export function RefundBadge({ status }: { status: string }) {
@@ -226,7 +226,7 @@ function BranchPayments({ orgId, branchId }: { orgId: string; branchId: string }
                   </td>
                   <td>
                     <RefundBadge status={p.status} />
-                    {p.failure && <div className="muted small">{p.failure}</div>}
+                    {(p.failure || p.note) && <div className="muted small">{p.failure || p.note}</div>}
                   </td>
                   <td>
                     {p.reason}

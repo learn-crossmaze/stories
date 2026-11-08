@@ -10,6 +10,7 @@ import { addMonths } from '../core/time.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { balanceOf, depositRef, postLedger } from './ledger.js';
+import { cancelAtGateway, markRequestsCancelled, readOpenRequests } from './requests.js';
 import { DURATIONS, type Duration, planOptions, type Plan, priceFor } from './plans.js';
 import { currentTerm } from './term.js';
 import { quoteSchema, startUpgrade, upgradeProblem, upgradeQuote, upgradeSchema } from './upgrade.js';
@@ -64,7 +65,8 @@ export async function startSubscription(
       kind = 'RENEWAL';
     }
     const deposit = await tx.get(depositRef(input.orgId, input.memberId));
-    if (deposit.exists && deposit.get('status') !== 'OPEN') {
+    // A CLOSED account (settled and refunded earlier) opens again when this subscription is paid.
+    if (deposit.exists && deposit.get('status') === 'SETTLING') {
       throw errors.conflict('DEPOSIT_SETTLING', 'The deposit is being settled; finish the settlement before subscribing again.');
     }
 
@@ -128,7 +130,12 @@ export const upgrade = command('subscriptions-upgrade', upgradeSchema, (ctx, tx)
 
 export const cancelSchema = z.strictObject({ orgId: id, subscriptionId: id, reason });
 
-/** Cancels an unpaid subscription (staff, or the member it belongs to via me-cancelPending). */
+/**
+ * Cancels an unpaid subscription (staff, or the member it belongs to via
+ * me-cancelPending). Its open payment links / QR codes are cancelled in the
+ * same transaction (and at Razorpay after the commit, see `afterCancel`), so
+ * a link already sent can't activate it later.
+ */
 export async function cancelPendingSubscription(
   { actor, input, requestId }: CallContext<z.infer<typeof cancelSchema>>,
   tx: Transaction,
@@ -139,16 +146,24 @@ export async function cancelPendingSubscription(
     if (!snap.exists) throw errors.notFound('Subscription');
     await authorize(snap);
     if (snap.get('status') !== 'PENDING_PAYMENT') throw errors.conflict('NOT_PENDING', 'Only unpaid subscriptions can be cancelled here.');
+    const open = await readOpenRequests(tx, input.orgId, [input.subscriptionId]);
     tx.update(ref, { status: 'CANCELLED', updatedAt: FieldValue.serverTimestamp() });
+    markRequestsCancelled(tx, open, actor.uid, 'Subscription cancelled');
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'subscription.cancel', entityType: 'subscription', entityId: input.subscriptionId, branchId: snap.get('branchId'), memberId: snap.get('memberId'),
-      before: { status: 'PENDING_PAYMENT' }, after: { status: 'CANCELLED' }, reason: input.reason,
+      before: { status: 'PENDING_PAYMENT' }, after: { status: 'CANCELLED', paymentRequestsCancelled: open.map((r) => r.id) }, reason: input.reason,
     });
-    return { subscriptionId: input.subscriptionId };
+    return { subscriptionId: input.subscriptionId, cancelledRequestIds: open.map((r) => r.id) };
 }
 
-export const cancelPending = command('subscriptions-cancelPending', cancelSchema, (ctx, tx) =>
-  cancelPendingSubscription(ctx, tx, (sub) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, sub.get('branchId'), tx)),
+/** After cancelling: closes the cancelled payment requests at Razorpay (best effort). */
+export const afterCancel = (r: { cancelledRequestIds?: string[] }, ctx: { input: { orgId: string } }) => cancelAtGateway(ctx.input.orgId, r.cancelledRequestIds ?? []);
+
+export const cancelPending = command(
+  'subscriptions-cancelPending',
+  cancelSchema,
+  (ctx, tx) => cancelPendingSubscription(ctx, tx, (sub) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, sub.get('branchId'), tx)),
+  afterCancel,
 );
 
 const METHODS = ['OFFLINE_CASH', 'OFFLINE_UPI', 'OFFLINE_CARD', 'OFFLINE_BANK_TRANSFER'] as const;
@@ -176,6 +191,8 @@ export const recordOfflinePayment = command(
     if (s.status !== 'PENDING_PAYMENT') {
       throw errors.conflict('NOT_PENDING', 'This subscription is not waiting for payment (it may already be paid).');
     }
+    const blocked = settlementProblem(s);
+    if (blocked) throw errors.conflict('CANNOT_ACTIVATE', `${blocked} The payment can't be taken now.`);
     const stale = upgradeProblem(s.subSnap, s.term?.snap.id ?? null);
     if (stale) throw errors.conflict('UPGRADE_STALE', stale);
     if (input.amountMinor !== s.due.totalMinor) {
@@ -211,6 +228,18 @@ export async function readSettlement(tx: Transaction, orgId: string, subscriptio
   };
 }
 
+/**
+ * Why a pending subscription can't be activated now (besides the amount and
+ * upgrade checks), or null: the membership is suspended or closed, or the
+ * deposit is being settled. A counter payment is refused; money that arrives
+ * online is recorded for finance (NEEDS_ATTENTION) instead.
+ */
+export function settlementProblem(s: Awaited<ReturnType<typeof readSettlement>>): string | null {
+  if (s.member.status !== 'ACTIVE') return `The membership is ${s.member.status.toLowerCase()}.`;
+  if (s.deposit.exists && s.deposit.get('status') === 'SETTLING') return 'The deposit is being settled.';
+  return null;
+}
+
 export interface SettlementPayment {
   method: string;
   reference: string | null;
@@ -220,8 +249,9 @@ export interface SettlementPayment {
 
 /**
  * Records the payment, activates the subscription and collects the deposit
- * into the ledger (writes only; the caller has checked it is pending and the
- * amount matches). A renewal paid before the current term ends starts when
+ * into the ledger (writes only; the caller has checked it is pending, the
+ * amount matches and `settlementProblem` is clear). A CLOSED deposit account
+ * opens again. A renewal paid before the current term ends starts when
  * it ends (no gap, no overlap — D6). An upgrade starts now and ends the term
  * it replaces today (D7; the caller has checked upgradeProblem).
  */
@@ -287,6 +317,9 @@ export function writeSettlement(
       reference: { paymentId: payRef.id, subscriptionId }, actorUid: actor.uid,
     });
   }
+  // A member coming back after their deposit was settled: the account opens again.
+  const reopened = deposit.exists && deposit.get('status') === 'CLOSED';
+  if (reopened) tx.update(deposit.ref, { status: 'OPEN', reopenedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
   queueWhatsApp(tx, {
     orgId, branchId, event: upgrading ? 'plan_upgraded' : 'subscription_active', memberId,
     vars: { plan_name: subSnap.get('planSnapshot.name') as string, amount: rupeesText(due.totalMinor), valid_until: dateIN(end) },
@@ -298,6 +331,7 @@ export function writeSettlement(
     after: {
       status: 'ACTIVE', paymentId: payRef.id, amountMinor: due.totalMinor, method: payment.method, reference: payment.reference,
       startAt: start.toISOString(), endAt: end.toISOString(), ...(upgrading ? { upgradedFrom: term!.snap.id } : {}),
+      ...(reopened ? { depositReopened: true } : {}),
     },
   });
   return { paymentId: payRef.id, start, end };

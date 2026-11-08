@@ -37,6 +37,7 @@ export const proposeAdjustment = command(
     await actor.require('deposits.adjust', input.orgId, member.homeBranchId, tx);
     const account = await tx.get(depositRef(input.orgId, input.memberId));
     if (!account.exists) throw errors.conflict('NO_DEPOSIT', 'This member has no deposit account.');
+    if (account.get('status') === 'CLOSED') throw errors.conflict('DEPOSIT_CLOSED', 'The deposit has been settled and the account is closed.');
     const delta = input.kind === 'DEDUCTION' || input.direction === 'DEBIT' ? -input.amountMinor : input.amountMinor;
     if (balanceOf(account) + delta < 0) throw errors.conflict('DEPOSIT_INSUFFICIENT', 'The deposit balance is not enough for this deduction.');
     const ref = db.collection(`orgs/${input.orgId}/depositAdjustments`).doc();
@@ -72,6 +73,10 @@ export const decideAdjustment = command(
     const memberId = snap.get('memberId') as string;
     const account = await tx.get(depositRef(input.orgId, memberId));
     if (input.decision === 'APPROVE') {
+      // A settled (CLOSED) account takes no more entries; reject the adjustment instead.
+      if (!account.exists || account.get('status') === 'CLOSED') {
+        throw errors.conflict('DEPOSIT_CLOSED', 'The deposit has been settled and the account is closed. Reject this adjustment.');
+      }
       postLedger(tx, input.orgId, account, {
         memberId, branchId, type: snap.get('kind') === 'DEDUCTION' ? 'DEPOSIT_DEDUCTION' : 'DEPOSIT_ADJUSTMENT', deltaMinor: delta,
         reason: snap.get('reason'), reference: { adjustmentId: input.adjustmentId, ref: snap.get('reference') }, actorUid: snap.get('proposedBy'), approvedBy: actor.uid,
@@ -88,7 +93,9 @@ export const decideAdjustment = command(
 
 /**
  * Starts deposit settlement (BUSINESS_RULES §29): only once the subscription is
- * over and every book is back. New subscriptions are blocked while settling.
+ * over, every book is back and no subscription is waiting for payment (a
+ * payment link already sent could otherwise pay into a settled deposit). New
+ * subscriptions are blocked while settling.
  */
 export const startSettlement = command(
   'deposits-startSettlement',
@@ -100,8 +107,12 @@ export const startSettlement = command(
     const subs = await Promise.all(
       [member.activeSubscriptionId, member.nextSubscriptionId].filter(Boolean).map((s) => tx.get(db.doc(`orgs/${input.orgId}/subscriptions/${s}`))),
     );
+    const pending = await tx.get(
+      db.collection(`orgs/${input.orgId}/subscriptions`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING_PAYMENT').limit(1),
+    );
     if (!account.exists || account.get('status') !== 'OPEN') throw errors.conflict('NOT_OPEN', 'There is no open deposit to settle.');
     if (member.activeLoanCount > 0) throw errors.conflict('LOANS_OUTSTANDING', 'All borrowed books must be returned before settlement.');
+    if (!pending.empty) throw errors.conflict('PENDING_EXISTS', 'A subscription is waiting for payment. Take the payment or cancel it before settling the deposit.');
     if (subs.some((s) => s.get('status') === 'ACTIVE' && s.get('endAt').toMillis() > Date.now())) {
       throw errors.conflict('SUBSCRIPTION_ACTIVE', 'The subscription is still active. Settlement starts after it ends.');
     }

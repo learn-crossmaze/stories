@@ -11,6 +11,7 @@ import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { balanceOf, depositRef } from './ledger.js';
 import { DURATIONS, type Duration, type Plan, pricesFor } from './plans.js';
+import { markRequestsCancelled, readOpenRequests } from './requests.js';
 import { currentTerm } from './term.js';
 
 const DAY = 86_400_000;
@@ -130,7 +131,7 @@ function quote(r: UpgradeReads, now: Date): UpgradeQuote {
   };
   if (member.nextSubscriptionId && !term.rollover) return none('The next term is already paid for. Upgrade once it has started.', current);
   if (r.pending && !lapsedUpgrade(r.pending, now)) return none('A plan is waiting for payment. Take the payment or cancel it first.', current);
-  if (r.deposit.exists && r.deposit.get('status') !== 'OPEN') return none('The deposit is being settled.', current);
+  if (r.deposit.exists && r.deposit.get('status') === 'SETTLING') return none('The deposit is being settled.', current);
   if (p.unusedDays < 1) return none('The current term ends today. Renew instead.', current);
 
   const held = balanceOf(r.deposit);
@@ -208,10 +209,13 @@ export async function startUpgrade(
   if (!o) throw errors.conflict('NOT_AN_UPGRADE', 'That plan is not an upgrade for this member (it must allow at least as many books and cost more than the credit for the days left).');
   const plan = r.plans.docs.find((d) => d.id === input.planId)!.data() as Plan;
   const cur = q.current!;
+  // (Its links and QR codes closed at Razorpay when the price lapsed; their records are closed here.)
+  const lapsedRequests = await readOpenRequests(tx, input.orgId, r.pending ? [r.pending.id] : []);
 
   if (r.pending) {
     // A lapsed upgrade quote gives way to the new one.
     tx.update(r.pending.ref, { status: 'CANCELLED', cancelReason: 'Upgrade price lapsed', updatedAt: FieldValue.serverTimestamp() });
+    markRequestsCancelled(tx, lapsedRequests, actor.uid, 'Upgrade price lapsed');
   }
   const ref = db.collection(`orgs/${input.orgId}/subscriptions`).doc();
   const amountDue = { subscriptionMinor: o.subscriptionMinor, depositMinor: o.depositMinor, totalMinor: o.totalMinor };

@@ -404,7 +404,7 @@ export const lt = {
     OFFLINE_CASH: 'Cash', OFFLINE_UPI: 'UPI', OFFLINE_CARD: 'Card', OFFLINE_BANK_TRANSFER: 'Bank transfer',
     ONLINE_LINK: 'Razorpay link', ONLINE_UPI_QR: 'Razorpay UPI QR', RAZORPAY: 'Razorpay',
   } as Record<string, string>,
-  refundStatus: { SUCCESS: 'Refunded', PENDING: 'With the bank', PROCESSING: 'Processing', FAILED: 'Failed' } as Record<string, string>,
+  refundStatus: { SUCCESS: 'Refunded', PENDING: 'With the bank', PROCESSING: 'Processing', FAILED: 'Failed', NEEDS_ATTENTION: 'Refunded · check' } as Record<string, string>,
   renewal: 'Renewal',
   newSubscription: 'New',
   upgradeKind: 'Upgrade',
