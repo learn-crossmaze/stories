@@ -6,7 +6,7 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 
 | Address | What | Code | Hosting target |
 |---|---|---|---|
-| `storiesforall.in`, `www.storiesforall.in` | Public website | `apps/site` | `site` (Hosting site `storiesforall`) |
+| `storiesforall.in`, `www.storiesforall.in` | Public website | `apps/site` | `site` (Hosting site `storiesforall-website`) |
 | `app.storiesforall.in` | Stories app | `apps/web` | `app` (Hosting site `stories-by-crossmaze`) |
 
 ## How it's built
@@ -51,15 +51,15 @@ Tests and build: `npm run test:site`, `npm run build:site` (CI runs both).
 
 ## Going live (once)
 
-1. **Create the Hosting site:** Firebase console → Hosting → *Add another site* → site ID `storiesforall`. Site IDs
+1. **Create the Hosting site:** Firebase console → Hosting → *Add another site* → site ID `storiesforall-website`. Site IDs
    are unique across all of Firebase; if it's taken, pick another (e.g. `storiesforall-in`) and change `"site"` in
    `.firebaserc` → `targets` to that ID.
 2. **Deploy the backend** (adds the `sitePublic` function): `npm run deploy:backend`.
-3. **Deploy the site once by hand:** `npm run deploy:site`. It's then live at `https://storiesforall.web.app` (or
+3. **Deploy the site once by hand:** `npm run deploy:site`. It's then live at `https://storiesforall-website.web.app` (or
    your site ID). Check the pages and that plans and branches load.
 4. **Automatic deploys:** GitHub → Settings → Secrets and variables → Actions → **Variables** → `DEPLOY_SITE` =
    `true`. From then on every merge to `main` deploys the site after the tests (and the backend, when automatic).
-5. **Domains** (docs/ENVIRONMENTS.md §7): in Hosting, open the **storiesforall** site → *Add custom domain* →
+5. **Domains** (docs/ENVIRONMENTS.md §7): in Hosting, open the **storiesforall-website** site → *Add custom domain* →
    `storiesforall.in`, then `www.storiesforall.in` redirecting to it. Open the **stories-by-crossmaze** site → *Add
    custom domain* → `app.storiesforall.in`. Add each record Hosting shows at your registrar.
 6. **Point the site at the app's new address:** once `app.storiesforall.in` says *Connected*, set
