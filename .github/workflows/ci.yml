@@ -28,6 +28,8 @@ jobs:
         run: node tools/rbac/generate.mjs --check
       - run: npm run test:web
       - run: npm run build -w apps/web -- --mode emulator
+      - name: Public website (apps/site)
+        run: npm run test:site && npm run build:site
 
   functions:
     name: Cloud Functions (typecheck, unit + emulator tests)

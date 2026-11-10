@@ -64,7 +64,7 @@ jobs:
         run: rm -f "$RUNNER_TEMP/sa.json" functions/.env.stories-for-all
 
   hosting:
-    name: Web app (Firebase Hosting)
+    name: Web app (Firebase Hosting, target app)
     needs: [ci, backend]
     # Runs when the tests passed and the backend either deployed or is deployed by hand (skipped).
     if: ${{ !cancelled() && needs.ci.result == 'success' && (needs.backend.result == 'success' || needs.backend.result == 'skipped') }}
@@ -85,5 +85,32 @@ jobs:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
           channelId: live
+          target: app
           # The permanent Firebase project ID ("stories-for-all" is its alias in .firebaserc).
+          projectId: stories-by-crossmaze
+
+  site:
+    name: Public website (Firebase Hosting, target site)
+    needs: [ci, backend]
+    # Like the app, after the backend (its /api/public data comes from the sitePublic function). Runs once the
+    # Hosting site exists and DEPLOY_SITE is 'true' (docs/SITE.md).
+    if: ${{ !cancelled() && vars.DEPLOY_SITE == 'true' && needs.ci.result == 'success' && (needs.backend.result == 'success' || needs.backend.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build:site
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
+          channelId: live
+          target: site
           projectId: stories-by-crossmaze

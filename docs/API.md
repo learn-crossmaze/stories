@@ -5,7 +5,7 @@ All app operations are **actions** named `<group>-<name>` (e.g. `branches-create
 `admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr` (`functions/src/index.ts`) — plus the
 scheduled jobs listed at the end. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
 action prefix). Each Cloud Function is its own Cloud Run service reserving CPU; ~60 separate functions exceeded the
-project's regional CPU quota; the 16 services listed in docs/DEPLOYMENT.md stay well inside it. Routing doesn't change behaviour: the router
+project's regional CPU quota; the 17 services listed in docs/DEPLOYMENT.md stay well inside it. Routing doesn't change behaviour: the router
 passes the request to the action's own handler, so every check below applies unchanged; unknown actions are rejected.
 
 ## Two kinds of callable

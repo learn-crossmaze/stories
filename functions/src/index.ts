@@ -20,6 +20,7 @@ import { accrueLeave, expireDocuments } from './hr/index.js';
 import { handleWhatsAppWebhook, sendWhatsApp } from './messaging/index.js';
 import { maintenance } from './platform/maintenance.js';
 import { ROUTES } from './routes.js';
+import { handleSitePublic } from './site/public.js';
 
 setGlobalOptions({ region: REGION, maxInstances: 5 });
 
@@ -46,6 +47,9 @@ export const whatsappWebhook = onRequest({ region: REGION }, (req, res) => handl
 
 /** Courier status updates for home delivery (Porter…); URL per branch: …/deliveryWebhook?o=<orgId>&b=<branchId>&t=<token>. */
 export const deliveryWebhook = onRequest({ region: REGION }, (req, res) => handleDeliveryWebhook(req, res).then(() => undefined));
+
+/** Public website data (apps/site): branches, plans and prices; served as /api/public on the website through a Hosting rewrite. */
+export const sitePublic = onRequest({ region: REGION }, (req, res) => handleSitePublic(req, res));
 
 /** Sends each queued WhatsApp message (orgs/{o}/whatsappOutbox). */
 export const whatsapp = { send: sendWhatsApp };

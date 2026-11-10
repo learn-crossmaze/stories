@@ -96,7 +96,7 @@ Set up once (owner):
 1. **Zoho API Console** (<https://api-console.zoho.in>, signed in as the Zoho Mail admin) → *Add Client* →
    *Server-based Applications*:
    - Client name: `Stories`; Homepage URL: `https://storiesforall.in`
-   - Authorized redirect URIs: `https://storiesforall.in/__/auth/handler` and, until §7 step 3 is done,
+   - Authorized redirect URIs: `https://app.storiesforall.in/__/auth/handler` and, until §7 step 3 is done,
      `https://stories-by-crossmaze.firebaseapp.com/__/auth/handler`.
    - Create, then copy the **Client ID** and **Client Secret**.
 2. **Firebase console** → Authentication → Settings → **Upgrade to Firebase Authentication with Identity Platform**
@@ -107,7 +107,7 @@ Set up once (owner):
    - Client ID and Client secret from step 1
    - Issuer (URL): `https://accounts.zoho.in` (Zoho's India data centre; if your Zoho account was created on another
      data centre, use that one, e.g. `https://accounts.zoho.com`)
-4. Authentication → Settings → **Authorized domains**: add `storiesforall.in` once the site is served there.
+4. Authentication → Settings → **Authorized domains**: add `app.storiesforall.in` once the app is served there.
 5. Set `VITE_ZOHO_SIGN_IN=true` in `apps/web/.env.production` and merge: the button appears after the deploy.
 
 **People who already have a Stories account** with the same email (password or Google): their first *Continue with
@@ -125,8 +125,9 @@ see uses the new name instead:
 |---|---|
 | CLI and workflows | `--project stories-for-all` (alias in `.firebaserc`) |
 | Function settings | `functions/.env` (committed, non-secret); private ones in `functions/.env.stories-for-all` (git-ignored; the CLI loads `.env.<alias>`) |
-| Website | `https://storiesforall.in` (custom domain) |
-| Sign-in windows, password-reset links | `storiesforall.in` (after step 3) |
+| App (members and staff) | `https://app.storiesforall.in` (custom domain on Hosting site `stories-by-crossmaze`) |
+| Public website | `https://storiesforall.in` and `www` (Hosting site `storiesforall`; docs/SITE.md) |
+| Sign-in windows, password-reset links | `app.storiesforall.in` (after step 3) |
 | Firebase console, Google sign-in consent screen | "Stories for All" (display names) |
 
 The old ID stays only where Google needs the real one: `VITE_FIREBASE_PROJECT_ID`, the storage bucket
@@ -138,18 +139,19 @@ One-time steps (owner), in this order:
 1. **Private function settings (only if you have them):** if you kept a local `functions/.env.stories-by-crossmaze`
    (e.g. with a Google Books key), rename it to `functions/.env.stories-for-all`; the CLI refuses to deploy while
    both exist. Non-secret settings stay in the committed `functions/.env`.
-2. **Custom domain:** Firebase console → Hosting → *Add custom domain* → `storiesforall.in` (and `www.storiesforall.in`,
-   redirecting to it). Add the DNS records it shows at your registrar, next to Zoho's mail records, and wait until
-   Hosting says *Connected* (SSL can take up to a day). Then Authentication → Settings → **Authorized domains** → add
-   `storiesforall.in`.
+2. **App domain:** Firebase console → Hosting → the **stories-by-crossmaze** site → *Add custom domain* →
+   `app.storiesforall.in`. Add the DNS record it shows at your registrar (host `app`), next to Zoho's mail records,
+   and wait until Hosting says *Connected* (SSL can take up to a day). Then Authentication → Settings →
+   **Authorized domains** → add `app.storiesforall.in`. The bare `storiesforall.in` and `www` go to the public
+   website (docs/SITE.md).
 3. **Sign-in on your own domain:** Google Cloud console → APIs & Services → Credentials → the *Web client (auto created
-   by Google Service)* → add the authorized redirect URI `https://storiesforall.in/__/auth/handler`. Then set
-   `VITE_FIREBASE_AUTH_DOMAIN=storiesforall.in` in `apps/web/.env.production` and merge. Don't do this before step 2
+   by Google Service)* → add the authorized redirect URI `https://app.storiesforall.in/__/auth/handler`. Then set
+   `VITE_FIREBASE_AUTH_DOMAIN=app.storiesforall.in` in `apps/web/.env.production` and merge. Don't do this before step 2
    is *Connected*: until then Google sign-in would fail.
 4. **Names people see:** Firebase console → Project settings → *Project name* → `Stories for All`. Google Cloud
    console → APIs & Services → OAuth consent screen → *App name* `Stories for All`, home page
-   `https://storiesforall.in`, authorized domain `storiesforall.in`.
+   `https://storiesforall.in`, authorized domain `storiesforall.in` (covers `app.`).
 5. **Emails:** Authentication → Templates → sender name `Stories for All`; *Customize domain* → `storiesforall.in`
-   (adds DNS records); *Customize action URL* → `https://storiesforall.in/__/auth/action`.
+   (adds DNS records); *Customize action URL* → `https://app.storiesforall.in/__/auth/action`.
 6. **Payments and messages (optional):** the Razorpay, Meta and Porter webhook URLs don't change. Update only the
    business name and website shown to customers in the Razorpay dashboard and the WhatsApp Business profile.

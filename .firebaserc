@@ -3,5 +3,27 @@
     "default": "stories-by-crossmaze",
     "stories-for-all": "stories-by-crossmaze",
     "emulator": "demo-stories"
+  },
+  "targets": {
+    "stories-by-crossmaze": {
+      "hosting": {
+        "app": [
+          "stories-by-crossmaze"
+        ],
+        "site": [
+          "storiesforall"
+        ]
+      }
+    },
+    "demo-stories": {
+      "hosting": {
+        "app": [
+          "demo-stories"
+        ],
+        "site": [
+          "demo-stories-site"
+        ]
+      }
+    }
   }
 }

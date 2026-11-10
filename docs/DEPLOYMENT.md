@@ -1,13 +1,15 @@
 # Stories — Deployment
 
 One Firebase project, `stories-for-all` (alias of the permanent project ID `stories-by-crossmaze`; docs/ENVIRONMENTS.md §7),
-Blaze plan, region `asia-south1`. Live at `https://storiesforall.in`.
+Blaze plan, region `asia-south1`. The app is at `https://app.storiesforall.in`, the public website at
+`https://storiesforall.in` (docs/SITE.md).
 
 | What | How | When |
 |---|---|---|
 | Tests | `.github/workflows/ci.yml` | every pull request, and as the first step of every deploy |
 | Backend: Cloud Functions, Firestore rules, indexes and TTL policies, Storage rules | `deploy.yml` → *Backend* job once `DEPLOY_BACKEND` is on (§1); otherwise `npm run deploy:backend` by hand | every push to `main` |
-| Web app (Hosting) | `deploy.yml` → *Web app* job | every push to `main`, **after** the tests pass and the backend deployed |
+| Web app (Hosting target `app`) | `deploy.yml` → *Web app* job | every push to `main`, **after** the tests pass and the backend deployed |
+| Public website (Hosting target `site`) | `deploy.yml` → *Public website* job, once `DEPLOY_SITE` is on (docs/SITE.md); or `npm run deploy:site` | every push to `main`, after the tests and the backend |
 | PR previews | `firebase-hosting-pull-request.yml` | every pull request from this repo |
 
 `deploy.yml` runs one deploy at a time (a newer merge waits for the running one) and never publishes a site whose tests
@@ -53,9 +55,10 @@ Later deploys need only `git pull` and `npm run deploy:backend`: the functions p
 installs any new function dependencies before building.
 
 The first deploy enables the Cloud Functions, Cloud Build, Artifact Registry and Cloud Run APIs (a few minutes).
-Scheduled functions also enable Cloud Scheduler. The backend deploys as **16 services** (`maxInstances: 5` each) to
+Scheduled functions also enable Cloud Scheduler. The backend deploys as **17 services** (`maxInstances: 5` each) to
 stay inside the project's Cloud Run CPU quota: 7 routers (`admin`, `catalogue`, `inventory`, `members`, `billing`,
-`circulation`, `hr`), 3 webhooks (`razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`), the `whatsapp-send`
+`circulation`, `hr`), 3 webhooks (`razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`), the public website's
+data endpoint `sitePublic`, the `whatsapp-send`
 trigger and 5 scheduled jobs (`expireSubscriptions` hourly, `expireHolds` and `maintenance` every 15 minutes,
 `expireDocuments` and `accrueLeave` daily). `maintenance` finishes interrupted work: token updates after role changes
 (users marked `claimsStale`) and WhatsApp messages whose send never ran or was cut off. Don't split actions back into separate exported functions: add them to a router

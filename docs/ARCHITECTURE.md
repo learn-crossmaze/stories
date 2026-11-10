@@ -273,7 +273,7 @@ stories/
 ## 5. Cloud Functions architecture
 
 - **Runtime:** 2nd-gen functions, Node 22, TypeScript strict, region `asia-south1` (Mumbai), `maxInstances: 5`.
-  Actions are grouped behind 7 router functions (docs/API.md); 16 services in all (docs/DEPLOYMENT.md).
+  Actions are grouped behind 7 router functions (docs/API.md); 17 services in all (docs/DEPLOYMENT.md).
 - **Every command follows one pipeline** (`core/callable.ts`, details in docs/API.md):
 
 ```text

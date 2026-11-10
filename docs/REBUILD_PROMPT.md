@@ -18,7 +18,8 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
 
 - **Web:** Vite + React 19 + TypeScript, React Router, Firebase JS SDK (Auth, Firestore, Functions, Storage), in
   `apps/web` (npm workspace). Plain CSS with design tokens (`src/styles.css`); no UI framework. Fonts: Fraunces
-  (display), Inter (text). Hosted on Firebase Hosting (`storiesforall.in`; also `stories-by-crossmaze.web.app`); `index.html` is served
+  (display), Inter (text). Hosted on Firebase Hosting (`app.storiesforall.in`; also `stories-by-crossmaze.web.app`), next to the public
+  website `apps/site` at `storiesforall.in` (static pages, live plans and branches from `sitePublic`; docs/SITE.md); `index.html` is served
   `no-cache`, hashed assets are immutable.
 - **Backend:** Firebase Functions v2, TypeScript, Node 22, region **`asia-south1`**, `maxInstances: 5`, in
   `functions/`. Code layout by domain (platform, organization, catalogue, inventory, members, billing,
