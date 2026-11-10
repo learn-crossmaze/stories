@@ -3,6 +3,7 @@ import { cloneElement, type FormEvent, type InputHTMLAttributes, type ReactEleme
 import { useAuth } from '../auth/AuthContext';
 import { AuthFailure } from '../auth/models';
 import type { AuthRepository } from '../auth/repository';
+import { env } from '../config/env';
 import { authErrorMessage, t } from '../strings';
 import { Icon } from '../shared/ui';
 
@@ -21,12 +22,13 @@ export function SignInPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function run(action: (r: AuthRepository) => Promise<void>): Promise<boolean> {
+  async function run(action: (r: AuthRepository) => Promise<boolean | void>): Promise<boolean> {
     setSubmitting(true);
     setError(null);
     setNotice(null);
     try {
-      await action(repo);
+      // `true` means a waiting Zoho sign-in was linked to this account (it stays on screen only until the app opens).
+      if ((await action(repo)) === true) setNotice(t.zohoLinked);
       return true;
     } catch (e) {
       if (!(e instanceof AuthFailure)) console.error(e);
@@ -125,6 +127,11 @@ export function SignInPage() {
         >
           {t.continueWithGoogle}
         </button>
+        {env.zohoSignIn && !creating && (
+          <button type="button" className="btn btn-outlined" disabled={submitting} onClick={() => run((r) => r.signInWithZoho())}>
+            {t.continueWithZoho}
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-text"

@@ -11,6 +11,8 @@ export const env = {
   emulatorHost: e.VITE_EMULATOR_HOST || 'localhost',
   /** reCAPTCHA Enterprise site key for App Check. Empty disables App Check. */
   appCheckKey: e.VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY ?? '',
+  /** Shows "Continue with Zoho Mail" (the OpenID Connect provider `oidc.zoho`, docs/ENVIRONMENTS.md §6). */
+  zohoSignIn: e.VITE_ZOHO_SIGN_IN === 'true',
 };
 
 export function firebaseOptions(): FirebaseOptions {

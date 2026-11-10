@@ -27,6 +27,11 @@ export function fakeAuth(initial: AppUser | null = null, claims: StoriesClaims =
     async signInWithGoogle() {
       if (repo.fail) throw repo.fail;
     },
+    async signInWithZoho() {
+      if (repo.fail) throw repo.fail;
+      user = { uid: 'u1', email: 'staff@storiesforall.in', displayName: 'Staff', emailVerified: true };
+      emit();
+    },
     async sendPasswordReset() {
       if (repo.fail) throw repo.fail;
     },

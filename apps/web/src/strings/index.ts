@@ -15,6 +15,8 @@ export const t = {
   createAccountSubtitle: "Create your account. You'll choose a subscription next.",
   fullNameLabel: 'Full name',
   continueWithGoogle: 'Continue with Google',
+  continueWithZoho: 'Continue with Zoho Mail',
+  zohoLinked: 'Your Zoho Mail account is now linked. Next time, Continue with Zoho Mail signs you in.',
   forgotPassword: 'Forgot password?',
   resetEmailSent: (email: string) => `If an account exists for ${email}, a reset link is on its way.`,
   orDivider: 'or',
@@ -401,10 +403,12 @@ export const authErrorMessage: Record<AuthFailureCode, string> = {
   weakPassword: 'Choose a stronger password with at least 8 characters.',
   tooManyRequests: 'Too many attempts. Wait a few minutes, then try again.',
   network: 'You appear to be offline. Check your connection and try again.',
-  popupClosed: 'Google sign-in was cancelled.',
+  popupClosed: 'Sign-in was cancelled.',
   userDisabled: 'This account has been disabled. Please contact Stories support.',
   providerDisabled: "This sign-in method isn't switched on yet. Please contact Stories support.",
-  popupBlocked: 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.',
+  popupBlocked: 'Your browser blocked the sign-in window. Allow pop-ups for this site and try again.',
   unauthorizedDomain: "Sign-in isn't allowed from this web address yet. Please contact Stories support.",
+  linkRequired:
+    'This email already has a Stories account. Sign in once with your password or Google below; your Zoho Mail account is then linked, and next time Continue with Zoho Mail works on its own.',
   unknown: 'Please try again. If it keeps happening, contact your branch.',
 };

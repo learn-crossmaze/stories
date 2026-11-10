@@ -20,6 +20,7 @@ export type AuthFailureCode =
   | 'providerDisabled'
   | 'popupBlocked'
   | 'unauthorizedDomain'
+  | 'linkRequired'
   | 'unknown';
 
 /** A user-presentable auth error. Raw Firebase messages are never shown. */
@@ -60,6 +61,8 @@ export class AuthFailure extends Error {
         return failure('popupBlocked');
       case 'unauthorized-domain':
         return failure('unauthorizedDomain');
+      case 'account-exists-with-different-credential':
+        return failure('linkRequired');
       default:
         return failure('unknown');
     }

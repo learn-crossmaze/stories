@@ -70,6 +70,7 @@ In GitHub → Settings → Branches, make `main` the default branch and protect 
 | Custom domain | Hosting → Add custom domain; then Authentication → Settings → Authorized domains | When the domain is decided |
 | Upgrade to **Blaze** + budget alert | Usage and billing | Before Cloud Functions / Storage |
 | **App Check** (reCAPTCHA Enterprise) | App Check → Apps | Before launch; put the site key in `VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY` |
+| **Zoho Mail sign-in** for staff (OpenID Connect) | Authentication → Identity Platform, Sign-in method | When staff mailboxes exist; see §6 |
 
 ## 5. Configuration & secrets policy
 
@@ -79,3 +80,38 @@ In GitHub → Settings → Branches, make `main` the default branch and protect 
   debug tokens, payment keys or SMTP credentials.
 - Restrict the web API key in Google Cloud Console → APIs & Services → Credentials to the Firebase APIs and your
   site's domains.
+
+## 6. Staff sign-in with Zoho Mail (single sign-on)
+
+Staff with a Zoho Mail mailbox (e.g. `name@storiesforall.in`) can sign in with **Continue with Zoho Mail** instead
+of a separate Stories password. Zoho is added to Firebase Authentication as an OpenID Connect provider with the id
+`oidc.zoho`. Access still comes only from roles: a Zoho sign-in alone gives no staff access until someone grants
+roles to that email in **Staff & roles**. Members keep signing in with email/password or Google.
+
+**Cost:** Firebase charges nothing for the first 49 monthly users of OpenID Connect providers, then about $0.015
+per monthly user (Identity Platform pricing). Zoho charges nothing for the sign-in itself.
+
+Set up once (owner):
+
+1. **Zoho API Console** (<https://api-console.zoho.in>, signed in as the Zoho Mail admin) → *Add Client* →
+   *Server-based Applications*:
+   - Client name: `Stories`; Homepage URL: `https://storiesforall.in`
+   - Authorized redirect URI: `https://stories-by-crossmaze.firebaseapp.com/__/auth/handler`
+     (add `https://storiesforall.in/__/auth/handler` too if the site's auth domain moves to the custom domain).
+   - Create, then copy the **Client ID** and **Client Secret**.
+2. **Firebase console** → Authentication → Settings → **Upgrade to Firebase Authentication with Identity Platform**
+   (needs the Blaze plan, which the project already has; existing users and sign-in methods are unchanged).
+3. Authentication → Sign-in method → *Add new provider* → **OpenID Connect**:
+   - Grant type: **Code flow**
+   - Name: `zoho` (the provider id must become exactly `oidc.zoho`)
+   - Client ID and Client secret from step 1
+   - Issuer (URL): `https://accounts.zoho.in` (Zoho's India data centre; if your Zoho account was created on another
+     data centre, use that one, e.g. `https://accounts.zoho.com`)
+4. Authentication → Settings → **Authorized domains**: add `storiesforall.in` once the site is served there.
+5. Set `VITE_ZOHO_SIGN_IN=true` in `apps/web/.env.production` and merge: the button appears after the deploy.
+
+**People who already have a Stories account** with the same email (password or Google): their first *Continue with
+Zoho Mail* is refused with a message asking them to sign in once the usual way; that sign-in links Zoho to their
+account, and from then on either way works. Use the same email in Staff & roles as the Zoho mailbox.
+
+Locally, `.env.emulator` switches the button on and the Auth emulator shows a fake sign-in screen for `oidc.zoho`.
