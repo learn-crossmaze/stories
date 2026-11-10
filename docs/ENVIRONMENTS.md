@@ -124,7 +124,7 @@ see uses the new name instead:
 | Where | Name |
 |---|---|
 | CLI and workflows | `--project stories-for-all` (alias in `.firebaserc`) |
-| Function settings file | `functions/.env.stories-for-all` (the CLI loads `.env.<alias>`) |
+| Function settings | `functions/.env` (committed, non-secret); private ones in `functions/.env.stories-for-all` (git-ignored; the CLI loads `.env.<alias>`) |
 | Website | `https://storiesforall.in` (custom domain) |
 | Sign-in windows, password-reset links | `storiesforall.in` (after step 3) |
 | Firebase console, Google sign-in consent screen | "Stories for All" (display names) |
@@ -135,9 +135,9 @@ courier webhooks keep working unchanged) and the `projectId` of the Hosting depl
 
 One-time steps (owner), in this order:
 
-1. **Function settings file:** rename your local `functions/.env.stories-by-crossmaze` to
-   `functions/.env.stories-for-all` (the CLI refuses to deploy while both exist). The `FUNCTIONS_ENV` GitHub secret
-   keeps the same content.
+1. **Private function settings (only if you have them):** if you kept a local `functions/.env.stories-by-crossmaze`
+   (e.g. with a Google Books key), rename it to `functions/.env.stories-for-all`; the CLI refuses to deploy while
+   both exist. Non-secret settings stay in the committed `functions/.env`.
 2. **Custom domain:** Firebase console → Hosting → *Add custom domain* → `storiesforall.in` (and `www.storiesforall.in`,
    redirecting to it). Add the DNS records it shows at your registrar, next to Zoho's mail records, and wait until
    Hosting says *Connected* (SSL can take up to a day). Then Authentication → Settings → **Authorized domains** → add

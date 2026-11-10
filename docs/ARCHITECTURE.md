@@ -299,8 +299,9 @@ App Check (when enforced) → authenticated → load actor → zod-validate inpu
   role-changing commands after commit; users stay `claimsStale` until the token is updated, and the maintenance job
   finishes any sync that failed.
 - **Secrets:** per-branch payment, WhatsApp and courier keys live in `branches/{b}/private/*` documents that Security
-  Rules deny to every client; function settings (`BOOTSTRAP_SUPER_ADMIN_EMAIL`, `GOOGLE_BOOKS_API_KEY`,
-  `ENFORCE_APP_CHECK`) in `functions/.env.<project>` (git-ignored; the `FUNCTIONS_ENV` secret for CI deploys).
+  Rules deny to every client; function settings: non-secret ones (`BOOTSTRAP_SUPER_ADMIN_EMAIL`) in the committed `functions/.env`
+  (`functions/.env.local` for the emulator); private ones (`GOOGLE_BOOKS_API_KEY`, `ENFORCE_APP_CHECK`) in the
+  git-ignored `functions/.env.stories-for-all` (the optional `FUNCTIONS_ENV` secret for CI deploys).
 - **Testing:** unit tests on pure domain functions (state machines, payroll math, recurrence) with Vitest;
   integration tests against the emulators (including concurrency tests that fire parallel callables).
 

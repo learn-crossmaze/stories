@@ -23,10 +23,10 @@ merging web changes that depend on it.
    *Cloud Functions Admin*, *Cloud Run Admin*, *Service Account User*, *Cloud Scheduler Admin*, *Firebase Rules Admin*,
    *Cloud Datastore Index Admin*, *Cloud Datastore Owner* (TTL policies), *Artifact Registry Administrator*,
    *Secret Manager Viewer*, *Firebase Extensions Viewer* and *Service Usage Consumer*.
-2. GitHub → Settings → Secrets and variables → Actions → **Secrets** → `FUNCTIONS_ENV`: paste the whole content of
-   your `functions/.env.stories-for-all` (at least `BOOTSTRAP_SUPER_ADMIN_EMAIL=learn@crossmaze.in`; also
-   `GOOGLE_BOOKS_API_KEY=…` and, after App Check, `ENFORCE_APP_CHECK=true`). Without it a deploy would lose these
-   values, so the job stops with an error instead.
+2. Only if you keep private settings in a local `functions/.env.stories-for-all` (e.g. `GOOGLE_BOOKS_API_KEY=…`, and
+   after App Check `ENFORCE_APP_CHECK=true`): GitHub → Settings → Secrets and variables → Actions → **Secrets** →
+   `FUNCTIONS_ENV` = that file's whole content, so CI deploys keep them. `BOOTSTRAP_SUPER_ADMIN_EMAIL` is committed in
+   `functions/.env` and needs nothing.
 3. Same page → **Variables** → `DEPLOY_BACKEND` = `true`.
 4. Run it once by hand: Actions → *Deploy* → *Run workflow*. If it fails on a missing permission, the error names the
    role to add.

@@ -39,15 +39,18 @@ jobs:
             package-lock.json
             functions/package-lock.json
       - run: npm ci && npm --prefix functions ci
-      - name: Write the functions' environment file
+      # Non-secret settings (BOOTSTRAP_SUPER_ADMIN_EMAIL) are committed in functions/.env. Private ones
+      # (GOOGLE_BOOKS_API_KEY, ENFORCE_APP_CHECK…) come from the optional FUNCTIONS_ENV secret, so a CI deploy
+      # doesn't drop what the owner keeps in a local, git-ignored functions/.env.stories-for-all.
+      - name: Write private function settings
         env:
           FUNCTIONS_ENV: ${{ secrets.FUNCTIONS_ENV }}
         run: |
           if [ -z "$FUNCTIONS_ENV" ]; then
-            echo "::error::Secret FUNCTIONS_ENV is missing. Add the contents of functions/.env.stories-for-all (BOOTSTRAP_SUPER_ADMIN_EMAIL, GOOGLE_BOOKS_API_KEY, ENFORCE_APP_CHECK…) as a repository secret; see docs/DEPLOYMENT.md §1."
-            exit 1
+            echo "::notice::No FUNCTIONS_ENV secret: deploying with functions/.env only (no Google Books key, App Check not enforced)."
+          else
+            printf '%s\n' "$FUNCTIONS_ENV" > functions/.env.stories-for-all
           fi
-          printf '%s\n' "$FUNCTIONS_ENV" > functions/.env.stories-for-all
       - name: Deploy
         env:
           SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
