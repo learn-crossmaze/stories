@@ -48,13 +48,20 @@ describe('navigation', () => {
     expect([lib, bm, claims({ corp: { r: ['DEL'], b: ['cen'] } })].map(homeViewFor)).toEqual(['ops', 'ops', 'ops']);
     expect(homeViewFor(emp)).toBe('staff');
     expect(availableViews(emp, 'corp')).toEqual(['staff']);
-    expect(availableViews(lib, 'corp')).toEqual(['ops', 'staff']);
+    // Librarians write blog posts (Website section, admin view).
+    expect(availableViews(lib, 'corp')).toEqual(['admin', 'ops', 'staff']);
+    expect(homeViewFor(claims({ corp: { r: ['WEB'], b: ['*'] } }))).toBe('admin');
     expect(availableViews(bm, 'corp')).toEqual(['admin', 'ops', 'staff']);
     expect(availableViews(claims({}), 'corp')).toEqual([]);
   });
 
   it('shows each role only what it may use, view by view', () => {
-    expect(labels(claims({}, true), 'admin')).toHaveLength(21);
+    expect(labels(claims({}, true), 'admin')).toHaveLength(27);
+    // The Website section: the website team sees all of it, branch managers their pages and the blog, librarians the blog.
+    expect(labels(claims({ corp: { r: ['WEB'], b: ['*'] } }), 'admin')).toEqual(['Dashboard', 'Overview', 'Blog', 'Branch pages', 'Offers and promotions', 'Festive cards', 'Site settings']);
+    expect(labels(bm, 'admin')).toEqual(expect.arrayContaining(['Overview', 'Blog', 'Branch pages']));
+    expect(labels(bm, 'admin')).not.toContain('Offers and promotions');
+    expect(labels(lib, 'admin')).toEqual(['Dashboard', 'Overview', 'Blog']);
     expect(labels(hr, 'admin')).toEqual([
       'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Letters', 'Attendance', 'Leave', 'Payroll',
       'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Letter templates', 'Payroll settings', 'Audit log',

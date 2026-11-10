@@ -81,6 +81,7 @@ const personas: [string, string, string | null, Role[], string[], string[]?][] =
   ['finance@stories.test', 'Farah Finance', CORP, ['FINANCE_ADMIN'], ['*']],
   ['hr@stories.test', 'Hema HR', CORP, ['HR_ADMIN'], ['*']],
   ['catalogue@stories.test', 'Chitra Catalogue', CORP, ['CATALOGUE_MANAGER'], ['*']],
+  ['website@stories.test', 'Wendy Website', CORP, ['WEBSITE_EDITOR'], ['*']],
   ['manager@stories.test', 'Manoj Manager', CORP, ['BRANCH_MANAGER', 'EMPLOYEE'], [CENTRAL]],
   ['librarian@stories.test', 'Lata Librarian', CORP, ['LIBRARIAN', 'EMPLOYEE'], [CENTRAL]],
   ['delivery@stories.test', 'Dev Delivery', CORP, ['DELIVERY_PERSON', 'EMPLOYEE'], [CENTRAL]],

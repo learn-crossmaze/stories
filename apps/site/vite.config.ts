@@ -6,8 +6,11 @@ import { defineConfig, type Plugin } from 'vite';
 
 const root = import.meta.dirname;
 
-/** Every page of the site (each is a real HTML file, so search engines read its content without running scripts). */
-const PAGES = { index: 'index.html', books: 'books/index.html', plans: 'plans/index.html', branches: 'branches/index.html', 'how-it-works': 'how-it-works/index.html', franchise: 'franchise/index.html', contact: 'contact/index.html', notFound: '404.html' };
+/**
+ * Every page of the site (each is a real HTML file, so search engines read its content without running scripts).
+ * `_t/page.html` is the template the server fills for the blog, branch pages and About (functions/src/site/pages.ts).
+ */
+const PAGES = { index: 'index.html', books: 'books/index.html', plans: 'plans/index.html', branches: 'branches/index.html', 'how-it-works': 'how-it-works/index.html', franchise: 'franchise/index.html', contact: 'contact/index.html', notFound: '404.html', template: '_t/page.html' };
 
 /** `<!-- include:header -->` → src/partials/header.html (before Vite fills in %VITE_…% values). */
 const partials = (): Plugin => ({

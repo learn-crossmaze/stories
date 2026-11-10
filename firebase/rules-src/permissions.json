@@ -6,6 +6,7 @@
     "FINANCE_ADMIN": { "code": "FIN", "scope": "org", "label": "Finance Admin" },
     "HR_ADMIN": { "code": "HR", "scope": "org", "label": "HR Admin" },
     "CATALOGUE_MANAGER": { "code": "CM", "scope": "org", "orgTypes": ["CORPORATE"], "label": "Catalogue Manager" },
+    "WEBSITE_EDITOR": { "code": "WEB", "scope": "org", "orgTypes": ["CORPORATE"], "label": "Website Editor" },
     "FRANCHISE_OWNER": { "code": "FO", "scope": "org", "orgTypes": ["FRANCHISE"], "label": "Franchise Owner" },
     "BRANCH_MANAGER": { "code": "BM", "scope": "branch", "label": "Branch Manager" },
     "LIBRARIAN": { "code": "LIB", "scope": "branch", "label": "Librarian" },
@@ -14,14 +15,14 @@
   },
   "grantable": {
     "$comment": "Which org roles a holder of each role may grant. SUPER_ADMIN may grant every org role. Branch-scoped grantors may only grant within their own branches.",
-    "HEAD_OFFICE_ADMIN": ["HEAD_OFFICE_ADMIN", "FINANCE_ADMIN", "HR_ADMIN", "CATALOGUE_MANAGER", "BRANCH_MANAGER", "LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"],
+    "HEAD_OFFICE_ADMIN": ["HEAD_OFFICE_ADMIN", "FINANCE_ADMIN", "HR_ADMIN", "CATALOGUE_MANAGER", "WEBSITE_EDITOR", "BRANCH_MANAGER", "LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"],
     "FRANCHISE_OWNER": ["FINANCE_ADMIN", "HR_ADMIN", "BRANCH_MANAGER", "LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"],
     "HR_ADMIN": ["EMPLOYEE"],
     "BRANCH_MANAGER": ["LIBRARIAN", "DELIVERY_PERSON", "EMPLOYEE"]
   },
   "permissions": {
     "org.manage": [],
-    "branches.view": ["HO", "FIN", "HR", "FO", "BM", "LIB", "DEL", "EMP"],
+    "branches.view": ["HO", "FIN", "HR", "FO", "BM", "LIB", "DEL", "EMP", "WEB"],
     "branches.manage": ["HO", "FO"],
     "messaging.manage": ["HO", "FO", "BM"],
     "departments.manage": ["HO", "HR", "FO"],
@@ -30,7 +31,7 @@
     "audit.view": ["HO", "FIN", "HR", "FO", "BM"],
     "config.manage": ["HO"],
 
-    "books.view": ["HO", "FIN", "FO", "BM", "LIB", "DEL", "CM"],
+    "books.view": ["HO", "FIN", "FO", "BM", "LIB", "DEL", "CM", "WEB"],
     "books.create": ["HO", "BM", "LIB", "CM"],
     "books.edit": ["HO", "CM"],
     "books.delete": ["HO", "CM"],
@@ -84,6 +85,9 @@
     "tasks.approve": ["HO", "FO", "BM"],
     "tasks.skip": ["HO", "FO", "BM"],
     "tasks.execute": ["EMP", "BM", "LIB", "DEL"],
+    "website.manage": ["HO", "WEB"],
+    "website.branch": ["FO", "BM"],
+    "blog.write": ["HO", "WEB", "FO", "BM", "LIB"],
     "sops.edit": ["HO", "FO", "BM"],
     "sops.publish": ["HO"],
     "reports.view": ["HO", "FIN", "HR", "FO", "BM"]

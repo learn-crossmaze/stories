@@ -6,6 +6,7 @@ import { ht } from '../strings/hr';
 import { lt } from '../strings/library';
 import { wt } from '../strings/messaging';
 import { dt } from '../strings/delivery';
+import { st } from '../strings/site';
 import type { IconName } from '../shared/ui';
 
 /** Permission needed in the current organization (any of a list); `superAdmin` for platform pages; null for everyone. */
@@ -138,6 +139,19 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminSettingsPayroll, label: ht.navPayrollSettings, icon: 'payments', requires: 'salary.edit' },
         { to: paths.adminSettingsWhatsApp, label: wt.nav, icon: 'chat', requires: 'messaging.manage' },
         { to: paths.adminSettingsDelivery, label: dt.navSettings, icon: 'parcel', requires: 'delivery.configure' },
+      ],
+    },
+    {
+      id: 'website',
+      label: st.title,
+      icon: 'explore',
+      items: [
+        { to: paths.adminWebsite, label: st.navOverview, icon: 'dashboard', requires: ['website.manage', 'website.branch', 'blog.write'] },
+        { to: paths.adminWebsiteBlog, label: st.navBlog, icon: 'folder', requires: ['website.manage', 'website.branch', 'blog.write'] },
+        { to: paths.adminWebsiteBranches, label: st.navBranches, icon: 'store', requires: ['website.manage', 'website.branch'] },
+        { to: paths.adminWebsitePromotions, label: st.navPromotions, icon: 'card', requires: 'website.manage' },
+        { to: paths.adminWebsiteCards, label: st.navCards, icon: 'palette', requires: 'website.manage' },
+        { to: paths.adminWebsiteSettings, label: st.navSettings, icon: 'tune', requires: 'website.manage' },
       ],
     },
     { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },

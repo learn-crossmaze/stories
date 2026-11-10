@@ -22,6 +22,7 @@ Authentication ≠ authorization. App Check ≠ authorization. The Flutter UI hi
 | FINANCE_ADMIN | org | Payments, refunds, deposits (approve), payroll approval, settlements |
 | HR_ADMIN | org | Employees, documents, attendance/leave config, payroll preparation |
 | CATALOGUE_MANAGER | corporate org | The shared catalogue: add and edit titles (archived ones too), archive, restore and permanently delete archived titles never stocked or reserved, reference data, covers |
+| WEBSITE_EDITOR | corporate org | The website (console → Website, docs/WEBSITE_ADMIN.md): blog, branch pages, offers, festive cards, site settings; publish. Can look up branches and the catalogue |
 | BRANCH_MANAGER | branch(es) | Operations, approvals (leave, corrections, task skips), branch reports |
 | LIBRARIAN | branch(es) | Circulation, inventory, members at counter, reservations, transfers |
 | DELIVERY_PERSON | branch(es) | Assigned delivery orders only |

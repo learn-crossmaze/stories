@@ -57,6 +57,15 @@ const ScheduleSettingsPage = lazyPage(() => import('./people/SettingsPages'), 'S
 const PeoplePage = lazyPage(() => import('./people/People'), 'PeoplePage');
 const OrganizationsPage = lazyPage(() => import('./organization/Organizations'), 'OrganizationsPage');
 const StaffPage = lazyPage(() => import('./organization/Staff'), 'StaffPage');
+const WebsiteOverviewPage = lazyPage(() => import('./website/Overview'), 'WebsiteOverviewPage');
+const BlogPage = lazyPage(() => import('./website/Blog'), 'BlogPage');
+const PostEditorPage = lazyPage(() => import('./website/Blog'), 'PostEditorPage');
+const BranchPagesPage = lazyPage(() => import('./website/BranchPages'), 'BranchPagesPage');
+const BranchPageEditorPage = lazyPage(() => import('./website/BranchPages'), 'BranchPageEditorPage');
+const PromotionsPage = lazyPage(() => import('./website/Promotions'), 'PromotionsPage');
+const PromotionEditorPage = lazyPage(() => import('./website/Promotions'), 'PromotionEditorPage');
+const CardsPage = lazyPage(() => import('./website/Cards'), 'CardsPage');
+const SiteSettingsPage = lazyPage(() => import('./website/Settings'), 'SiteSettingsPage');
 
 /** Guards a page with the rule of the menu item it belongs to (the server checks again). */
 function guard(path: string, page: ReactNode, requires?: Requirement) {
@@ -135,6 +144,15 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminSettingsWhatsApp, guard(paths.adminSettingsWhatsApp, <WhatsAppPage />)],
         [paths.adminSettingsDelivery, guard(paths.adminSettingsDelivery, <DeliverySettingsPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
+        [paths.adminWebsite, guard(paths.adminWebsite, <WebsiteOverviewPage />)],
+        [paths.adminWebsiteBlog, guard(paths.adminWebsiteBlog, <BlogPage />)],
+        [paths.adminWebsitePost(':postId'), guard(paths.adminWebsiteBlog, <PostEditorPage />)],
+        [paths.adminWebsiteBranches, guard(paths.adminWebsiteBranches, <BranchPagesPage />)],
+        [paths.adminWebsiteBranch(':orgId', ':branchId'), guard(paths.adminWebsiteBranches, <BranchPageEditorPage />)],
+        [paths.adminWebsitePromotions, guard(paths.adminWebsitePromotions, <PromotionsPage />)],
+        [paths.adminWebsitePromotion(':promotionId'), guard(paths.adminWebsitePromotions, <PromotionEditorPage />)],
+        [paths.adminWebsiteCards, guard(paths.adminWebsiteCards, <CardsPage />)],
+        [paths.adminWebsiteSettings, guard(paths.adminWebsiteSettings, <SiteSettingsPage />)],
       ];
   }
 }

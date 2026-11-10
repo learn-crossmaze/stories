@@ -136,6 +136,48 @@
             "functionId": "sitePublic",
             "region": "asia-south1"
           }
+        },
+        {
+          "source": "/blog",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/blog/**",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/branches/*",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/about",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/preview/**",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/sitemap.xml",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
         }
       ],
       "headers": [
@@ -206,6 +248,15 @@
             {
               "key": "Cache-Control",
               "value": "no-cache"
+            }
+          ]
+        },
+        {
+          "source": "/_t/**",
+          "headers": [
+            {
+              "key": "X-Robots-Tag",
+              "value": "noindex"
             }
           ]
         }

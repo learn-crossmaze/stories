@@ -66,7 +66,7 @@ describe('public website data', () => {
     const get = reply();
     await handleSitePublic({ method: 'GET' } as never, get.res);
     expect(get.r.code).toBe(200);
-    expect(get.r.headers['Cache-Control']).toBe('public, max-age=300, s-maxage=900');
+    expect(get.r.headers['Cache-Control']).toBe('public, max-age=60, s-maxage=300');
     expect((get.r.body as { branches: unknown[] }).branches).toHaveLength(1);
     const post = reply();
     await handleSitePublic({ method: 'POST' } as never, post.res);

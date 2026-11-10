@@ -1,4 +1,7 @@
 User-agent: *
 Allow: /
+Disallow: /_t/
+Disallow: /preview/
+Disallow: /account/
 
 Sitemap: https://storiesforall.in/sitemap.xml

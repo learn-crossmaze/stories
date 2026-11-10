@@ -6,7 +6,11 @@ import './site.css';
 import { APP_URL, CONTACT_EMAIL } from './config';
 import { loadSnapshot, type PublicSnapshot } from './data';
 import { wireThemeSwitch } from './theme';
-import { ageShelves, bookDialog, branchesSection, contactsSection, esc, findBook, genreChips, plansSection, shelf, type ShelfKind, statsLine } from './render';
+import { greetingDaysOn } from './greetings/today';
+import {
+  ageShelves, bookDialog, branchesSection, contactsSection, esc, faqsHtml, findBook, genreChips, plansSection, postsStrip, promoBar, promoHome,
+  promoPopup, promotionsFor, shelf, type ShelfKind, socialLinks, statsLine,
+} from './render';
 
 // Links to the app and the enquiry address (set in apps/site/.env).
 document.querySelectorAll<HTMLAnchorElement>('[data-app-link]').forEach((a) => (a.href = APP_URL + (a.dataset.appLink || '')));
@@ -65,6 +69,10 @@ const renderers: Record<string, (s: PublicSnapshot, el: HTMLElement) => string> 
   },
   ages: (s) => ageShelves(s, APP_URL),
   genres: (s) => genreChips(s, APP_URL),
+  posts: (s, el) => postsStrip(s, Number(el.dataset.limit) || 3),
+  faqs: (s) => faqsHtml(s),
+  social: (s) => socialLinks(s),
+  'promo-home': (s) => promotionsFor(s.site, 'HOME', pageBranch).slice(0, 1).map(promoHome).join(''),
 };
 
 /** Tabs (Top picks by age): click or arrow keys switch the panel. */
@@ -119,6 +127,75 @@ function wirePeriods(root: HTMLElement) {
   });
 }
 
+// ------------------------------------------------------------------ published by the Website section
+
+/** The branch this page is about (server-rendered branch pages say so), for branch-only promotions. */
+const pageBranch = document.querySelector<HTMLElement>('[data-branch-id]')?.dataset.branchId ?? null;
+const isHome = location.pathname === '/' || location.pathname === '/index.html';
+const remember = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const recall = (k: string) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const todayKey = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+/** Offers: the bar on top (until closed), and a pop-up once a day per offer (not on a greeting day). */
+function showPromotions(s: PublicSnapshot, greeting: boolean) {
+  const closed = (recall('stories.promoClosed') ?? '').split(',');
+  const bar = promotionsFor(s.site, 'BAR', pageBranch).find((p) => !closed.includes(p.id));
+  if (bar) {
+    document.querySelector('.skip-link')?.insertAdjacentHTML('afterend', promoBar(bar));
+    document.querySelector(`[data-promo-close="${CSS.escape(bar.id)}"]`)?.addEventListener('click', (e) => {
+      (e.currentTarget as HTMLElement).closest('.promo-bar')?.remove();
+      remember('stories.promoClosed', [...closed.filter(Boolean).slice(-20), bar.id].join(','));
+    });
+  }
+  const popup = promotionsFor(s.site, 'POPUP', pageBranch).find((p) => recall(`stories.promoSeen.${p.id}`) !== todayKey());
+  if (!popup || greeting) return;
+  setTimeout(() => {
+    if (document.querySelector('dialog[open]') || document.activeElement?.closest('input, textarea, select') || document.hidden) return;
+    if (!remember(`stories.promoSeen.${popup.id}`, todayKey())) return;
+    const d = document.createElement('dialog');
+    d.className = 'book-dialog promo-dialog';
+    d.setAttribute('aria-labelledby', 'promo-title');
+    d.innerHTML = promoPopup(popup);
+    d.addEventListener('click', (e) => e.target === d && d.close());
+    d.addEventListener('close', () => d.remove());
+    d.querySelector('.bd-close')?.addEventListener('click', () => d.close());
+    document.body.append(d);
+    d.showModal();
+  }, 8000);
+}
+
+/** Festive cards: only on greeting days is the card engine loaded. */
+async function showGreetings(s: PublicSnapshot): Promise<boolean> {
+  const cfg = s.site?.greetings ?? null;
+  if ((cfg && !cfg.enabled) || !greetingDaysOn().length) return false;
+  const { showGreeting } = await import('./greetings/ui');
+  return showGreeting(cfg, { home: isHome });
+}
+
+// "Copy link" on blog posts.
+document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) =>
+  b.addEventListener('click', () => {
+    void navigator.clipboard?.writeText(b.dataset.copy ?? location.href).then(() => {
+      const label = b.textContent;
+      b.textContent = 'Copied';
+      setTimeout(() => (b.textContent = label), 1600);
+    });
+  }),
+);
+
 // The book quick view: one dialog for every shelf on the page.
 let snapshotForBooks: PublicSnapshot | null = null;
 let bookDialogEl: HTMLDialogElement | null = null;
@@ -158,9 +235,10 @@ function hideDeadJumps() {
 }
 
 const live = [...document.querySelectorAll<HTMLElement>('[data-live]')];
+let extrasShown = false;
+const QUIET = new Set(['stats', 'social', 'faqs', 'promo-home', 'posts']);
 
 async function fill() {
-  if (!live.length) return;
   live.forEach((el) => el.setAttribute('aria-busy', 'true'));
   try {
     const snapshot = await loadSnapshot();
@@ -176,10 +254,16 @@ async function fill() {
       wirePeriods(el);
     }
     hideDeadJumps();
+    if (!extrasShown) {
+      extrasShown = true;
+      void showGreetings(snapshot).then((greeting) => showPromotions(snapshot, greeting), () => showPromotions(snapshot, false));
+    }
   } catch {
     for (const el of live) {
-      if (el.dataset.live === 'stats') {
+      // Extras (numbers, offers, posts, social links, more questions) simply stay away when the data can't load.
+      if (QUIET.has(el.dataset.live ?? '')) {
         el.textContent = '';
+        if (el.dataset.hideEmpty !== undefined) el.closest('section')?.setAttribute('hidden', '');
         continue;
       }
       el.innerHTML = `<p class="notice" role="status">We couldn't load the latest ${esc(el.dataset.what ?? el.dataset.live)} just now. <button type="button" class="btn btn-text" data-retry>Try again</button></p>`;

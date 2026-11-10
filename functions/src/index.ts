@@ -20,6 +20,7 @@ import { accrueLeave, expireDocuments } from './hr/index.js';
 import { handleWhatsAppWebhook, sendWhatsApp } from './messaging/index.js';
 import { maintenance } from './platform/maintenance.js';
 import { ROUTES } from './routes.js';
+import { handleSitePages } from './site/pages.js';
 import { handleSitePublic } from './site/public.js';
 
 setGlobalOptions({ region: REGION, maxInstances: 5 });
@@ -50,6 +51,9 @@ export const deliveryWebhook = onRequest({ region: REGION }, (req, res) => handl
 
 /** Public website data (apps/site): branches, plans and prices; served as /api/public on the website through a Hosting rewrite. */
 export const sitePublic = onRequest({ region: REGION }, (req, res) => handleSitePublic(req, res));
+
+/** The website's server-rendered pages (blog, branch pages, About, previews): /blog/**, /branches/*, /about, /preview/** through Hosting rewrites. */
+export const sitePages = onRequest({ region: REGION }, (req, res) => handleSitePages(req, res));
 
 /** Sends each queued WhatsApp message (orgs/{o}/whatsappOutbox). */
 export const whatsapp = { send: sendWhatsApp };

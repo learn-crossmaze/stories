@@ -45,6 +45,47 @@ export interface Showcase {
   genres: { key: string; count: number }[];
 }
 
+export interface SiteImage {
+  url: string;
+  alt: string;
+}
+
+export interface PublicPromotion {
+  id: string;
+  title: string;
+  message: string;
+  placement: 'BAR' | 'POPUP' | 'HOME';
+  image: SiteImage | null;
+  cta: { label: string; url: string } | null;
+  code: string;
+  /** Only on these branches' pages (empty: everywhere). */
+  branchIds: string[];
+  tone: 'SUN' | 'MINT' | 'GRAPE' | 'CORAL' | 'SKY';
+  startOn: string;
+  endOn: string;
+}
+
+export interface PostCard {
+  slug: string;
+  title: string;
+  summary: string;
+  design: string;
+  cover: SiteImage | null;
+  date: string | null;
+  author: string;
+  tags: string[];
+}
+
+/** What the console's Website section published (functions/src/site/live.ts). */
+export interface PublicSite {
+  social: { instagram: string; facebook: string; youtube: string; x: string };
+  faqs: { q: string; a: string }[];
+  greetings: import('./greetings/ui').GreetingsConfig | null;
+  promotions: PublicPromotion[];
+  branchPages: Record<string, { slug: string; tagline: string; photo: SiteImage | null }>;
+  posts: PostCard[];
+}
+
 export interface PublicSnapshot {
   generatedAt: string;
   titles: number;
@@ -53,6 +94,8 @@ export interface PublicSnapshot {
   plans: PublicPlan[];
   /** Older backends don't send it: treat as empty shelves. */
   showcase?: Showcase;
+  /** Older backends don't send it: nothing published yet. */
+  site?: PublicSite;
 }
 
 let pending: Promise<PublicSnapshot> | null = null;

@@ -15,7 +15,7 @@ service cloud.firestore {
     function perms() {
       return {
         'org.manage': [],
-        'branches.view': ['HO', 'FIN', 'HR', 'FO', 'BM', 'LIB', 'DEL', 'EMP'],
+        'branches.view': ['HO', 'FIN', 'HR', 'FO', 'BM', 'LIB', 'DEL', 'EMP', 'WEB'],
         'branches.manage': ['HO', 'FO'],
         'messaging.manage': ['HO', 'FO', 'BM'],
         'departments.manage': ['HO', 'HR', 'FO'],
@@ -23,7 +23,7 @@ service cloud.firestore {
         'staff.manageRoles': ['HO', 'HR', 'FO', 'BM'],
         'audit.view': ['HO', 'FIN', 'HR', 'FO', 'BM'],
         'config.manage': ['HO'],
-        'books.view': ['HO', 'FIN', 'FO', 'BM', 'LIB', 'DEL', 'CM'],
+        'books.view': ['HO', 'FIN', 'FO', 'BM', 'LIB', 'DEL', 'CM', 'WEB'],
         'books.create': ['HO', 'BM', 'LIB', 'CM'],
         'books.edit': ['HO', 'CM'],
         'books.delete': ['HO', 'CM'],
@@ -74,6 +74,9 @@ service cloud.firestore {
         'tasks.approve': ['HO', 'FO', 'BM'],
         'tasks.skip': ['HO', 'FO', 'BM'],
         'tasks.execute': ['EMP', 'BM', 'LIB', 'DEL'],
+        'website.manage': ['HO', 'WEB'],
+        'website.branch': ['FO', 'BM'],
+        'blog.write': ['HO', 'WEB', 'FO', 'BM', 'LIB'],
         'sops.edit': ['HO', 'FO', 'BM'],
         'sops.publish': ['HO'],
         'reports.view': ['HO', 'FIN', 'HR', 'FO', 'BM']

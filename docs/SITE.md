@@ -58,6 +58,12 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 To change wording, edit the HTML page. To change what plans or branches show, change them in the app (Plans,
 Branches); the site follows.
 
+## Managed content (console → Website)
+
+Blog posts, branch pages (with the head librarian and their picks), offers, festive cards and site-wide words are
+edited and published in the staff console: see [WEBSITE_ADMIN.md](WEBSITE_ADMIN.md). The blog, branch pages, About
+and the sitemap are written by the `sitePages` function into the site's template `_t/page.html`.
+
 ## Member area (storiesforall.in/account)
 
 Members don't use the staff app. Everything they do is in the member area on the website, in the same look:

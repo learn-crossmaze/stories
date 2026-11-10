@@ -57,6 +57,16 @@ export const paths = {
   adminPayroll: '/admin/payroll',
   adminMyPayslips: '/me/payslips',
   adminMyDeliveries: '/me/deliveries',
+  // The Website section (admin view): what storiesforall.in shows.
+  adminWebsite: '/admin/website',
+  adminWebsiteBlog: '/admin/website/blog',
+  adminWebsitePost: (id: string) => `/admin/website/blog/${id}`,
+  adminWebsiteBranches: '/admin/website/branches',
+  adminWebsiteBranch: (orgId: string, branchId: string) => `/admin/website/branches/${orgId}/${branchId}`,
+  adminWebsitePromotions: '/admin/website/promotions',
+  adminWebsitePromotion: (id: string) => `/admin/website/promotions/${id}`,
+  adminWebsiteCards: '/admin/website/cards',
+  adminWebsiteSettings: '/admin/website/settings',
 } as const;
 
 export const viewHome = { admin: paths.admin, ops: paths.ops, staff: paths.staff } as const;

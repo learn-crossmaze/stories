@@ -31,6 +31,14 @@ export const ROLES = {
     ],
     "label": "Catalogue Manager"
   },
+  "WEBSITE_EDITOR": {
+    "code": "WEB",
+    "scope": "org",
+    "orgTypes": [
+      "CORPORATE"
+    ],
+    "label": "Website Editor"
+  },
   "FRANCHISE_OWNER": {
     "code": "FO",
     "scope": "org",
@@ -74,7 +82,8 @@ export const PERMISSIONS = {
     "BM",
     "LIB",
     "DEL",
-    "EMP"
+    "EMP",
+    "WEB"
   ],
   "branches.manage": [
     "HO",
@@ -119,7 +128,8 @@ export const PERMISSIONS = {
     "BM",
     "LIB",
     "DEL",
-    "CM"
+    "CM",
+    "WEB"
   ],
   "books.create": [
     "HO",
@@ -375,6 +385,21 @@ export const PERMISSIONS = {
     "LIB",
     "DEL"
   ],
+  "website.manage": [
+    "HO",
+    "WEB"
+  ],
+  "website.branch": [
+    "FO",
+    "BM"
+  ],
+  "blog.write": [
+    "HO",
+    "WEB",
+    "FO",
+    "BM",
+    "LIB"
+  ],
   "sops.edit": [
     "HO",
     "FO",
@@ -400,6 +425,7 @@ export const GRANTABLE: Partial<Record<Role, readonly Role[]>> = {
     "FINANCE_ADMIN",
     "HR_ADMIN",
     "CATALOGUE_MANAGER",
+    "WEBSITE_EDITOR",
     "BRANCH_MANAGER",
     "LIBRARIAN",
     "DELIVERY_PERSON",

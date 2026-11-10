@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PublicSnapshot } from '../data';
-import { ageShelves, audienceLine, bookCard, bookDialog, branchCard, branchesSection, contactsSection, coverColour, esc, findBook, formatPhone, genreChips, hoursLines, plansSection, priceNote, reason, ribbon, rupees, shelf, statsLine, time12, whatsappUrl } from '../render';
+import { ageShelves, audienceLine, bookCard, bookDialog, branchCard, branchesSection, contactsSection, coverColour, esc, findBook, faqsHtml, formatPhone, genreChips, hoursLines, plansSection, postsStrip, priceNote, promoBar, promotionsFor, reason, ribbon, rupees, shelf, socialLinks, statsLine, time12, whatsappUrl } from '../render';
 
 const snapshot = (over: Partial<PublicSnapshot> = {}): PublicSnapshot => ({
   generatedAt: '2026-11-10T10:00:00Z',
@@ -198,5 +198,37 @@ describe('book shelves', () => {
     expect(html).toMatch(/id="panel-ADULTS"[^>]*hidden/);
     expect(genreChips(withShowcase({ genres: [{ key: 'SELF_HELP', count: 1200 }] }), 'x')).toContain('Self-help <span class="chip-count">1,200<span class="visually-hidden"> titles</span></span>');
     expect(genreChips(withShowcase({ genres: [{ key: 'SELF_HELP', count: 1 }] }), 'x')).not.toContain('<a ');
+  });
+});
+
+describe('what the Website section published', () => {
+  const promo = (over: Record<string, unknown> = {}) => ({
+    id: 'p1', title: 'Diwali <offer>', message: 'One month free', placement: 'BAR', image: null, cta: { label: 'Join', url: 'javascript:alert(1)' },
+    code: 'DIWALI25', branchIds: [], tone: 'SUN', startOn: '2026-11-01', endOn: '2026-11-20', ...over,
+  });
+  const site = (over: Record<string, unknown> = {}) => ({ social: { instagram: '', facebook: '', youtube: '', x: '' }, faqs: [], greetings: null, promotions: [], branchPages: {}, posts: [], ...over }) as never;
+
+  it('shows site-wide offers everywhere and branch offers only on that branch’s page', () => {
+    const s = site({ promotions: [promo(), promo({ id: 'p2', branchIds: ['b1'] }), promo({ id: 'p3', placement: 'HOME' })] });
+    expect(promotionsFor(s, 'BAR', null).map((p) => p.id)).toEqual(['p1']);
+    expect(promotionsFor(s, 'BAR', 'b1').map((p) => p.id)).toEqual(['p1', 'p2']);
+    const bar = promoBar(promo() as never);
+    expect(bar).toContain('Diwali &lt;offer&gt;');
+    expect(bar).toContain('<strong>DIWALI25</strong>');
+    expect(bar).not.toContain('javascript:');
+  });
+
+  it('links branch cards to their pages, and lists posts, questions and social links', () => {
+    const b = { id: 'b1', orgId: 'corp', name: 'Central', phone: null, email: null, address: { line1: '1 Road', line2: '', city: 'Bengaluru', state: 'KA', postalCode: '560001' }, hours: [], weeklyOffs: [], delivery: { offered: false, feeMinor: 0 } };
+    expect(branchCard(b, { slug: 'central', tagline: 'Our first library' })).toContain('<a href="/branches/central">Central</a>');
+    const s = snapshot({ site: site({
+      posts: [{ slug: 'rainy-days', title: 'Rainy days', summary: '', design: 'BOOKLIST', cover: null, date: '2026-11-10', author: '', tags: [] }],
+      faqs: [{ q: 'Can I pause?', a: 'Yes.' }], social: { instagram: 'https://instagram.com/stories', facebook: 'javascript:x', youtube: '', x: '' },
+    }) });
+    expect(postsStrip(s)).toContain('href="/blog/rainy-days"');
+    expect(postsStrip(s)).toContain('Book list · 10 Nov');
+    expect(postsStrip(snapshot())).toBe('');
+    expect(faqsHtml(s)).toBe('<details><summary>Can I pause?</summary><p>Yes.</p></details>');
+    expect(socialLinks(s)).toBe('<a href="https://instagram.com/stories" target="_blank" rel="noopener me">Instagram</a>');
   });
 });

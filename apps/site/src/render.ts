@@ -1,5 +1,5 @@
 // Pure HTML builders for the live parts of the site. Every value from the data is escaped.
-import type { PublicBranch, PublicPlan, PublicSnapshot, ShowcaseBook } from './data';
+import type { PostCard, PublicBranch, PublicPlan, PublicPromotion, PublicSnapshot, PublicSite, ShowcaseBook } from './data';
 
 export const esc = (v: unknown) =>
   String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -177,17 +177,20 @@ function branchActions(b: PublicBranch) {
   ${b.email ? `<p class="branch-email">Email <a href="mailto:${esc(b.email)}">${esc(b.email)}</a></p>` : ''}`;
 }
 
-export function branchCard(b: PublicBranch) {
+/** A branch's card; with a branch page (`page`), its name links there. */
+export function branchCard(b: PublicBranch, page?: { slug: string; tagline: string } | null) {
   const a = b.address;
   const lines = hoursLines(b.hours, b.weeklyOffs);
   return `<article class="card branch">
-  <h3>${esc(b.name)}</h3>
+  <h3>${page ? `<a href="/branches/${esc(page.slug)}">${esc(b.name)}</a>` : esc(b.name)}</h3>
+  ${page?.tagline ? `<p class="muted branch-tagline">${esc(page.tagline)}</p>` : ''}
   <address>${esc(a.line1)}${a.line2 ? `<br />${esc(a.line2)}` : ''}<br />${esc(a.city)}, ${esc(a.state)} ${esc(a.postalCode)}</address>
   ${lines.length ? `<ul class="hours" aria-label="Opening hours">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
   <ul class="facts">
     ${b.delivery.offered ? `<li>Home delivery: ${b.delivery.feeMinor ? `${esc(rupees(b.delivery.feeMinor))} a visit` : 'free'}</li>` : '<li>Pick up at the branch</li>'}
   </ul>
   ${branchActions(b)}
+  ${page ? `<p><a class="more" href="/branches/${esc(page.slug)}">About this branch, our librarian and what’s on →</a></p>` : ''}
 </article>`;
 }
 
@@ -199,8 +202,9 @@ export const branchMap = (b: PublicBranch) =>
 export function branchesSection(s: PublicSnapshot, limit?: number) {
   if (!s.branches.length) return '<p class="muted">Our first branches are opening soon.</p>';
   const list = s.branches.slice(0, limit);
-  if (list.length === 1) return `<div class="branch-solo">${branchCard(list[0])}${branchMap(list[0])}</div>`;
-  return `<div class="grid">${list.map(branchCard).join('')}</div>`;
+  const page = (b: PublicBranch) => s.site?.branchPages[b.id] ?? null;
+  if (list.length === 1) return `<div class="branch-solo">${branchCard(list[0], page(list[0]))}${branchMap(list[0])}</div>`;
+  return `<div class="grid">${list.map((b) => branchCard(b, page(b))).join('')}</div>`;
 }
 
 /** "2,400 titles · 3 branches". */
@@ -344,4 +348,61 @@ export function findBook(s: PublicSnapshot, kind: ShelfKind, id: string): Showca
   if (!sc) return undefined;
   const lists = kind === 'byAge' ? [sc.byAge.CHILDREN, sc.byAge.TEENS, sc.byAge.ADULTS] : [sc[kind]];
   return lists.flat().find((b) => b.id === id);
+}
+
+// ------------------------------------------------------------------ published by the Website section
+
+/** A link a promotion or post may use (a page of the site, https, tel, mailto). */
+const safeLink = (u: string) => (/^\/(?!\/)|^https:\/\/|^tel:|^mailto:/.test(u) ? u : null);
+
+/** Promotions for this page: those for every page, and those for this branch's page. */
+export function promotionsFor(site: PublicSite | undefined, placement: PublicPromotion['placement'], branchId: string | null) {
+  return (site?.promotions ?? []).filter((p) => p.placement === placement && (!p.branchIds.length || (branchId !== null && p.branchIds.includes(branchId))));
+}
+
+const promoCta = (p: PublicPromotion, cls = 'btn btn-filled') => {
+  const href = p.cta && safeLink(p.cta.url);
+  return href && p.cta ? `<a class="${cls}" href="${esc(href)}" data-promo-click="${esc(p.id)}">${esc(p.cta.label)}</a>` : '';
+};
+const promoCode = (p: PublicPromotion) => (p.code ? `<span class="promo-code">Code <strong>${esc(p.code)}</strong></span>` : '');
+
+/** The slim bar on top of every page. */
+export const promoBar = (p: PublicPromotion) =>
+  `<div class="promo-bar tone-${p.tone.toLowerCase()}" role="region" aria-label="Offer"><div class="wrap promo-bar-row"><span class="promo-text"><strong>${esc(p.title)}</strong>${p.message ? ` <span>${esc(p.message)}</span>` : ''}</span>${promoCode(p)}${promoCta(p, 'btn btn-text promo-link')}<button type="button" class="promo-x" data-promo-close="${esc(p.id)}" aria-label="Close the offer">×</button></div></div>`;
+
+/** The home page banner. */
+export const promoHome = (p: PublicPromotion) =>
+  `<article class="card promo-home tone-${p.tone.toLowerCase()}">${p.image ? `<img src="${esc(p.image.url)}" alt="${esc(p.image.alt)}" loading="lazy" decoding="async" />` : ''}<div class="promo-home-text"><p class="eyebrow">Offer · until ${esc(shortDate(p.endOn))}</p><h2>${esc(p.title)}</h2>${p.message ? `<p>${esc(p.message)}</p>` : ''}<p class="actions">${promoCta(p)}${promoCode(p)}</p></div></article>`;
+
+/** The pop-up card's inside. */
+export const promoPopup = (p: PublicPromotion) =>
+  `<div class="bd-card promo-card tone-${p.tone.toLowerCase()}"><button type="button" class="bd-close" aria-label="Close">×</button>${p.image ? `<div class="promo-card-img"><img src="${esc(p.image.url)}" alt="${esc(p.image.alt)}" /></div>` : ''}<div><p class="eyebrow">Offer · until ${esc(shortDate(p.endOn))}</p><h2 id="promo-title">${esc(p.title)}</h2>${p.message ? `<p>${esc(p.message)}</p>` : ''}<p class="actions">${promoCta(p)}${promoCode(p)}</p></div></div>`;
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-11-10" → "10 Nov". */
+export const shortDate = (d: string | null) => (d ? `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}` : '');
+
+const POST_KIND: Record<string, string> = { CLASSIC: 'Story', MAGAZINE: 'Feature', PHOTO: 'Photo story', TIPS: 'Tips', NOTICE: 'Notice', LETTER: 'Letter', BOOKLIST: 'Book list' };
+
+export const postCard = (c: PostCard) =>
+  `<li><a class="card post-card" href="/blog/${esc(c.slug)}">${
+    c.cover ? `<span class="post-card-img"><img src="${esc(c.cover.url)}" alt="${esc(c.cover.alt)}" loading="lazy" decoding="async" /></span>` : `<span class="post-card-img drawn c-${coverColour(c.slug)}" aria-hidden="true"><span>${esc(POST_KIND[c.design] ?? 'Story')}</span></span>`
+  }<span class="post-card-text"><span class="eyebrow">${esc(POST_KIND[c.design] ?? 'Story')}${c.date ? ` · ${esc(shortDate(c.date))}` : ''}</span><span class="post-card-title">${esc(c.title)}</span>${c.summary ? `<span class="muted">${esc(c.summary)}</span>` : ''}</span></a></li>`;
+
+/** The newest posts ('' when there are none, so the section hides). */
+export function postsStrip(s: PublicSnapshot, limit = 3) {
+  const posts = (s.site?.posts ?? []).slice(0, limit);
+  return posts.length ? `<ul class="post-grid" role="list">${posts.map(postCard).join('')}</ul>` : '';
+}
+
+/** More questions, from the Website section ('' when there are none). */
+export function faqsHtml(s: PublicSnapshot) {
+  return (s.site?.faqs ?? []).map((f) => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('');
+}
+
+const SOCIAL: [keyof PublicSite['social'], string][] = [['instagram', 'Instagram'], ['facebook', 'Facebook'], ['youtube', 'YouTube'], ['x', 'X']];
+/** Social links for the footer ('' when none are set). */
+export function socialLinks(s: PublicSnapshot) {
+  const links = SOCIAL.filter(([k]) => s.site?.social[k] && /^https:\/\//.test(s.site.social[k]));
+  return links.map(([k, label]) => `<a href="${esc(s.site!.social[k])}" target="_blank" rel="noopener me">${label}</a>`).join(' · ');
 }

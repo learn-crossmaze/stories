@@ -22,7 +22,7 @@ export const isStaff = (c: StoriesClaims) => c.sa || Object.keys(c.o).length > 0
 /** The staff console's views (docs/ARCHITECTURE.md): setup and back office, daily running, and self-service. */
 export type ViewId = 'admin' | 'ops' | 'staff';
 
-const ADMIN_ROLES = ['HO', 'HR', 'FIN', 'FO'];
+const ADMIN_ROLES = ['HO', 'HR', 'FIN', 'FO', 'WEB'];
 const OPS_ROLES = ['BM', 'LIB', 'DEL', 'CM'];
 
 /** The view a staff member lands on: back-office roles in Admin, branch roles in Operations, everyone else in Staff. */
