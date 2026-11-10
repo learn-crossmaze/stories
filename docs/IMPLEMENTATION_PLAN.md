@@ -172,5 +172,5 @@ dashboards built on summary documents.
 
 ## Decisions recorded (2026-09-27)
 1. D1–D11 in BUSINESS_RULES.md accepted as proposed.
-2. One Firebase project, `stories-by-crossmaze` (Blaze), plus the local Emulator Suite; no dev/staging/prod split.
+2. One Firebase project, `stories-by-crossmaze` (Blaze; CLI alias `stories-for-all` and domain `storiesforall.in` since 2026-11-10), plus the local Emulator Suite; no dev/staging/prod split.
 3. Web only: Vite + React + TypeScript. Region `asia-south1`; Razorpay remains the Phase 2 payment gateway.

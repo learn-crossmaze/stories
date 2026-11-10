@@ -9,7 +9,8 @@ dist/
 .claude/
 skills-lock.json
 
-# Per-project function secrets (e.g. GOOGLE_BOOKS_API_KEY); never committed
+# Per-project function settings (e.g. GOOGLE_BOOKS_API_KEY); never committed
+functions/.env.stories-for-all
 functions/.env.stories-by-crossmaze
 
 # Local emulator configs with alternative ports (e.g. firebase.me.json), for running several suites at once

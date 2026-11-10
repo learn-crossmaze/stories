@@ -44,10 +44,10 @@ jobs:
           FUNCTIONS_ENV: ${{ secrets.FUNCTIONS_ENV }}
         run: |
           if [ -z "$FUNCTIONS_ENV" ]; then
-            echo "::error::Secret FUNCTIONS_ENV is missing. Add the contents of functions/.env.stories-by-crossmaze (BOOTSTRAP_SUPER_ADMIN_EMAIL, GOOGLE_BOOKS_API_KEY, ENFORCE_APP_CHECK…) as a repository secret; see docs/DEPLOYMENT.md §1."
+            echo "::error::Secret FUNCTIONS_ENV is missing. Add the contents of functions/.env.stories-for-all (BOOTSTRAP_SUPER_ADMIN_EMAIL, GOOGLE_BOOKS_API_KEY, ENFORCE_APP_CHECK…) as a repository secret; see docs/DEPLOYMENT.md §1."
             exit 1
           fi
-          printf '%s\n' "$FUNCTIONS_ENV" > functions/.env.stories-by-crossmaze
+          printf '%s\n' "$FUNCTIONS_ENV" > functions/.env.stories-for-all
       - name: Deploy
         env:
           SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
@@ -55,10 +55,10 @@ jobs:
           printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           # No --force: if a deploy would delete a function, it stops and the owner decides (docs/DEPLOYMENT.md).
-          npx firebase deploy --only firestore,functions,storage --project stories-by-crossmaze --non-interactive
+          npx firebase deploy --only firestore,functions,storage --project stories-for-all --non-interactive
       - name: Remove credentials
         if: always()
-        run: rm -f "$RUNNER_TEMP/sa.json" functions/.env.stories-by-crossmaze
+        run: rm -f "$RUNNER_TEMP/sa.json" functions/.env.stories-for-all
 
   hosting:
     name: Web app (Firebase Hosting)
@@ -82,4 +82,5 @@ jobs:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
           channelId: live
+          # The permanent Firebase project ID ("stories-for-all" is its alias in .firebaserc).
           projectId: stories-by-crossmaze

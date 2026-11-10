@@ -4,6 +4,9 @@
 //
 //   node tools/firebase/provision.mjs --project stories-by-crossmaze
 //
+// (That is the live project's permanent ID; "stories-for-all" is only its alias in
+// .firebaserc. Passing a new ID here creates a new, empty project.)
+//
 // Requires an authenticated Firebase CLI (`npx firebase login --no-localhost`)
 // or FIREBASE_TOKEN / GOOGLE_APPLICATION_CREDENTIALS in CI.
 // See docs/ENVIRONMENTS.md for what this does and what stays manual.

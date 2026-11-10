@@ -18,7 +18,7 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
 
 - **Web:** Vite + React 19 + TypeScript, React Router, Firebase JS SDK (Auth, Firestore, Functions, Storage), in
   `apps/web` (npm workspace). Plain CSS with design tokens (`src/styles.css`); no UI framework. Fonts: Fraunces
-  (display), Inter (text). Hosted on Firebase Hosting (`stories-by-crossmaze.web.app`); `index.html` is served
+  (display), Inter (text). Hosted on Firebase Hosting (`storiesforall.in`; also `stories-by-crossmaze.web.app`); `index.html` is served
   `no-cache`, hashed assets are immutable.
 - **Backend:** Firebase Functions v2, TypeScript, Node 22, region **`asia-south1`**, `maxInstances: 5`, in
   `functions/`. Code layout by domain (platform, organization, catalogue, inventory, members, billing,
@@ -291,7 +291,7 @@ account holder), never staff permissions, and reuse the staff cores via an `auth
 departments, 36 books with copies, 6 plans, members with subscriptions, loans and a reservation, and users (password
 `stories-demo`): super@, ho@, finance@, hr@, **catalogue@**, manager@, librarian@, delivery@, employee@, franchise@,
 **member@** (linked to member Asha Rao and her child Kiran) — all `@stories.test`. Production project
-`stories-by-crossmaze`; the owner deploys the backend with `npm run deploy:backend` after each merge that touches
+`stories-for-all` (alias of the permanent ID `stories-by-crossmaze`); the owner deploys the backend with `npm run deploy:backend` after each merge that touches
 functions, rules or indexes (indexes build in a few minutes).
 
 Seed also creates employees with HR data (documents, shifts, attendance, leave balances and requests, salaries and a

@@ -30,13 +30,13 @@ jobs:
           printf '%s' "$SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
           export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
           open=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 200 --json number --jq '.[].number')
-          npx firebase hosting:channel:list --project stories-by-crossmaze --json \
+          npx firebase hosting:channel:list --project stories-for-all --json \
             | jq -r '.result.channels[]?.name' | sed 's#.*/channels/##' | grep -E '^pr[0-9]+-' \
             | while read -r channel; do
                 number=${channel#pr}; number=${number%%-*}
                 if ! printf '%s\n' "$open" | grep -qx "$number"; then
                   echo "Removing $channel"
-                  npx firebase hosting:channel:delete "$channel" --project stories-by-crossmaze --force || true
+                  npx firebase hosting:channel:delete "$channel" --project stories-for-all --force || true
                 fi
               done
           rm -f "$RUNNER_TEMP/sa.json"
@@ -44,4 +44,5 @@ jobs:
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_STORIES_BY_CROSSMAZE }}
+          # The permanent Firebase project ID ("stories-for-all" is its alias in .firebaserc).
           projectId: stories-by-crossmaze

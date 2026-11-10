@@ -1,6 +1,7 @@
 # Stories — Deployment
 
-One Firebase project, `stories-by-crossmaze` (Blaze), region `asia-south1`.
+One Firebase project, `stories-for-all` (alias of the permanent project ID `stories-by-crossmaze`; docs/ENVIRONMENTS.md §7),
+Blaze plan, region `asia-south1`. Live at `https://storiesforall.in`.
 
 | What | How | When |
 |---|---|---|
@@ -23,7 +24,7 @@ merging web changes that depend on it.
    *Cloud Datastore Index Admin*, *Cloud Datastore Owner* (TTL policies), *Artifact Registry Administrator*,
    *Secret Manager Viewer*, *Firebase Extensions Viewer* and *Service Usage Consumer*.
 2. GitHub → Settings → Secrets and variables → Actions → **Secrets** → `FUNCTIONS_ENV`: paste the whole content of
-   your `functions/.env.stories-by-crossmaze` (at least `BOOTSTRAP_SUPER_ADMIN_EMAIL=learn@crossmaze.in`; also
+   your `functions/.env.stories-for-all` (at least `BOOTSTRAP_SUPER_ADMIN_EMAIL=learn@crossmaze.in`; also
    `GOOGLE_BOOKS_API_KEY=…` and, after App Check, `ENFORCE_APP_CHECK=true`). Without it a deploy would lose these
    values, so the job stops with an error instead.
 3. Same page → **Variables** → `DEPLOY_BACKEND` = `true`.
@@ -66,9 +67,9 @@ screens show "couldn't load" and recover on their own.
 
 Book search works with Open Library alone. To add Google Books (better coverage of Indian editions):
 
-1. Google Cloud console (project `stories-by-crossmaze`) → **APIs & Services → Library** → enable **Books API**.
+1. Google Cloud console (project `stories-by-crossmaze`, shown as "Stories for All") → **APIs & Services → Library** → enable **Books API**.
 2. **Credentials → Create credentials → API key**; restrict it to the **Books API**.
-3. Create `functions/.env.stories-by-crossmaze` (git-ignored) with `GOOGLE_BOOKS_API_KEY=<the key>` and run
+3. Create `functions/.env.stories-for-all` (git-ignored) with `GOOGLE_BOOKS_API_KEY=<the key>` and run
    `npm run deploy:backend`.
 
 Without a key Google Books' shared anonymous quota is usually exhausted, and the search quietly uses Open Library only.
@@ -81,7 +82,7 @@ Without a key Google Books' shared anonymous quota is usually exhausted, and the
 2. **Claim Super Admin:** sign in to the site as `learn@crossmaze.in` (email verified), open `/setup`, click
    *Become Super Admin*. This works once; afterwards grant roles from *Staff & roles*.
 3. **App Check (before launch):** register the web app with reCAPTCHA Enterprise, put the site key in
-   `apps/web/.env.production`, then set `ENFORCE_APP_CHECK=true` in `functions/.env.stories-by-crossmaze` (and in the
+   `apps/web/.env.production`, then set `ENFORCE_APP_CHECK=true` in `functions/.env.stories-for-all` (and in the
    `FUNCTIONS_ENV` secret, §1) and redeploy.
 
 ## Monitoring

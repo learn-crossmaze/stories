@@ -8,7 +8,7 @@ Two services, nothing in between:
 | Where | Firebase project | Config |
 |---|---|---|
 | Your laptop | `demo-stories` (Emulator Suite only; `demo-` IDs never touch the cloud) | `apps/web/.env.emulator` |
-| Live site | `stories-by-crossmaze` | `apps/web/.env.production` (written by `provision.mjs`) |
+| Live site | `stories-for-all` (alias of the permanent project ID `stories-by-crossmaze`) | `apps/web/.env.production` (written by `provision.mjs`) |
 
 ## 1. Local development (no cloud access needed)
 
@@ -96,8 +96,8 @@ Set up once (owner):
 1. **Zoho API Console** (<https://api-console.zoho.in>, signed in as the Zoho Mail admin) → *Add Client* →
    *Server-based Applications*:
    - Client name: `Stories`; Homepage URL: `https://storiesforall.in`
-   - Authorized redirect URI: `https://stories-by-crossmaze.firebaseapp.com/__/auth/handler`
-     (add `https://storiesforall.in/__/auth/handler` too if the site's auth domain moves to the custom domain).
+   - Authorized redirect URIs: `https://storiesforall.in/__/auth/handler` and, until §7 step 3 is done,
+     `https://stories-by-crossmaze.firebaseapp.com/__/auth/handler`.
    - Create, then copy the **Client ID** and **Client Secret**.
 2. **Firebase console** → Authentication → Settings → **Upgrade to Firebase Authentication with Identity Platform**
    (needs the Blaze plan, which the project already has; existing users and sign-in methods are unchanged).
@@ -115,3 +115,41 @@ Zoho Mail* is refused with a message asking them to sign in once the usual way; 
 account, and from then on either way works. Use the same email in Staff & roles as the Zoho mailbox.
 
 Locally, `.env.emulator` switches the button on and the Auth emulator shows a fake sign-in screen for `oidc.zoho`.
+
+## 7. Name and addresses: stories-for-all and storiesforall.in
+
+A Firebase project ID can never change, so the live project keeps the ID `stories-by-crossmaze`. Everything people
+see uses the new name instead:
+
+| Where | Name |
+|---|---|
+| CLI and workflows | `--project stories-for-all` (alias in `.firebaserc`) |
+| Function settings file | `functions/.env.stories-for-all` (the CLI loads `.env.<alias>`) |
+| Website | `https://storiesforall.in` (custom domain) |
+| Sign-in windows, password-reset links | `storiesforall.in` (after step 3) |
+| Firebase console, Google sign-in consent screen | "Stories for All" (display names) |
+
+The old ID stays only where Google needs the real one: `VITE_FIREBASE_PROJECT_ID`, the storage bucket
+(`stories-by-crossmaze.firebasestorage.app`), service-account emails, Cloud Functions URLs (the Razorpay, WhatsApp and
+courier webhooks keep working unchanged) and the `projectId` of the Hosting deploy action.
+
+One-time steps (owner), in this order:
+
+1. **Function settings file:** rename your local `functions/.env.stories-by-crossmaze` to
+   `functions/.env.stories-for-all` (the CLI refuses to deploy while both exist). The `FUNCTIONS_ENV` GitHub secret
+   keeps the same content.
+2. **Custom domain:** Firebase console → Hosting → *Add custom domain* → `storiesforall.in` (and `www.storiesforall.in`,
+   redirecting to it). Add the DNS records it shows at your registrar, next to Zoho's mail records, and wait until
+   Hosting says *Connected* (SSL can take up to a day). Then Authentication → Settings → **Authorized domains** → add
+   `storiesforall.in`.
+3. **Sign-in on your own domain:** Google Cloud console → APIs & Services → Credentials → the *Web client (auto created
+   by Google Service)* → add the authorized redirect URI `https://storiesforall.in/__/auth/handler`. Then set
+   `VITE_FIREBASE_AUTH_DOMAIN=storiesforall.in` in `apps/web/.env.production` and merge. Don't do this before step 2
+   is *Connected*: until then Google sign-in would fail.
+4. **Names people see:** Firebase console → Project settings → *Project name* → `Stories for All`. Google Cloud
+   console → APIs & Services → OAuth consent screen → *App name* `Stories for All`, home page
+   `https://storiesforall.in`, authorized domain `storiesforall.in`.
+5. **Emails:** Authentication → Templates → sender name `Stories for All`; *Customize domain* → `storiesforall.in`
+   (adds DNS records); *Customize action URL* → `https://storiesforall.in/__/auth/action`.
+6. **Payments and messages (optional):** the Razorpay, Meta and Porter webhook URLs don't change. Update only the
+   business name and website shown to customers in the Razorpay dashboard and the WhatsApp Business profile.

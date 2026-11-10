@@ -65,7 +65,7 @@ const yearOf = (s: unknown) => {
 const https = (u: unknown) => (typeof u === 'string' && u ? u.replace(/^http:\/\//, 'https://') : null);
 
 async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { 'User-Agent': 'Stories library (stories-by-crossmaze.web.app)' } });
+  const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { 'User-Agent': 'Stories library (storiesforall.in)' } });
   if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
   return res.json();
 }

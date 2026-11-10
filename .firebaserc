@@ -1,6 +1,7 @@
 {
   "projects": {
     "default": "stories-by-crossmaze",
+    "stories-for-all": "stories-by-crossmaze",
     "emulator": "demo-stories"
   }
 }
