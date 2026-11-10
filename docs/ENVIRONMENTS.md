@@ -125,7 +125,8 @@ see uses the new name instead:
 |---|---|
 | CLI and workflows | `--project stories-for-all` (alias in `.firebaserc`) |
 | Function settings | `functions/.env` (committed, non-secret); private ones in `functions/.env.stories-for-all` (git-ignored; the CLI loads `.env.<alias>`) |
-| App (members and staff) | `https://app.storiesforall.in` (custom domain on Hosting site `stories-by-crossmaze`) |
+| Staff app | `https://app.storiesforall.in` (custom domain on Hosting site `stories-by-crossmaze`) |
+| Member area | `https://storiesforall.in/account` (part of the website; docs/SITE.md) |
 | Public website | `https://storiesforall.in` and `www` (Hosting site `storiesforall-website`; docs/SITE.md) |
 | Sign-in windows, password-reset links | `app.storiesforall.in` (after step 3) |
 | Firebase console, Google sign-in consent screen | "Stories for All" (display names) |

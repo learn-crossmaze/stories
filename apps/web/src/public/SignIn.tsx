@@ -11,7 +11,11 @@ const emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 type Errors = Partial<Record<'name' | 'email' | 'password', string>>;
 
-export function SignInPage() {
+/**
+ * `staff` (the staff app) offers staff single sign-on with Zoho Mail; the member area (website /account) doesn't,
+ * and instead links back to the website.
+ */
+export function SignInPage({ staff = true, websiteUrl }: { staff?: boolean; websiteUrl?: string } = {}) {
   const { repo } = useAuth();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -77,6 +81,11 @@ export function SignInPage() {
       </aside>
 
       <form className="auth-form" onSubmit={submit} noValidate>
+        {websiteUrl && (
+          <a className="btn btn-text align-start" href={websiteUrl}>
+            ← {t.backToWebsite}
+          </a>
+        )}
         <p className="wordmark">{t.appTitle}</p>
         <h1>{creating ? t.createAccountTitle : t.signInTitle}</h1>
         <p className="muted">{creating ? t.createAccountSubtitle : t.signInSubtitle}</p>
@@ -127,7 +136,7 @@ export function SignInPage() {
         >
           {t.continueWithGoogle}
         </button>
-        {env.zohoSignIn && !creating && (
+        {staff && env.zohoSignIn && !creating && (
           <button type="button" className="btn btn-outlined" disabled={submitting} onClick={() => run((r) => r.signInWithZoho())}>
             {t.continueWithZoho}
           </button>

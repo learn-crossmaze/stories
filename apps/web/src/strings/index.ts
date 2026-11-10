@@ -221,6 +221,11 @@ export const t = {
 
   // Staff console
   memberView: 'Member view',
+  toMemberArea: 'Taking you to your Stories account…',
+  toMemberAreaLink: 'Continue',
+  memberAreaWebsite: 'Website',
+  backToWebsite: 'Back to storiesforall.in',
+  memberAreaAccount: 'My account',
   workspace: 'Workspace',
   accountMenu: 'Your account',
   skipToContent: 'Skip to content',

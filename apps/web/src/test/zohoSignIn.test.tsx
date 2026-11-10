@@ -11,6 +11,7 @@ vi.mock('../config/env', async (original) => {
 const { AuthProvider } = await import('../auth/AuthContext');
 const { AuthFailure } = await import('../auth/models');
 const { routes } = await import('../routes');
+const { memberRoutes } = await import('../memberRoutes');
 const { authErrorMessage, t } = await import('../strings');
 const { fakeAuth } = await import('./fakeAuth');
 
@@ -46,5 +47,16 @@ describe('Continue with Zoho Mail', () => {
     renderSignIn();
     await user.click(await screen.findByRole('button', { name: t.createAccountButton }));
     expect(screen.queryByRole('button', { name: t.continueWithZoho })).not.toBeInTheDocument();
+  });
+
+  it('is staff-only: the member area signs in without it and links back to the website', async () => {
+    render(
+      <AuthProvider repo={fakeAuth()}>
+        <RouterProvider router={createMemoryRouter(memberRoutes, { initialEntries: ['/sign-in'] })} />
+      </AuthProvider>,
+    );
+    expect(await screen.findByRole('button', { name: t.continueWithGoogle })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: t.continueWithZoho })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: `← ${t.backToWebsite}` })).toBeInTheDocument();
   });
 });

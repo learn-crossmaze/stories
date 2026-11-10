@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Your Stories for All account: your books, reservations, plan, payments, deposit, home deliveries and library card." />
+    <meta name="theme-color" content="#8C2F39" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="/account/favicon.png" />
+    <link rel="apple-touch-icon" href="/account/icon-192.png" />
+    <title>My account · Stories for All</title>
+    <script>
+      // Personal appearance before the first paint (as in index.html; src/shared/appearance.ts takes over).
+      try {
+        var a = JSON.parse(localStorage.getItem('stories.appearance') || '{}'), r = document.documentElement;
+        var dark = a.theme === 'dark' || (a.theme !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+        r.dataset.scheme = dark ? 'dark' : 'light';
+        if (a.accent) r.dataset.accent = a.accent;
+        if (a.density) r.dataset.density = a.density;
+        if (a.corners) r.dataset.corners = a.corners;
+        if (a.contrast) r.dataset.contrast = a.contrast;
+        if (a.motion) r.dataset.motion = a.motion;
+        r.style.setProperty('--ui-scale', { large: '1.125', larger: '1.25' }[a.textSize] || '1');
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/memberMain.tsx"></script>
+  </body>
+</html>

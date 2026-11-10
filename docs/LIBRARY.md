@@ -180,6 +180,9 @@ everything has loaded; if a part fails, a note says the list may be incomplete, 
 
 ## Member app (self-service)
 
+> Since 2026-11-10 these pages are the **member area on the website** (`storiesforall.in/account`, docs/SITE.md);
+> the staff app no longer shows them and sends members there.
+
 Members sign in with the email the branch recorded on their membership (verified: Google sign-in, or the
 verification link for email/password accounts). On the first visit `me-overview` links every unclaimed member record
 with that email to the account (`members.accountHolderUid`, audited; matched case-insensitively via `emailLower`).

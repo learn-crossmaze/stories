@@ -1,17 +1,20 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AuthProvider } from '../auth/AuthContext';
 import { AuthFailure } from '../auth/models';
+import { env } from '../config/env';
+import { memberRoutes } from '../memberRoutes';
 import { routes } from '../routes';
 import { authErrorMessage, t } from '../strings';
 import { fakeAuth } from './fakeAuth';
 import type { StoriesClaims } from '../auth/claims';
 
-function renderApp(repo = fakeAuth(), path = '/') {
-  const router = createMemoryRouter(routes, { initialEntries: [path] });
+/** The member area (website /account) by default; `staffApp` renders the staff app instead. */
+function renderApp(repo = fakeAuth(), path = '/', staffApp = false) {
+  const router = createMemoryRouter(staffApp ? routes : memberRoutes, { initialEntries: [path] });
   render(
     <AuthProvider repo={repo}>
       <RouterProvider router={router} />
@@ -35,7 +38,7 @@ describe('app flow', () => {
 
     await user.click(screen.getByRole('link', { name: t.navProfile }));
     expect(await screen.findByText(t.profileSignedInAs('reader@example.com'))).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: t.signOut }));
+    await user.click(screen.getAllByRole('button', { name: t.signOut })[0]);
     expect(await screen.findByRole('heading', { name: t.signInTitle })).toBeInTheDocument();
   });
 
@@ -76,15 +79,31 @@ describe('app flow', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(`${authErrorMessage.unknown} (auth/internal-error)`);
   });
 
-  it('keeps members out of the staff console', async () => {
-    const { router } = renderApp(fakeAuth({ uid: 'm1', email: 'm@x.in', displayName: 'Mira', emailVerified: true }), '/admin/staff');
-    expect(await screen.findByRole('heading', { name: t.greeting('Mira') })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe('/');
+  it('sends members from the staff app to the member area on the website', async () => {
+    const replace = vi.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, replace } });
+    renderApp(fakeAuth({ uid: 'm1', email: 'm@x.in', displayName: 'Mira', emailVerified: true }), '/admin/staff', true);
+    expect(await screen.findByText(t.toMemberArea)).toBeInTheDocument();
+    expect(replace).toHaveBeenCalledWith(env.memberUrl);
   });
 
-  it('links staff from the member menu to the view they work in', async () => {
+  it('keeps old member links working by sending them to the same page in the member area', async () => {
+    const replace = vi.fn();
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, replace } });
+    renderApp(fakeAuth({ uid: 'm1', email: 'm@x.in', displayName: 'Mira', emailVerified: true }), '/membership', true);
+    await screen.findByText(t.toMemberArea);
+    expect(replace).toHaveBeenCalledWith(`${env.memberUrl}/membership`);
+  });
+
+  it('opens the console for staff in the staff app', async () => {
+    const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
+    const { router } = renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/', true);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/ops'));
+  });
+
+  it('links staff from the member area to the console they work in', async () => {
     const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
     renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/profile');
-    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', '/ops');
+    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', `${env.staffUrl}/ops`);
   });
 });

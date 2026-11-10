@@ -1,3 +1,4 @@
+import { memberAreaUrl } from '../routes';
 import { Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
@@ -127,9 +128,9 @@ function AccountMenu() {
           <Link to={paths.adminAppearance} onClick={() => setOpen(false)}>
             <Icon name="palette" /> {t.navAppearance}
           </Link>
-          <Link to={paths.home} onClick={() => setOpen(false)}>
+          <a href={memberAreaUrl()} onClick={() => setOpen(false)}>
             <Icon name="home" /> {t.memberView}
-          </Link>
+          </a>
           <button type="button" onClick={() => repo.signOut()}>
             <Icon name="logout" /> {t.signOut}
           </button>
@@ -228,10 +229,10 @@ function ViewSwitcher({ view }: { view: ViewId }) {
           <span>{t.viewNames[v]}</span>
         </Link>
       ))}
-      <Link to={paths.home} className="view-pill">
+      <a href={memberAreaUrl()} className="view-pill">
         <Icon name={VIEW_ICONS.member} />
         <span>{t.viewNames.member}</span>
-      </Link>
+      </a>
     </nav>
   );
 }

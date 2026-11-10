@@ -113,6 +113,7 @@ h2 { font-size: 22px; line-height: 1.25; }
 .btn-outlined { border-color: var(--outline); color: var(--on-surface); }
 .btn-text { padding: 0 12px; }
 .align-end { align-self: flex-end; }
+.align-start { align-self: flex-start; padding-inline: 0; }
 
 /* Sign-in */
 .sign-in { min-height: 100vh; display: grid; grid-template-columns: 1fr; }

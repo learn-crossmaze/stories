@@ -10,7 +10,7 @@
     "dev": "npm run dev -w apps/web",
     "dev:site": "npm run dev -w apps/site",
     "build": "npm run build -w apps/web",
-    "build:site": "npm run build -w apps/site",
+    "build:site": "npm run build -w apps/site && npm run build:member -w apps/web",
     "test:web": "npm run test -w apps/web",
     "test:site": "npm run test -w apps/site",
     "emulators": "npm --prefix functions run build && firebase emulators:start --project demo-stories",
@@ -20,7 +20,8 @@
     "gen:rbac": "node tools/rbac/generate.mjs",
     "test:functions": "npm --prefix functions run test:unit && firebase emulators:exec --project demo-stories --only firestore,auth,storage \"npm --prefix functions run test:emulator\"",
     "deploy:backend": "firebase deploy --only firestore,functions,storage --project stories-for-all",
-    "deploy:site": "npm run build:site && firebase deploy --only hosting:site --project stories-for-all"
+    "deploy:site": "npm run build:site && firebase deploy --only hosting:site --project stories-for-all",
+    "dev:member": "npm run dev:member -w apps/web"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

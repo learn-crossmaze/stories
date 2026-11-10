@@ -1,0 +1,102 @@
+/* The member area (website /account) in the website's "Classic bookshop" look (apps/site/src/site.css):
+   cream paper, burgundy and navy, Fraunces headings and Inter text. Loaded after styles.css, so these tokens
+   win over the app's defaults; a member's own Appearance choices (accent, contrast…) still apply on top. */
+
+:root {
+  --surface: #f6f0e4;
+  --surface-dim: #efe6d5;
+  --surface-raised: #fffdf8;
+  --on-surface: #2b2118;
+  --on-surface-muted: #5e5243;
+  --primary: #8c2f39;
+  --on-primary: #ffffff;
+  --primary-container: #f1dcdc;
+  --on-primary-container: #5a1d24;
+  --secondary-container: #dce4ef;
+  --outline: #d8ccb6;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --m-navy: #1f3a5f;
+  --m-gold: #c9a227;
+  --m-line-strong: #b9a98d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme]) {
+    --surface: #191510;
+    --surface-dim: #211c15;
+    --surface-raised: #241f18;
+    --on-surface: #f3ece0;
+    --on-surface-muted: #cdc2af;
+    --primary: #e8a0a7;
+    --on-primary: #191510;
+    --primary-container: #3a2225;
+    --on-primary-container: #f8dde0;
+    --secondary-container: #1f2b3d;
+    --outline: #3d352a;
+    --m-line-strong: #5a4e3d;
+  }
+}
+:root[data-scheme='dark'] {
+  --surface: #191510;
+  --surface-dim: #211c15;
+  --surface-raised: #241f18;
+  --on-surface: #f3ece0;
+  --on-surface-muted: #cdc2af;
+  --primary: #e8a0a7;
+  --on-primary: #191510;
+  --primary-container: #3a2225;
+  --on-primary-container: #f8dde0;
+  --secondary-container: #1f2b3d;
+  --outline: #3d352a;
+  --m-line-strong: #5a4e3d;
+}
+
+.m-site { min-height: 100vh; display: flex; flex-direction: column; background: var(--surface); }
+.m-wrap { width: 100%; max-width: 1160px; margin: 0 auto; padding: 0 16px; }
+@media (min-width: 720px) { .m-wrap { padding: 0 32px; } }
+
+/* Header: the website's, plus the account tabs. */
+.m-header { position: sticky; top: 0; z-index: 20; background: var(--surface-raised); border-bottom: 1px solid var(--outline); }
+.m-header::before { content: ''; display: block; height: 4px; background: linear-gradient(90deg, #8c2f39 0 33.3%, #c9a227 33.3% 66.6%, #1f3a5f 66.6%); }
+.m-header-row { display: flex; align-items: center; gap: 16px; min-height: 62px; }
+.m-brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--on-surface); flex-shrink: 0; }
+.m-brand img { border-radius: 7px; }
+.m-wordmark { font: 650 1.35rem/1 var(--font-display); color: var(--primary); margin: 0; white-space: nowrap; }
+.m-wordmark em { color: var(--on-surface); font-weight: 500; }
+.m-site-links { display: flex; gap: 2px; margin-left: 12px; }
+.m-site-links a { padding: 8px 10px; border-radius: 6px; color: var(--on-surface-muted); text-decoration: none; font-weight: 500; white-space: nowrap; }
+.m-site-links a:hover { color: var(--on-surface); background: var(--surface-dim); }
+.m-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.m-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--m-line-strong); background: var(--surface-raised); color: var(--on-surface); font: 600 0.92rem/1.2 var(--font-text); text-decoration: none; cursor: pointer; white-space: nowrap; }
+.m-btn svg { width: 18px; height: 18px; }
+.m-btn-text { border-color: transparent; background: none; color: var(--primary); }
+.m-btn-text:hover { text-decoration: underline; }
+@media (max-width: 899px) { .m-site-links { display: none; } }
+@media (max-width: 479px) { .m-btn-outlined span, .m-btn-outlined { font-size: 0.85rem; padding: 6px 10px; } }
+
+.m-tabs { border-top: 1px solid var(--outline); background: var(--surface-raised); }
+.m-tabs-row { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.m-tabs-row::-webkit-scrollbar { display: none; }
+.m-tab { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; color: var(--on-surface-muted); text-decoration: none; font-weight: 600; border-bottom: 3px solid transparent; white-space: nowrap; }
+.m-tab svg { width: 20px; height: 20px; }
+.m-tab:hover { color: var(--on-surface); }
+.m-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+.m-main { flex: 1; padding-top: 32px; padding-bottom: 56px; outline: none; }
+.m-main h1 { font-family: var(--font-display); }
+
+/* Footer: the website's navy footer with the gold rule. */
+.m-footer { background: #1f3a5f; color: #fff; border-top: 4px solid #c9a227; padding: 44px 0 20px; }
+.m-footer .m-wordmark { color: #fff; }
+.m-footer .m-wordmark em { color: #e8d48f; }
+.m-footer-muted { color: #d3deec; }
+.m-footer-grid { display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.m-footer h2 { font: 600 0.8rem/1.4 var(--font-text); text-transform: uppercase; letter-spacing: 0.14em; color: #e8d48f; margin: 0 0 10px; }
+.m-footer nav a { display: block; color: #fff; text-decoration: none; padding: 4px 0; }
+.m-footer nav a:hover { text-decoration: underline; }
+.m-legal { margin-top: 28px; padding-top: 16px; border-top: 1px solid rgba(255, 255, 255, 0.18); color: #d3deec; font-size: 0.88rem; }
+.m-legal p { margin: 0; }
+
+/* Sign-in page in the same palette. */
+.sign-in .editorial { background: #1f3a5f; color: #fff; }
+.sign-in .editorial-title { font-family: var(--font-display); }

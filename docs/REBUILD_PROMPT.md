@@ -234,7 +234,11 @@ shown masked with an audited *Show*, and a *Send WhatsApp updates* switch). Memb
     a per-branch token; one adapter per courier in `functions/src/delivery/couriers.ts`); riders report delivered or
     failed (books collected, fee collected); returned books are received back through the desk's return code.
 
-### 0.7 Features — member app (`/`, `/explore`, `/my-books`, `/membership`, `/profile`)
+### 0.7 Features — member area (website `/account`, `/account/explore`, `/my-books`, `/membership`, `/profile`)
+
+Members use the member area on the public website (the member pages of `apps/web` built on their own at
+`/account`, in the website's look); the staff app is staff-only and sends everyone else there (docs/SITE.md).
+
 
 Members sign in (email/password with verification, or Google). `me-overview` **links** every unclaimed member
 record whose `email`/`emailLower` equals the verified sign-in email (sets `accountHolderUid`, audited) and returns,

@@ -13,6 +13,10 @@ export const env = {
   appCheckKey: e.VITE_APP_CHECK_RECAPTCHA_ENTERPRISE_KEY ?? '',
   /** Shows "Continue with Zoho Mail" (the OpenID Connect provider `oidc.zoho`, docs/ENVIRONMENTS.md §6). */
   zohoSignIn: e.VITE_ZOHO_SIGN_IN === 'true',
+  /** The member area on the website (members sign in there; the staff app sends them on). */
+  memberUrl: (e.VITE_MEMBER_URL ?? 'https://storiesforall.in/account').replace(/\/$/, ''),
+  /** The staff app (the member area links staff to their console). */
+  staffUrl: (e.VITE_STAFF_URL ?? 'https://app.storiesforall.in').replace(/\/$/, ''),
 };
 
 export function firebaseOptions(): FirebaseOptions {

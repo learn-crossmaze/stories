@@ -7,7 +7,8 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 | Address | What | Code | Hosting target |
 |---|---|---|---|
 | `storiesforall.in`, `www.storiesforall.in` | Public website | `apps/site` | `site` (Hosting site `storiesforall-website`) |
-| `app.storiesforall.in` | Stories app | `apps/web` | `app` (Hosting site `stories-by-crossmaze`) |
+| `storiesforall.in/account` | **Member area**: everything a member does | `apps/web` member pages (`member.html`, `src/memberMain.tsx`, `src/memberRoutes.tsx`) | `site` (built into `apps/site/dist/account`) |
+| `app.storiesforall.in` | Staff app (console only) | `apps/web` | `app` (Hosting site `stories-by-crossmaze`) |
 
 ## How it's built
 
@@ -39,12 +40,33 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 To change wording, edit the HTML page. To change what plans or branches show, change them in the app (Plans,
 Branches); the site follows.
 
+## Member area (storiesforall.in/account)
+
+Members don't use the staff app. Everything they do is in the member area on the website, in the same look:
+their account (plan, renewal, books with them, deposit; switch between their own and their children's
+memberships), Explore and reserve, My books (borrowed, reservations, history, home delivery), Membership (choose or
+renew a plan, upgrade, pay online or at the branch, payments, subscription history, deposit ledger, add a child) and
+Profile (library ID card, details, appearance). It is the member pages of `apps/web`, built on their own by
+`vite.member.config.ts` (base `/account/`) into the website's build, with the website's header, account tabs and
+footer (`src/member/MemberShell.tsx`, `src/member/memberTheme.css`). Sign-in is on `/account/sign-in` (email and
+password or Google; Zoho sign-in is for staff only). The backend is unchanged: the same `me-*` actions.
+
+- The website's *Become a member* and *Sign in* go to `/account` (`VITE_APP_URL` in `apps/site/.env`); book cards
+  link to `/account/explore`.
+- The staff app sends anyone who isn't staff to the member area, and old member addresses (`/membership`,
+  `/my-books`…) to the same page there (`VITE_MEMBER_URL` in `apps/web/.env.production`). Staff see a *Staff
+  console* link in the member area (`VITE_STAFF_URL`) and *Member view* in the console.
+- Hosting serves `/account` and its pages from `account/member.html` (`firebase.json`, target `site`).
+- **Sign-in needs the website's address authorized:** Firebase → Authentication → Settings → Authorized domains →
+  add `storiesforall-website.web.app` (and `storiesforall.in` once connected).
+
 ## Local development
 
 ```bash
 npm run emulators   # terminal 1 (serves sitePublic from the seeded data)
 npm run seed        # terminal 2, once
-npm run dev:site    # terminal 2 → http://localhost:8082
+npm run dev:site    # terminal 2 → http://localhost:8082 (the website)
+npm run dev:member  # terminal 3 → http://localhost:8083/account/ (the member area)
 ```
 
 Tests and build: `npm run test:site`, `npm run build:site` (CI runs both).
@@ -62,5 +84,5 @@ Tests and build: `npm run test:site`, `npm run build:site` (CI runs both).
 5. **Domains** (docs/ENVIRONMENTS.md §7): in Hosting, open the **storiesforall-website** site → *Add custom domain* →
    `storiesforall.in`, then `www.storiesforall.in` redirecting to it. Open the **stories-by-crossmaze** site → *Add
    custom domain* → `app.storiesforall.in`. Add each record Hosting shows at your registrar.
-6. **Point the site at the app's new address:** once `app.storiesforall.in` says *Connected*, set
-   `VITE_APP_URL=https://app.storiesforall.in` in `apps/site/.env` and merge.
+6. **Update the addresses** once the domains say *Connected*: in `apps/web/.env.production`, set
+   `VITE_MEMBER_URL=https://storiesforall.in/account` and `VITE_STAFF_URL=https://app.storiesforall.in`, and merge.

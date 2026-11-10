@@ -119,6 +119,18 @@
       "trailingSlash": false,
       "rewrites": [
         {
+          "source": "/account",
+          "destination": "/account/member.html"
+        },
+        {
+          "source": "/account/!(assets)",
+          "destination": "/account/member.html"
+        },
+        {
+          "source": "/account/!(assets)/**",
+          "destination": "/account/member.html"
+        },
+        {
           "source": "/api/public",
           "function": {
             "functionId": "sitePublic",
@@ -149,6 +161,15 @@
             {
               "key": "Permissions-Policy",
               "value": "geolocation=(), camera=(), microphone=()"
+            }
+          ]
+        },
+        {
+          "source": "/account/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
             }
           ]
         },
