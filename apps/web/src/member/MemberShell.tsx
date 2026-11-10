@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
@@ -23,6 +23,34 @@ const destinations: [string, IconName, string][] = [
 /** The public website the member area is part of (same site: the member area is served at /account). */
 const SITE = env.memberUrl.replace(/\/account$/, '');
 const site = (path: string) => `${SITE}${path}`;
+
+type SiteTheme = 'candy' | 'library';
+const THEME_KEY = 'stories.siteTheme';
+const readTheme = (): SiteTheme => (document.documentElement.dataset.theme === 'library' ? 'library' : 'candy');
+
+/** The website's two looks; the choice is saved for the website and the member area alike. */
+function ThemeSwitch() {
+  const [theme, setTheme] = useState<SiteTheme>(readTheme);
+  const choose = (next: SiteTheme) => {
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // Private windows: lasts for this visit only.
+    }
+    setTheme(next);
+  };
+  return (
+    <div className="m-theme-switch" role="group" aria-label="Website look">
+      <span>Look:</span>
+      {(['candy', 'library'] as const).map((k) => (
+        <button key={k} type="button" aria-pressed={theme === k} onClick={() => choose(k)}>
+          {k === 'candy' ? 'Candy' : 'Reading room'}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /**
  * The member area's frame, in the website's look: the website header (with its main pages), the account's own
@@ -102,6 +130,7 @@ export function MemberShell() {
         </div>
         <div className="m-wrap m-legal">
           <p>© {new Date().getFullYear()} Stories for All · storiesforall.in</p>
+          <ThemeSwitch />
         </div>
       </footer>
     </div>

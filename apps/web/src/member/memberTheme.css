@@ -118,3 +118,69 @@ body { background: var(--m-flow); background-color: var(--surface); }
 .sign-in .editorial { background: linear-gradient(150deg, #c81d64 0%, #8e24aa 55%, #5e2bd6 100%); color: #fff; }
 .sign-in .editorial-title { font-family: var(--font-display); }
 .sign-in .wordmark { font-family: var(--font-display); background: var(--m-heading); -webkit-background-clip: text; background-clip: text; color: transparent; width: fit-content; }
+
+.m-theme-switch { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.m-theme-switch button { min-height: 34px; padding: 4px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.35); background: transparent; color: #fff; font: 600 0.85rem/1.2 var(--font-display); cursor: pointer; }
+.m-theme-switch button[aria-pressed='true'] { background: #fff; color: #2a1036; }
+
+/* ------------------------------------------------------------------ "Reading room" look (data-theme=library)
+   As on the website: white pages with soft pastel washes, white cards, teal-to-indigo headings, a navy footer. */
+:root[data-theme='library'] {
+  --surface: #ffffff;
+  --surface-dim: #f6f8fc;
+  --surface-raised: #ffffff;
+  --on-surface: #1d2a5b;
+  --on-surface-muted: #4f5a7a;
+  --primary: #0b6f78;
+  --on-primary: #ffffff;
+  --primary-container: #e1f5f4;
+  --on-primary-container: #08545c;
+  --secondary-container: #e8e5ff;
+  --outline: #e3e1ef;
+  --m-flow: radial-gradient(52rem 34rem at -6% 2%, #ffe9e4 0, rgba(255, 233, 228, 0) 70%), radial-gradient(46rem 32rem at 106% 8%, #e1f7f3 0, rgba(225, 247, 243, 0) 70%), radial-gradient(56rem 36rem at 92% 70%, #ece8ff 0, rgba(236, 232, 255, 0) 70%), #ffffff;
+  --m-glass: rgba(255, 255, 255, 0.95);
+  --m-glass-edge: #e9e6f2;
+  --m-shadow: 0 1px 2px rgb(29 42 91 / 6%), 0 8px 22px rgb(29 42 91 / 10%);
+  --m-heading: linear-gradient(100deg, #0b6f78 0%, #2f55c9 55%, #6b45d6 100%);
+  --m-magenta: linear-gradient(135deg, #0b7f82 0%, #0b6f78 55%, #08545c 100%);
+}
+:root[data-theme='library'] .m-footer { background: linear-gradient(135deg, #24326f 0%, #1d2a5b 100%); border-radius: 0; }
+:root[data-theme='library'] .m-footer .m-wordmark em, :root[data-theme='library'] .m-footer h2 { color: #ffd166; }
+:root[data-theme='library'] .m-theme-switch button[aria-pressed='true'] { color: #1d2a5b; }
+:root[data-theme='library'] .sign-in .editorial { background: linear-gradient(150deg, #0b6f78 0%, #2f55c9 60%, #6b45d6 100%); }
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='library']:not([data-scheme='light']) {
+    --surface: #0f1733;
+    --surface-dim: #131c40;
+    --surface-raised: #17214a;
+    --on-surface: #eef2ff;
+    --on-surface-muted: #c3cbe6;
+    --primary: #7fe0dc;
+    --on-primary: #0f1733;
+    --primary-container: #12383b;
+    --on-primary-container: #c9f3f1;
+    --secondary-container: #2f2a5c;
+    --outline: #26336b;
+    --m-flow: radial-gradient(52rem 34rem at -6% 2%, rgba(244, 107, 91, 0.16) 0, transparent 70%), radial-gradient(56rem 36rem at 92% 60%, rgba(107, 69, 214, 0.18) 0, transparent 70%), #0f1733;
+    --m-glass: rgba(23, 33, 74, 0.94);
+    --m-glass-edge: #26336b;
+    --m-heading: linear-gradient(100deg, #7fe0dc 0%, #9db4ff 55%, #c3b2ff 100%);
+  }
+}
+:root[data-theme='library'][data-scheme='dark'] {
+  --surface: #0f1733;
+  --surface-dim: #131c40;
+  --surface-raised: #17214a;
+  --on-surface: #eef2ff;
+  --on-surface-muted: #c3cbe6;
+  --primary: #7fe0dc;
+  --on-primary: #0f1733;
+  --primary-container: #12383b;
+  --on-primary-container: #c9f3f1;
+  --secondary-container: #2f2a5c;
+  --outline: #26336b;
+  --m-flow: radial-gradient(52rem 34rem at -6% 2%, rgba(244, 107, 91, 0.16) 0, transparent 70%), radial-gradient(56rem 36rem at 92% 60%, rgba(107, 69, 214, 0.18) 0, transparent 70%), #0f1733;
+  --m-glass: rgba(23, 33, 74, 0.94);
+  --m-glass-edge: #26336b;
+  --m-heading: linear-gradient(100deg, #7fe0dc 0%, #9db4ff 55%, #c3b2ff 100%);
+}

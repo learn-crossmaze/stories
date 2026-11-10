@@ -1,4 +1,13 @@
     <meta charset="UTF-8" />
+    <script>
+      // Site look before the first paint: "candy" or "library" (apps/site/src/theme.ts). ?theme= previews and remembers one.
+      try {
+        var q = new URLSearchParams(location.search).get('theme'), k = 'stories.siteTheme', ok = { candy: 1, library: 1 };
+        if (q && ok[q]) localStorage.setItem(k, q);
+        var th = localStorage.getItem(k);
+        document.documentElement.dataset.theme = ok[th] ? th : '%VITE_SITE_THEME%' || 'candy';
+      } catch (e) { document.documentElement.dataset.theme = '%VITE_SITE_THEME%' || 'candy'; }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#A3127A" />
     <link rel="icon" type="image/png" href="/favicon.png" />

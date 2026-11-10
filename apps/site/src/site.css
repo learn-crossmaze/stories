@@ -210,7 +210,7 @@ section { padding: 52px 0; position: relative; }
 .doodle { position: absolute; width: 46px; height: 46px; pointer-events: none; opacity: 0.85; animation: float 7s ease-in-out infinite; }
 .doodle.d1 { top: 12px; left: 46%; } .doodle.d2 { bottom: 20px; left: 4%; animation-delay: -3s; width: 36px; height: 36px; }
 .doodle.d3 { top: 40%; right: 2%; animation-delay: -5s; width: 34px; height: 34px; }
-@media (max-width: 719px) { .doodle { display: none; } }
+@media (max-width: 719px) { .doodle, :root[data-theme] .doodle { display: none !important; } }
 
 /* Promises: glass tiles with a pastel badge. */
 .promise { list-style: none; margin: 40px 0 0; padding: 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
@@ -365,4 +365,140 @@ address { font-style: normal; color: var(--ink-muted); }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .btn:hover, .card:hover, .chip:hover, .book a:hover .cover, .book a:focus-visible .cover { transform: none; }
+}
+
+/* ================================================================== theme switch */
+.theme-switch { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.theme-switch span { margin-right: 2px; }
+.theme-switch button { min-height: 34px; padding: 4px 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.35); background: transparent; color: #fff; font: 600 0.85rem/1.2 var(--font-display); cursor: pointer; }
+.theme-switch button[aria-pressed='true'] { background: #fff; color: #2a1036; }
+/* Each look shows its own artwork. */
+.art-library, .only-library { display: none; }
+:root[data-theme='library'] .art-candy, :root[data-theme='library'] .only-candy { display: none; }
+:root[data-theme='library'] .art-library { display: block; }
+:root[data-theme='library'] .only-library { display: block; }
+
+/* ================================================================== "Reading room" (data-theme=library)
+   White pages with soft pastel washes, crisp white cards, teal-to-indigo headings, library artwork: a bookcase hero,
+   book-spine section edges, a light-oak shelf and a navy footer topped with a row of books. */
+:root[data-theme='library'] {
+  --ink: #1d2a5b;
+  --ink-muted: #4f5a7a;
+  --magenta: #0b6f78;
+  --magenta-700: #08545c;
+  --magenta-50: #e1f5f4;
+  --pink: #f46b5b;
+  --purple-fg: #5b3fd1;
+  --mint-fg: #08705e;
+  --sun-fg: #8a5a00;
+  --orange-fg: #a6400c;
+  --tint-pink: #ffe1dc;
+  --tint-purple: #e8e5ff;
+  --tint-mint: #d7f6f2;
+  --tint-sun: #fff1c4;
+  --tint-sky: #dcefff;
+  --tint-peach: #ffe6d1;
+  --g-flow:
+    radial-gradient(52rem 34rem at -6% 2%, #ffe9e4 0, rgba(255, 233, 228, 0) 70%),
+    radial-gradient(46rem 32rem at 106% 8%, #e1f7f3 0, rgba(225, 247, 243, 0) 70%),
+    radial-gradient(56rem 36rem at 92% 58%, #ece8ff 0, rgba(236, 232, 255, 0) 70%),
+    radial-gradient(52rem 34rem at 0% 82%, #e3f1ff 0, rgba(227, 241, 255, 0) 70%),
+    #ffffff;
+  --g-heading: linear-gradient(100deg, #0b6f78 0%, #2f55c9 55%, #6b45d6 100%);
+  --g-highlight: linear-gradient(90deg, #d9480f 0%, #d6336c 50%, #6b45d6 100%);
+  --g-magenta: linear-gradient(135deg, #0b7f82 0%, #0b6f78 55%, #08545c 100%);
+  --g-ink: linear-gradient(135deg, #24326f 0%, #1d2a5b 100%);
+  --glass: #ffffff;
+  --glass-thick: rgba(255, 255, 255, 0.95);
+  --glass-edge: #e9e6f2;
+  --glass-rim: inset 0 1px 0 #ffffff;
+  --shadow-tint: 29 42 91;
+  --link: #0b6f78;
+}
+:root[data-theme='library'] body { background: var(--g-flow); background-color: #fff; }
+:root[data-theme='library'] .card, :root[data-theme='library'] .steps > li, :root[data-theme='library'] .promise li,
+:root[data-theme='library'] details, :root[data-theme='library'] .contacts li { backdrop-filter: none; }
+:root[data-theme='library'] .card.tint { background: linear-gradient(165deg, var(--tint) 0%, #ffffff 62%); }
+:root[data-theme='library'] .promise li { border-top: 4px solid var(--tint-pink); }
+:root[data-theme='library'] .promise li:nth-child(2) { border-top-color: var(--tint-peach); }
+:root[data-theme='library'] .promise li:nth-child(3) { border-top-color: var(--tint-mint); }
+:root[data-theme='library'] .promise li:nth-child(4) { border-top-color: var(--tint-purple); }
+:root[data-theme='library'] .wordmark span[class^='l'] { color: #1d2a5b; }
+:root[data-theme='library'] .for-all { color: var(--magenta); }
+:root[data-theme='library'] .eyebrow { color: var(--magenta); }
+:root[data-theme='library'] .eyebrow::before { content: '❖'; color: #f46b5b; }
+:root[data-theme='library'] .nav-signin { border-color: rgb(11 111 120 / 30%) !important; }
+:root[data-theme='library'] .menu-toggle { background: #e1f5f4; }
+:root[data-theme='library'] .hero-art { filter: drop-shadow(0 18px 26px rgb(29 42 91 / 12%)); }
+
+/* Bands: a light gradient with a row of book spines along the top edge. */
+:root[data-theme='library'] .band { background: linear-gradient(180deg, #f6faff 0%, #fbf8ff 100%); border-top: 1px solid #ece9f5; }
+:root[data-theme='library'] .band::before {
+  content: ''; position: absolute; left: 0; right: 0; top: -18px; height: 18px; pointer-events: none;
+  background:
+    linear-gradient(#d9c3a0, #d9c3a0) bottom / 100% 3px no-repeat,
+    repeating-linear-gradient(90deg, #ffb4a2 0 10px, transparent 10px 12px, #a0e7e5 12px 20px, transparent 20px 22px, #b4b0f7 22px 34px, transparent 34px 36px, #ffe08a 36px 44px, transparent 44px 46px, #9ad0ff 46px 56px, transparent 56px 58px, #f7a6c9 58px 66px, transparent 66px 70px) bottom 3px left 0 / 100% 15px no-repeat;
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 56px, rgba(0, 0, 0, 0.75) 56px 70px);
+}
+
+/* Shelves: light oak. */
+:root[data-theme='library'] .shelf { background: linear-gradient(#ead6b4, #d6b98d) bottom 6px left 0 / 100% 12px no-repeat, linear-gradient(rgba(29, 42, 91, 0.12), transparent) bottom 0 left 0 / 100% 6px no-repeat; scrollbar-color: #cdbb9b transparent; }
+:root[data-theme='library'] .cover { box-shadow: 0 8px 16px rgb(29 42 91 / 14%); }
+:root[data-theme='library'] .book a:hover .cover, :root[data-theme='library'] .book a:focus-visible .cover { box-shadow: 0 16px 26px rgb(29 42 91 / 20%); }
+:root[data-theme='library'] .book-reason { color: #0b6f78; }
+
+/* Footer: navy, topped with a row of books. */
+:root[data-theme='library'] .site-footer { margin-top: 48px; border-radius: 0; }
+:root[data-theme='library'] .site-footer::before {
+  content: ''; position: absolute; left: 0; right: 0; top: -26px; height: 26px; pointer-events: none;
+  background: repeating-linear-gradient(90deg, #ffb4a2 0 14px, #1d2a5b 14px 16px, #a0e7e5 16px 26px, #1d2a5b 26px 28px, #b4b0f7 28px 44px, #1d2a5b 44px 46px, #ffe08a 46px 56px, #1d2a5b 56px 58px, #9ad0ff 58px 72px, #1d2a5b 72px 74px, #f7a6c9 74px 84px, #1d2a5b 84px 86px, #c3f0b2 86px 98px, #1d2a5b 98px 100px);
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 14px, #000 14px 16px) top / 100% 100%, linear-gradient(#000, #000);
+  clip-path: polygon(0 30%, 2% 30%, 2% 0, 4% 0, 4% 20%, 7% 20%, 7% 10%, 9% 10%, 9% 35%, 12% 35%, 12% 5%, 15% 5%, 15% 25%, 18% 25%, 18% 0, 21% 0, 21% 30%, 24% 30%, 24% 12%, 27% 12%, 27% 0, 30% 0, 30% 28%, 33% 28%, 33% 8%, 36% 8%, 36% 22%, 39% 22%, 39% 0, 42% 0, 42% 32%, 45% 32%, 45% 10%, 48% 10%, 48% 0, 51% 0, 51% 26%, 54% 26%, 54% 6%, 57% 6%, 57% 30%, 60% 30%, 60% 0, 63% 0, 63% 18%, 66% 18%, 66% 4%, 69% 4%, 69% 28%, 72% 28%, 72% 0, 75% 0, 75% 22%, 78% 22%, 78% 8%, 81% 8%, 81% 34%, 84% 34%, 84% 0, 87% 0, 87% 16%, 90% 16%, 90% 6%, 93% 6%, 93% 26%, 96% 26%, 96% 0, 98% 0, 98% 30%, 100% 30%, 100% 100%, 0 100%);
+}
+:root[data-theme='library'] .site-footer .wordmark span[class^='l'] { color: #fff; }
+:root[data-theme='library'] .site-footer .for-all, :root[data-theme='library'] .site-footer h2 { color: #ffd166; }
+:root[data-theme='library'] .theme-switch button[aria-pressed='true'] { color: #1d2a5b; }
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='library'] {
+    --ink: #eef2ff;
+    --ink-muted: #c3cbe6;
+    --magenta: #7fe0dc;
+    --magenta-700: #a8ece9;
+    --magenta-50: #12383b;
+    --purple-fg: #b7a6ff;
+    --mint-fg: #84e3cf;
+    --sun-fg: #ffd95c;
+    --orange-fg: #ffb07a;
+    --tint-pink: #4a2630;
+    --tint-purple: #2f2a5c;
+    --tint-mint: #123e3a;
+    --tint-sun: #43391a;
+    --tint-sky: #1b3352;
+    --tint-peach: #4a3020;
+    --g-flow:
+      radial-gradient(52rem 34rem at -6% 2%, rgba(244, 107, 91, 0.16) 0, transparent 70%),
+      radial-gradient(46rem 32rem at 106% 8%, rgba(18, 164, 166, 0.16) 0, transparent 70%),
+      radial-gradient(56rem 36rem at 92% 58%, rgba(107, 69, 214, 0.18) 0, transparent 70%),
+      #0f1733;
+    --g-heading: linear-gradient(100deg, #7fe0dc 0%, #9db4ff 55%, #c3b2ff 100%);
+    --g-highlight: linear-gradient(90deg, #ffb07a 0%, #ff9fc0 50%, #c3b2ff 100%);
+    --glass: #17214a;
+    --glass-thick: rgba(23, 33, 74, 0.94);
+    --glass-edge: #26336b;
+    --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    --shadow-tint: 0 0 0;
+    --link: #8fe6e2;
+  }
+  :root[data-theme='library'] body { background-color: #0f1733; }
+  :root[data-theme='library'] .band { background: linear-gradient(180deg, #131c40, #151b3d); border-top-color: #26336b; }
+  :root[data-theme='library'] .card.tint { background: linear-gradient(165deg, var(--tint) 0%, var(--glass) 62%); }
+  :root[data-theme='library'] .wordmark span[class^='l'] { color: #eef2ff; }
+  :root[data-theme='library'] .for-all { color: #7fe0dc; }
+  /* Line art in a light ink so the bookcase and ladder read on the dark page. */
+  :root[data-theme='library'] .art-library > g { stroke: #c3cbe6; }
+  /* The glow behind the bookcase: a soft night-blue light instead of a white disc. */
+  :root[data-theme='library'] .art-library .wash-a { stop-color: #24346e; }
+  :root[data-theme='library'] .art-library .wash-b { stop-color: #1c2858; }
+  :root[data-theme='library'] .art-library .wash-c { stop-color: #0f1733; }
 }

@@ -15,13 +15,18 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 - **Plain HTML pages** (`apps/site/index.html`, `books/`, `plans/`, `branches/`, `how-it-works/`, `franchise/`, `contact/`,
   `404.html`), so every page's text is in the HTML that search engines read. Vite builds them; the shared header,
   footer and head tags are in `apps/site/src/partials` (included with `<!-- include:header -->`).
-- **Crossmaze family look** (same style as crossmaze.in's "candy" theme): a pastel colour flow down the page
-  (pink, peach, butter, mint, sky, lavender), frosted-glass cards and a floating glass header, Poppins headings with a
-  pink-to-purple gradient and a sunshine squiggle, Nunito text, sunshine buttons with a soft glow, a plum footer,
-  floating doodles and pastel book covers on candy shelves (`apps/site/src/site.css`; fonts self-hosted from
-  `@fontsource/poppins` and `@fontsource-variable/nunito`). The member area uses the same look
-  (`apps/web/src/member/memberTheme.css`). Logo: `public/logo.svg` (icons rendered from it). Text meets WCAG AA;
-  light and dark; animation stops for people who prefer reduced motion.
+- **Two looks**, both kept (`apps/site/src/site.css`; fonts Poppins and Nunito, self-hosted):
+  - **Candy** (`data-theme="candy"`, the Crossmaze family style, as on crossmaze.in): a pastel colour flow down the
+    page, frosted-glass cards and a floating glass header, pink-to-purple headings with a sunshine squiggle, sunshine
+    buttons, a plum footer, floating star/book/pencil doodles and candy-coloured shelves.
+  - **Reading room** (`data-theme="library"`): white pages with soft pastel washes and light gradients, white cards,
+    teal-to-indigo headings, library artwork (a bookcase hero with a ladder, plant and owl; bookmark and book doodles;
+    a row of book spines along section edges; a navy footer topped with books) and light-oak shelves.
+  - **Choosing:** the default is `VITE_SITE_THEME` in `apps/site/.env` (and in `apps/web/.env.production` for the
+    member area). Visitors can switch in the footer (*Look: Candy · Reading room*); the choice is saved in the browser
+    for the website and the member area. Preview either with `?theme=candy` or `?theme=library`.
+  - Text meets WCAG AA in both, light and dark; animation stops for people who prefer reduced motion.
+  - The member area uses the same two looks (`apps/web/src/member/memberTheme.css`). Logo: `public/logo.svg`.
 - **Live data:** plans with today's prices (offers included), branches with hours, phone and delivery, and the number
   of titles come from `GET /api/public`. That's a Hosting rewrite to the `sitePublic` function
   (`functions/src/site/public.ts`), which returns only public fields of active organizations, branches and plans.

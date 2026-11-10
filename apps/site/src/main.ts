@@ -5,6 +5,7 @@ import './site.css';
 
 import { APP_URL, CONTACT_EMAIL } from './config';
 import { loadSnapshot, type PublicSnapshot } from './data';
+import { wireThemeSwitch } from './theme';
 import { ageShelves, branchesSection, contactsSection, esc, genreChips, plansSection, shelf, type ShelfKind, statsLine } from './render';
 
 // Links to the app and the enquiry address (set in apps/site/.env).
@@ -31,6 +32,8 @@ toggle?.addEventListener('click', () => {
   toggle.setAttribute('aria-expanded', String(open));
   document.body.classList.toggle('menu-open', open);
 });
+
+wireThemeSwitch();
 
 document.querySelectorAll('[data-year]').forEach((el) => (el.textContent = String(new Date().getFullYear())));
 
