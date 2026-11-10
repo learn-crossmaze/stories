@@ -24,12 +24,35 @@ export interface PublicPlan {
   prices: { duration: string; months: number; listPriceMinor: number; priceMinor: number; discountLabel: string | null }[];
 }
 
+export interface ShowcaseBook {
+  id: string;
+  title: string;
+  authors: string[];
+  coverUrl: string | null;
+  ageGroup: string;
+  genres: string[];
+  count?: number;
+  addedAt?: string;
+}
+
+export interface Showcase {
+  generatedAt: string;
+  trending: ShowcaseBook[];
+  popular: ShowcaseBook[];
+  newArrivals: ShowcaseBook[];
+  mostWanted: ShowcaseBook[];
+  byAge: Record<'CHILDREN' | 'TEENS' | 'ADULTS', ShowcaseBook[]>;
+  genres: { key: string; count: number }[];
+}
+
 export interface PublicSnapshot {
   generatedAt: string;
   titles: number;
   orgs: { id: string; name: string; type: 'CORPORATE' | 'FRANCHISE' }[];
   branches: PublicBranch[];
   plans: PublicPlan[];
+  /** Older backends don't send it: treat as empty shelves. */
+  showcase?: Showcase;
 }
 
 let pending: Promise<PublicSnapshot> | null = null;

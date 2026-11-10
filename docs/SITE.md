@@ -1,7 +1,7 @@
 # Stories — Public website (storiesforall.in)
 
 The public website is a small, fast static site for everyone, including search engines: what Stories is, plans and
-prices, branches and hours, how it works, franchising and contact. The app (members and staff) lives separately at
+prices, branches and hours, how it works, franchising and contact, plus a **Books** page of what's popular and new. The app (members and staff) lives separately at
 `app.storiesforall.in`.
 
 | Address | What | Code | Hosting target |
@@ -11,7 +11,7 @@ prices, branches and hours, how it works, franchising and contact. The app (memb
 
 ## How it's built
 
-- **Plain HTML pages** (`apps/site/index.html`, `plans/`, `branches/`, `how-it-works/`, `franchise/`, `contact/`,
+- **Plain HTML pages** (`apps/site/index.html`, `books/`, `plans/`, `branches/`, `how-it-works/`, `franchise/`, `contact/`,
   `404.html`), so every page's text is in the HTML that search engines read. Vite builds them; the shared header,
   footer and head tags are in `apps/site/src/partials` (included with `<!-- include:header -->`).
 - **Bright and playful**, for a children's library: rainbow palette, Fredoka and Nunito fonts (self-hosted from
@@ -23,6 +23,14 @@ prices, branches and hours, how it works, franchising and contact. The app (memb
   (`functions/src/site/public.ts`), which returns only public fields of active organizations, branches and plans.
   The CDN caches it for 15 minutes, so a price change shows on the site within about 15 minutes. Rendering is in
   `apps/site/src/render.ts` (every value escaped) and tested in `apps/site/src/test`.
+- **Book shelves** (Books page, and two on the home page): *Trending this month* (most loans in 30 days), *New to
+  the library* (newest titles), *All-time favourites* (sum of every copy's loans), *Most wanted* (members waiting
+  in reservation queues), *Top picks for every age* (most loans in 90 days per age group, as tabs) and *Explore by
+  genre* (titles per genre). They're built from counts only, never member details, by `functions/src/site/showcase.ts`
+  into `public/showcase` (rules deny clients), rebuilt by the maintenance job every 6 hours, and shown as
+  sideways-scrolling shelves with the cover (or a drawn cover in the book's colour), a ribbon (#1, New, 5 waiting)
+  and why the book is there. An empty shelf hides its section, so a new library never shows blank shelves. Each
+  book links to the catalogue in the app.
 - **Settings** (`apps/site/.env`): `VITE_APP_URL` (where *Become a member* and *Sign in* go) and
   `VITE_CONTACT_EMAIL` (shown on Contact and Franchise; empty hides it and points people to the branches).
 - **SEO:** a title, description, canonical URL and Open Graph tags per page, `robots.txt`, `sitemap.xml`, and an

@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase-admin/firestore';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import * as plans from '../../src/billing/plans.js';
@@ -5,6 +6,7 @@ import { db } from '../../src/core/firebase.js';
 import * as branches from '../../src/organization/branches.js';
 import * as orgs from '../../src/organization/orgs.js';
 import { handleSitePublic, publicSnapshot } from '../../src/site/public.js';
+import { readShowcase, refreshShowcaseIfStale } from '../../src/site/showcase.js';
 import { address, call, contact, createUser, resetEmulators, type TestUser } from './helpers.js';
 
 let sa: TestUser;
@@ -69,5 +71,55 @@ describe('public website data', () => {
     const post = reply();
     await handleSitePublic({ method: 'POST' } as never, post.res);
     expect(post.r.code).toBe(405);
+  });
+});
+
+describe('book shelves (showcase)', () => {
+  const DAY = 86_400_000;
+  const book = (id: string, over: Record<string, unknown> = {}) =>
+    db.doc(`books/${id}`).set({ title: `Title ${id}`, authorNames: ['Ruskin Bond'], coverUrl: null, ageGroup: 'CHILDREN', genres: ['FICTION'], status: 'ACTIVE', createdAt: Timestamp.fromMillis(Date.now() - 100 * DAY), ...over });
+  const loan = (bookId: string, daysAgo: number) =>
+    db.collection(`orgs/${org}/loans`).add({ bookId, memberId: 'm-secret', memberName: 'Asha Rao', issuedAt: Timestamp.fromMillis(Date.now() - daysAgo * DAY), status: 'RETURNED' });
+
+  it('ranks trending, all-time, new and wanted titles from counts only', async () => {
+    await Promise.all([
+      book('gruffalo'), book('matilda', { ageGroup: 'TEENS', genres: ['FICTION', 'ADVENTURE'] }), book('sapiens', { ageGroup: 'ADULTS', genres: ['SCIENCE'] }),
+      book('fresh', { createdAt: Timestamp.fromMillis(Date.now() - DAY), genres: ['MYSTERY'] }),
+      book('gone', { status: 'ARCHIVED' }),
+    ]);
+    // This month: matilda 3, gruffalo 1; earlier: sapiens 5 (60 days ago), gone 9.
+    await Promise.all([loan('matilda', 2), loan('matilda', 5), loan('matilda', 20), loan('gruffalo', 3), ...Array.from({ length: 5 }, () => loan('sapiens', 60)), ...Array.from({ length: 9 }, () => loan('gone', 4))]);
+    await db.collection(`orgs/${org}/copies`).add({ bookId: 'gruffalo', lifetimeLoans: 40 });
+    await db.collection(`orgs/${org}/copies`).add({ bookId: 'sapiens', lifetimeLoans: 25 });
+    await db.collection(`orgs/${org}/copies`).add({ bookId: 'gruffalo', lifetimeLoans: 2 });
+    await db.collection(`orgs/${org}/reservations`).add({ bookId: 'sapiens', status: 'WAITING', memberId: 'm-secret' });
+    await db.collection(`orgs/${org}/reservations`).add({ bookId: 'sapiens', status: 'WAITING', memberId: 'm-other' });
+    await db.collection(`orgs/${org}/reservations`).add({ bookId: 'matilda', status: 'FULFILLED', memberId: 'm-secret' });
+
+    expect(await refreshShowcaseIfStale()).toBe(true);
+    expect(await refreshShowcaseIfStale()).toBe(false); // fresh for 6 hours
+    const s = await readShowcase();
+    const ids = (list: { id: string }[]) => list.map((b) => b.id);
+    expect(ids(s.trending)).toEqual(['matilda', 'gruffalo']); // archived 'gone' never shows
+    expect(s.trending[0]).toMatchObject({ title: 'Title matilda', authors: ['Ruskin Bond'], ageGroup: 'TEENS', count: 3 });
+    expect(ids(s.popular)).toEqual(['gruffalo', 'sapiens']);
+    expect(s.popular[0].count).toBe(42);
+    expect(ids(s.mostWanted)).toEqual(['sapiens']);
+    expect(s.mostWanted[0].count).toBe(2);
+    expect(ids(s.newArrivals)[0]).toBe('fresh');
+    expect(s.newArrivals).not.toContainEqual(expect.objectContaining({ id: 'gone' }));
+    expect(ids(s.byAge.TEENS)).toEqual(['matilda']);
+    expect(ids(s.byAge.ADULTS)).toEqual(['sapiens']);
+    expect(s.genres[0]).toEqual({ key: 'FICTION', count: 2 }); // gruffalo, matilda (archived 'gone' not counted)
+    expect(s.genres).toContainEqual({ key: 'MYSTERY', count: 1 });
+    expect(JSON.stringify(s)).not.toMatch(/m-secret|m-other|Asha/);
+
+    // The website's snapshot carries it.
+    expect((await publicSnapshot()).showcase.trending[0].id).toBe('matilda');
+  });
+
+  it('is empty, not broken, for a brand-new library', async () => {
+    const s = await readShowcase();
+    expect(s).toMatchObject({ trending: [], popular: [], mostWanted: [], newArrivals: [], genres: [] });
   });
 });

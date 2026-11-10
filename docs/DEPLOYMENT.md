@@ -61,7 +61,8 @@ stay inside the project's Cloud Run CPU quota: 7 routers (`admin`, `catalogue`, 
 data endpoint `sitePublic`, the `whatsapp-send`
 trigger and 5 scheduled jobs (`expireSubscriptions` hourly, `expireHolds` and `maintenance` every 15 minutes,
 `expireDocuments` and `accrueLeave` daily). `maintenance` finishes interrupted work: token updates after role changes
-(users marked `claimsStale`) and WhatsApp messages whose send never ran or was cut off. Don't split actions back into separate exported functions: add them to a router
+(users marked `claimsStale`), WhatsApp messages whose send never ran or was cut off, and the website's book shelves
+(rebuilt every 6 hours). Don't split actions back into separate exported functions: add them to a router
 (`functions/src/routes.ts`). When a deploy removes
 functions that no longer exist in the code, the CLI asks to delete them: answer **yes**. New Firestore indexes build in the background for a few minutes after deploy; until then the affected
 screens show "couldn't load" and recover on their own.

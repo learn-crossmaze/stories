@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PublicSnapshot } from '../data';
-import { branchCard, esc, hoursLines, plansSection, rupees, statsLine, time12 } from '../render';
+import { ageShelves, bookCard, branchCard, coverColour, esc, genreChips, hoursLines, plansSection, reason, ribbon, rupees, shelf, statsLine, time12 } from '../render';
 
 const snapshot = (over: Partial<PublicSnapshot> = {}): PublicSnapshot => ({
   generatedAt: '2026-11-10T10:00:00Z',
@@ -91,5 +91,49 @@ describe('branches', () => {
 
   it('summarizes titles and branches', () => {
     expect(statsLine(snapshot({ branches: [{} as never, {} as never] }))).toBe('2,400 titles to choose from · 2 branches');
+  });
+});
+
+describe('book shelves', () => {
+  const book = (id: string, over: Record<string, unknown> = {}) => ({ id, title: `Title ${id}`, authors: ['Ruskin Bond'], coverUrl: null, ageGroup: 'CHILDREN', genres: ['FICTION'], count: 3, ...over });
+  const withShowcase = (over: Record<string, unknown> = {}) =>
+    snapshot({ showcase: { generatedAt: '', trending: [], popular: [], newArrivals: [], mostWanted: [], byAge: { CHILDREN: [], TEENS: [], ADULTS: [] }, genres: [], ...over } as never });
+
+  it('draws a cover when there is no image, with a ribbon and the reason it is on the shelf', () => {
+    const html = bookCard(book('b1', { title: '<Matilda>' }), 'trending', 0, 'https://app.example');
+    expect(html).toContain('class="drawn-cover c-');
+    expect(html).toContain('&lt;Matilda&gt;');
+    expect(html).not.toContain('<Matilda>');
+    expect(html).toContain('<span class="ribbon">#1</span>');
+    expect(html).toContain('Borrowed 3 times this month');
+    expect(html).toContain('href="https://app.example/explore"');
+    expect(bookCard(book('b2', { coverUrl: 'https://img/x.jpg' }), 'popular', 1, 'x')).toContain('<img src="https://img/x.jpg"');
+    expect(coverColour('same')).toBe(coverColour('same'));
+  });
+
+  it('says why a book is on each shelf', () => {
+    expect(ribbon('newArrivals', book('a'), 4)).toBe('New');
+    expect(ribbon('mostWanted', book('a', { count: 5 }), 0)).toBe('5 waiting');
+    expect(reason('mostWanted', book('a', { count: 1 }))).toBe('1 reader in the queue');
+    expect(reason('popular', book('a', { count: 1200 }))).toBe('Borrowed 1,200 times');
+    const now = Date.parse('2026-11-10T12:00:00Z');
+    expect(reason('newArrivals', book('a', { addedAt: '2026-11-10T08:00:00Z' }), now)).toBe('Added today');
+    expect(reason('newArrivals', book('a', { addedAt: '2026-11-07T08:00:00Z' }), now)).toBe('Added 3 days ago');
+  });
+
+  it('renders nothing for empty shelves so their section can hide', () => {
+    expect(shelf([], 'trending', 'Trending', 'x')).toBe('');
+    expect(shelf(undefined, 'trending', 'Trending', 'x')).toBe('');
+    expect(ageShelves(withShowcase(), 'x')).toBe('');
+    expect(genreChips(withShowcase(), 'x')).toBe('');
+    expect(shelf([book('a'), book('b'), book('c')], 'trending', 'Trending', 'x', 2).match(/class="book"/g)).toHaveLength(2);
+  });
+
+  it('shows age groups that have books as tabs, and genres with counts', () => {
+    const html = ageShelves(withShowcase({ byAge: { CHILDREN: [book('a')], TEENS: [], ADULTS: [book('b', { ageGroup: 'ADULTS' })] } }), 'x');
+    expect(html.match(/role="tab"/g)).toHaveLength(2);
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toMatch(/id="panel-ADULTS"[^>]*hidden/);
+    expect(genreChips(withShowcase({ genres: [{ key: 'SELF_HELP', count: 1200 }] }), 'x')).toContain('Self-help <span class="chip-count">1,200</span>');
   });
 });

@@ -3,6 +3,7 @@ import type { Request } from 'firebase-functions/v2/https';
 
 import { db } from '../core/firebase.js';
 import { type Plan, pricesFor } from '../billing/plans.js';
+import { readShowcase, type Showcase } from './showcase.js';
 
 /**
  * What the public website (apps/site) shows: active organizations' active
@@ -17,6 +18,8 @@ export interface PublicSnapshot {
   orgs: { id: string; name: string; type: 'CORPORATE' | 'FRANCHISE' }[];
   branches: PublicBranch[];
   plans: PublicPlan[];
+  /** Book shelves: trending, most borrowed, new arrivals, most wanted, by age, genres (site/showcase.ts). */
+  showcase: Showcase;
 }
 
 export interface PublicBranch {
@@ -46,9 +49,10 @@ export interface PublicPlan {
 const text = (v: unknown) => (typeof v === 'string' ? v : '');
 
 export async function publicSnapshot(now = new Date()): Promise<PublicSnapshot> {
-  const [orgSnap, titles] = await Promise.all([
+  const [orgSnap, titles, showcase] = await Promise.all([
     db.collection('orgs').where('status', '==', 'ACTIVE').get(),
     db.collection('books').where('status', '==', 'ACTIVE').count().get(),
+    readShowcase(),
   ]);
   const orgs = orgSnap.docs.map((o) => ({ id: o.id, name: text(o.get('name')), type: o.get('type') as 'CORPORATE' | 'FRANCHISE' }));
   const perOrg = await Promise.all(
@@ -97,6 +101,7 @@ export async function publicSnapshot(now = new Date()): Promise<PublicSnapshot> 
     orgs: byName(orgs),
     branches: byName(perOrg.flatMap((x) => x.branches)),
     plans: perOrg.flatMap((x) => x.plans).sort((a, b) => a.booksAtATime - b.booksAtATime || (a.prices[0]?.priceMinor ?? 0) - (b.prices[0]?.priceMinor ?? 0)),
+    showcase,
   };
 }
 

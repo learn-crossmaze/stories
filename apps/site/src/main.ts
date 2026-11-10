@@ -4,7 +4,7 @@ import './site.css';
 
 import { APP_URL, CONTACT_EMAIL } from './config';
 import { loadSnapshot, type PublicSnapshot } from './data';
-import { branchesSection, contactsSection, esc, plansSection, statsLine } from './render';
+import { ageShelves, branchesSection, contactsSection, esc, genreChips, plansSection, shelf, type ShelfKind, statsLine } from './render';
 
 // Links to the app and the enquiry address (set in apps/site/.env).
 document.querySelectorAll<HTMLAnchorElement>('[data-app-link]').forEach((a) => (a.href = APP_URL + (a.dataset.appLink || '')));
@@ -39,7 +39,37 @@ const renderers: Record<string, (s: PublicSnapshot, el: HTMLElement) => string> 
   branches: (s, el) => branchesSection(s, Number(el.dataset.limit) || undefined),
   stats: (s) => statsLine(s),
   contacts: (s) => contactsSection(s),
+  shelf: (s, el) => {
+    const kind = el.dataset.shelf as Exclude<ShelfKind, 'byAge'>;
+    return shelf(s.showcase?.[kind], kind, el.dataset.label ?? '', APP_URL, Number(el.dataset.limit) || undefined);
+  },
+  ages: (s) => ageShelves(s, APP_URL),
+  genres: (s) => genreChips(s, APP_URL),
 };
+
+/** Tabs (Top picks by age): click or arrow keys switch the panel. */
+function wireTabs(root: HTMLElement) {
+  const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role=tab]')];
+  const select = (tab: HTMLButtonElement) => {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')!)!.hidden = !on;
+    }
+  };
+  tabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => select(tab));
+    tab.addEventListener('keydown', (e) => {
+      const next = e.key === 'ArrowRight' ? tabs[(i + 1) % tabs.length] : e.key === 'ArrowLeft' ? tabs[(i - 1 + tabs.length) % tabs.length] : null;
+      if (next) {
+        e.preventDefault();
+        select(next);
+        next.focus();
+      }
+    });
+  });
+}
 const live = [...document.querySelectorAll<HTMLElement>('[data-live]')];
 
 async function fill() {
@@ -47,14 +77,23 @@ async function fill() {
   live.forEach((el) => el.setAttribute('aria-busy', 'true'));
   try {
     const snapshot = await loadSnapshot();
-    for (const el of live) el.innerHTML = renderers[el.dataset.live!]?.(snapshot, el) ?? '';
+    for (const el of live) {
+      const html = renderers[el.dataset.live!]?.(snapshot, el) ?? '';
+      el.innerHTML = html;
+      // A shelf with nothing on it yet (a new library) hides its whole section.
+      if (!html && el.dataset.hideEmpty !== undefined) {
+        const section = el.closest('section');
+        if (section) section.hidden = true;
+      }
+      if (el.dataset.live === 'ages') wireTabs(el);
+    }
   } catch {
     for (const el of live) {
       if (el.dataset.live === 'stats') {
         el.textContent = '';
         continue;
       }
-      el.innerHTML = `<p class="notice" role="status">We couldn't load the latest ${esc(el.dataset.live)} just now. <button type="button" class="btn btn-text" data-retry>Try again</button></p>`;
+      el.innerHTML = `<p class="notice" role="status">We couldn't load the latest ${esc(el.dataset.what ?? el.dataset.live)} just now. <button type="button" class="btn btn-text" data-retry>Try again</button></p>`;
     }
     document.querySelectorAll('[data-retry]').forEach((b) => b.addEventListener('click', () => void fill(), { once: true }));
   } finally {

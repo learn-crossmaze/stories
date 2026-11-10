@@ -1,5 +1,5 @@
 // Pure HTML builders for the live parts of the site. Every value from the data is escaped.
-import type { PublicBranch, PublicPlan, PublicSnapshot } from './data';
+import type { PublicBranch, PublicPlan, PublicSnapshot, ShowcaseBook } from './data';
 
 export const esc = (v: unknown) =>
   String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -121,5 +121,82 @@ export function contactsSection(s: PublicSnapshot) {
     .map(
       (b) => `<li><strong>${esc(b.name)}</strong>, ${esc(b.address.city)}${b.phone ? ` · <a href="${esc(telHref(b.phone))}">${esc(b.phone)}</a>` : ''}${b.email ? ` · <a href="mailto:${esc(b.email)}">${esc(b.email)}</a>` : ''}</li>`,
     )
+    .join('')}</ul>`;
+}
+
+// ------------------------------------------------------------------ books
+
+export const GENRE_LABEL: Record<string, string> = {
+  FICTION: 'Fiction', FANTASY: 'Fantasy', MYSTERY: 'Mystery', ADVENTURE: 'Adventure', SCIENCE: 'Science',
+  BIOGRAPHY: 'Biography', SELF_HELP: 'Self-help', CLASSICS: 'Classics', COMICS: 'Comics', EDUCATIONAL: 'Learning',
+};
+export const AGE_LABEL: Record<string, string> = { CHILDREN: 'Little readers', TEENS: 'Teens', ADULTS: 'Grown-ups' };
+export type ShelfKind = 'trending' | 'popular' | 'newArrivals' | 'mostWanted' | 'byAge';
+
+const COVER_COLOURS = ['coral', 'sky', 'sun', 'mint', 'grape', 'pink', 'tangerine'];
+/** A steady colour per book for the drawn cover (when the title has no cover image). */
+export const coverColour = (id: string) => COVER_COLOURS[[...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % COVER_COLOURS.length];
+
+/** The ribbon on a card: its place on the shelf, or what makes it special. */
+export function ribbon(kind: ShelfKind, book: ShowcaseBook, index: number): string {
+  if (kind === 'newArrivals') return 'New';
+  if (kind === 'mostWanted') return `${book.count ?? 0} waiting`;
+  return `#${index + 1}`;
+}
+
+/** The small line under the author: why the book is on this shelf. */
+export function reason(kind: ShelfKind, book: ShowcaseBook, now = Date.now()): string {
+  const n = book.count ?? 0;
+  if (kind === 'trending') return `Borrowed ${n} time${n === 1 ? '' : 's'} this month`;
+  if (kind === 'popular') return `Borrowed ${n.toLocaleString('en-IN')} time${n === 1 ? '' : 's'}`;
+  if (kind === 'mostWanted') return `${n} reader${n === 1 ? '' : 's'} in the queue`;
+  if (kind === 'newArrivals' && book.addedAt) {
+    const days = Math.max(0, Math.floor((now - Date.parse(book.addedAt)) / 86_400_000));
+    return days === 0 ? 'Added today' : days === 1 ? 'Added yesterday' : days < 14 ? `Added ${days} days ago` : `Added ${new Date(book.addedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+  }
+  return AGE_LABEL[book.ageGroup] ?? '';
+}
+
+export function bookCard(book: ShowcaseBook, kind: ShelfKind, index: number, appUrl: string) {
+  const by = book.authors.length ? book.authors.join(', ') : '';
+  const cover = book.coverUrl
+    ? `<img src="${esc(book.coverUrl)}" alt="" loading="lazy" decoding="async" />`
+    : `<span class="drawn-cover c-${coverColour(book.id)}" aria-hidden="true"><span class="drawn-title">${esc(book.title)}</span>${by ? `<span class="drawn-author">${esc(by)}</span>` : ''}</span>`;
+  return `<li class="book">
+  <a href="${esc(appUrl)}/explore" aria-label="${esc(`${book.title}${by ? ` by ${by}` : ''}. ${reason(kind, book)}. Find it in the Stories app`)}">
+    <span class="cover">${cover}<span class="ribbon">${esc(ribbon(kind, book, index))}</span></span>
+    <span class="book-title">${esc(book.title)}</span>
+    ${by ? `<span class="book-author">${esc(by)}</span>` : ''}
+    <span class="book-reason">${esc(reason(kind, book))}</span>
+  </a>
+</li>`;
+}
+
+/** A sideways-scrolling shelf; '' when there is nothing to show (the section then hides). */
+export function shelf(books: ShowcaseBook[] | undefined, kind: ShelfKind, label: string, appUrl: string, limit?: number) {
+  const list = (books ?? []).slice(0, limit);
+  if (!list.length) return '';
+  return `<ul class="shelf" role="list" tabindex="0" aria-label="${esc(label)}">${list.map((b, i) => bookCard(b, kind, i, appUrl)).join('')}</ul>`;
+}
+
+/** Top picks per age group as tabs ('' when every group is empty). */
+export function ageShelves(s: PublicSnapshot, appUrl: string) {
+  const groups = (['CHILDREN', 'TEENS', 'ADULTS'] as const).filter((a) => s.showcase?.byAge[a]?.length);
+  if (!groups.length) return '';
+  const tabs = groups
+    .map((a, i) => `<button type="button" role="tab" id="tab-${a}" aria-controls="panel-${a}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" class="tab t-${a.toLowerCase()}">${esc(AGE_LABEL[a])}</button>`)
+    .join('');
+  const panels = groups
+    .map((a, i) => `<div role="tabpanel" id="panel-${a}" aria-labelledby="tab-${a}"${i === 0 ? '' : ' hidden'}>${shelf(s.showcase!.byAge[a], 'byAge', `Top picks for ${AGE_LABEL[a].toLowerCase()}`, appUrl)}</div>`)
+    .join('');
+  return `<div class="tabs" role="tablist" aria-label="Age group">${tabs}</div>${panels}`;
+}
+
+/** Genre chips with the number of titles ('' when the catalogue is empty). */
+export function genreChips(s: PublicSnapshot, appUrl: string) {
+  const genres = s.showcase?.genres ?? [];
+  if (!genres.length) return '';
+  return `<ul class="chips" role="list">${genres
+    .map((g, i) => `<li><a class="chip k-${i % 7}" href="${esc(appUrl)}/explore">${esc(GENRE_LABEL[g.key] ?? g.key)} <span class="chip-count">${g.count.toLocaleString('en-IN')}</span></a></li>`)
     .join('')}</ul>`;
 }
