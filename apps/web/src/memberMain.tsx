@@ -1,3 +1,6 @@
+import '@fontsource/poppins/600.css';
+import '@fontsource/poppins/700.css';
+import '@fontsource-variable/nunito';
 import './styles.css';
 import './member/memberTheme.css';
 

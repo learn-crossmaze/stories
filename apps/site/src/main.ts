@@ -1,6 +1,6 @@
-import '@fontsource-variable/fraunces';
-import '@fontsource-variable/fraunces/wght-italic.css';
-import '@fontsource-variable/inter';
+import '@fontsource/poppins/600.css';
+import '@fontsource/poppins/700.css';
+import '@fontsource-variable/nunito';
 import './site.css';
 
 import { APP_URL, CONTACT_EMAIL } from './config';

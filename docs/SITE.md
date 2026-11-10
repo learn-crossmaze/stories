@@ -15,10 +15,13 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 - **Plain HTML pages** (`apps/site/index.html`, `books/`, `plans/`, `branches/`, `how-it-works/`, `franchise/`, `contact/`,
   `404.html`), so every page's text is in the HTML that search engines read. Vite builds them; the shared header,
   footer and head tags are in `apps/site/src/partials` (included with `<!-- include:header -->`).
-- **Classic bookshop look:** cream paper, burgundy and navy with mustard and forest accents, Fraunces (serif) headings
-  and Inter text, the same fonts as the app (self-hosted from `@fontsource-variable/*`). Calm cards with thin rules,
-  books standing on wooden shelves, an illustrated hero (inline SVG in `index.html`). Text meets WCAG AA contrast;
-  light and dark; animation stops for people who prefer reduced motion (`apps/site/src/site.css`).
+- **Crossmaze family look** (same style as crossmaze.in's "candy" theme): a pastel colour flow down the page
+  (pink, peach, butter, mint, sky, lavender), frosted-glass cards and a floating glass header, Poppins headings with a
+  pink-to-purple gradient and a sunshine squiggle, Nunito text, sunshine buttons with a soft glow, a plum footer,
+  floating doodles and pastel book covers on candy shelves (`apps/site/src/site.css`; fonts self-hosted from
+  `@fontsource/poppins` and `@fontsource-variable/nunito`). The member area uses the same look
+  (`apps/web/src/member/memberTheme.css`). Logo: `public/logo.svg` (icons rendered from it). Text meets WCAG AA;
+  light and dark; animation stops for people who prefer reduced motion.
 - **Live data:** plans with today's prices (offers included), branches with hours, phone and delivery, and the number
   of titles come from `GET /api/public`. That's a Hosting rewrite to the `sitePublic` function
   (`functions/src/site/public.ts`), which returns only public fields of active organizations, branches and plans.
@@ -29,7 +32,7 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
   in reservation queues), *Top picks for every age* (most loans in 90 days per age group, as tabs) and *Explore by
   genre* (titles per genre). They're built from counts only, never member details, by `functions/src/site/showcase.ts`
   into `public/showcase` (rules deny clients), rebuilt by the maintenance job every 6 hours, and shown as
-  sideways-scrolling wooden shelves with the cover (or a drawn cloth cover), a bookmark ribbon (#1, New, 5 waiting)
+  sideways-scrolling candy shelves with the cover (or a drawn pastel cover), a ribbon (#1, New, 5 waiting)
   and why the book is there. An empty shelf hides its section, so a new library never shows blank shelves. Each
   book links to the catalogue in the app.
 - **Settings** (`apps/site/.env`): `VITE_APP_URL` (where *Become a member* and *Sign in* go) and
