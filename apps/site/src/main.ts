@@ -1,5 +1,6 @@
-import '@fontsource-variable/fredoka';
-import '@fontsource-variable/nunito';
+import '@fontsource-variable/fraunces';
+import '@fontsource-variable/fraunces/wght-italic.css';
+import '@fontsource-variable/inter';
 import './site.css';
 
 import { APP_URL, CONTACT_EMAIL } from './config';
