@@ -1,3 +1,5 @@
+import '@fontsource-variable/fredoka';
+import '@fontsource-variable/nunito';
 import './site.css';
 
 import { APP_URL, CONTACT_EMAIL } from './config';

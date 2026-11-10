@@ -14,7 +14,10 @@ prices, branches and hours, how it works, franchising and contact. The app (memb
 - **Plain HTML pages** (`apps/site/index.html`, `plans/`, `branches/`, `how-it-works/`, `franchise/`, `contact/`,
   `404.html`), so every page's text is in the HTML that search engines read. Vite builds them; the shared header,
   footer and head tags are in `apps/site/src/partials` (included with `<!-- include:header -->`).
-- **Same look as the app:** the app's colour tokens and fonts (`apps/site/src/site.css`), light and dark.
+- **Bright and playful**, for a children's library: rainbow palette, Fredoka and Nunito fonts (self-hosted from
+  `@fontsource-variable/*`), sticker-style cards with chunky outlines, wavy section edges and an illustrated hero
+  (inline SVG in `index.html`). Text keeps WCAG AA contrast; light and dark; animation stops for people who
+  prefer reduced motion (`apps/site/src/site.css`).
 - **Live data:** plans with today's prices (offers included), branches with hours, phone and delivery, and the number
   of titles come from `GET /api/public`. That's a Hosting rewrite to the `sitePublic` function
   (`functions/src/site/public.ts`), which returns only public fields of active organizations, branches and plans.
