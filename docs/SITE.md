@@ -38,8 +38,18 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
   genre* (titles per genre). They're built from counts only, never member details, by `functions/src/site/showcase.ts`
   into `public/showcase` (rules deny clients), rebuilt by the maintenance job every 6 hours, and shown as
   sideways-scrolling candy shelves with the cover (or a drawn pastel cover), a ribbon (#1, New, 5 waiting)
-  and why the book is there. An empty shelf hides its section, so a new library never shows blank shelves. Each
-  book links to the catalogue in the app.
+  and why the book is there. An empty shelf hides its section (and its *jump to* chip), so a new library never
+  shows blank shelves. Arrow buttons scroll a shelf with a mouse; touch screens swipe. A book opens a quick view
+  (cover, author, age group, genres, why it's popular) with *Reserve it* (`/account/explore?q=<title>`) and
+  *Become a member*.
+- **Plans** show one price per card with a *Monthly / 3 months / 6 months / Yearly* switcher, the monthly cost and
+  saving of longer periods, the offer badge and the refundable deposit. *Choose* goes to
+  `/account/membership?plan=<id>&d=<period>`: after sign-in (or sign-up and joining a branch) the member area
+  highlights that plan with that period picked. On phones the cards are a swipeable row.
+- **Branches** show the phone as read aloud (+91 72599 21508), *Call*, *WhatsApp* (Indian mobile numbers),
+  *Directions* and email. A single branch sits beside a Google map (no key needed). Contact lists the same for
+  every branch.
+- **Menu (phones):** a solid panel over a dimmed page; Escape, a tap outside or choosing a page closes it.
 - **Settings** (`apps/site/.env`): `VITE_APP_URL` (where *Become a member* and *Sign in* go) and
   `VITE_CONTACT_EMAIL` (shown on Contact and Franchise; empty hides it and points people to the branches).
 - **SEO:** a title, description, canonical URL and Open Graph tags per page, `robots.txt`, `sitemap.xml`, and an
@@ -59,8 +69,9 @@ Profile (library ID card, details, appearance). It is the member pages of `apps/
 footer (`src/member/MemberShell.tsx`, `src/member/memberTheme.css`). Sign-in is on `/account/sign-in` (email and
 password or Google; Zoho sign-in is for staff only). The backend is unchanged: the same `me-*` actions.
 
-- The website's *Become a member* and *Sign in* go to `/account` (`VITE_APP_URL` in `apps/site/.env`); book cards
-  link to `/account/explore`.
+- The website's *Sign in* goes to `/account/sign-in` and *Become a member* to `/account/sign-in?create=1` (the
+  create-account form) (`VITE_APP_URL` in `apps/site/.env`). A signed-out visitor sent to a member page signs in and
+  comes back to it (`/account/sign-in?next=/membership…`; only paths on the site are followed).
 - The staff app sends anyone who isn't staff to the member area, and old member addresses (`/membership`,
   `/my-books`…) to the same page there (`VITE_MEMBER_URL` in `apps/web/.env.production`). Staff see a *Staff
   console* link in the member area (`VITE_STAFF_URL`) and *Member view* in the console.

@@ -144,6 +144,7 @@ export const t = {
   meBooksAtATime: (n: number) => `${n} books at a time`,
   meRefundableDeposit: (p: string) => `+ ${p} refundable deposit (once)`,
   meChoose: 'Choose',
+  mePickedOnWebsite: 'The plan you picked on our website',
   mePayments: 'Payments',
   meNoPayments: 'No payments yet.',
   meDate: 'Date',

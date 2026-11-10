@@ -184,3 +184,7 @@ body { background: var(--m-flow); background-color: var(--surface); }
   --m-glass-edge: #26336b;
   --m-heading: linear-gradient(100deg, #7fe0dc 0%, #9db4ff 55%, #c3b2ff 100%);
 }
+
+/* The plan a visitor picked on the website's Plans page. */
+.m-site .plan-card.is-picked { outline: 3px solid var(--primary); outline-offset: 2px; }
+.m-site .picked-note { align-self: flex-start; padding: 2px 10px; border-radius: 999px; background: #ffd60a; color: #3a2400; font-weight: 700; }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AuthFailure } from '../auth/models';
-import { authRedirect, paths } from '../paths';
+import { authRedirect, memberRedirect, paths } from '../paths';
 
 describe('authRedirect', () => {
   it('sends signed-out users to sign-in', () => {
@@ -40,5 +40,21 @@ describe('ISBN checks in the browser', async () => {
   });
   it('splits a pasted list', () => {
     expect(splitIsbns('9780140449136\n0-14-044913-2, 9780000000017;junk')).toEqual(['9780140449136', '0-14-044913-2', '9780000000017']);
+  });
+});
+
+describe('memberRedirect', () => {
+  it('keeps where a signed-out visitor was going and returns them there', () => {
+    expect(memberRedirect(false, paths.home)).toBe(paths.signIn);
+    expect(memberRedirect(false, paths.membership, '?plan=p1')).toBe('/sign-in?next=%2Fmembership%3Fplan%3Dp1');
+    expect(memberRedirect(false, paths.signIn, '?create=1')).toBeNull();
+    expect(memberRedirect(true, paths.signIn, '?next=%2Fmembership')).toBe(paths.membership);
+    expect(memberRedirect(true, paths.explore)).toBeNull();
+  });
+
+  it('only follows next to pages on this site', () => {
+    expect(memberRedirect(true, paths.signIn, '?next=//evil.example')).toBe(paths.home);
+    expect(memberRedirect(true, paths.signIn, '?next=https://evil.example')).toBe(paths.home);
+    expect(memberRedirect(true, paths.signIn)).toBe(paths.home);
   });
 });

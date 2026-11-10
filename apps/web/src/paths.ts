@@ -71,3 +71,19 @@ export function authRedirect(signedIn: boolean, location: string, staffHome: str
   if (onSignIn) return staffHome ?? paths.home;
   return null;
 }
+
+/** A `next` value is followed only when it is a path on this site (not "//elsewhere" or a full URL). */
+const safeNext = (next: string | null) => (next && next.startsWith('/') && !next.startsWith('//') && next !== paths.signIn ? next : null);
+
+/**
+ * The member area's rule: like {@link authRedirect}, but a signed-out visitor keeps where they were going
+ * (`/sign-in?next=/membership`), and lands there after signing in. Sign-up links from the website pass through
+ * `create=1`.
+ */
+export function memberRedirect(signedIn: boolean, pathname: string, search = ''): string | null {
+  const params = new URLSearchParams(search);
+  if (pathname === paths.signIn) return signedIn ? (safeNext(params.get('next')) ?? paths.home) : null;
+  if (signedIn) return null;
+  const target = `${pathname}${search}`;
+  return pathname === paths.home && !search ? paths.signIn : `${paths.signIn}?next=${encodeURIComponent(target)}`;
+}

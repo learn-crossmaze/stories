@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PublicSnapshot } from '../data';
-import { ageShelves, bookCard, branchCard, coverColour, esc, genreChips, hoursLines, plansSection, reason, ribbon, rupees, shelf, statsLine, time12 } from '../render';
+import { ageShelves, audienceLine, bookCard, bookDialog, branchCard, branchesSection, contactsSection, coverColour, esc, findBook, formatPhone, genreChips, hoursLines, plansSection, priceNote, reason, ribbon, rupees, shelf, statsLine, time12, whatsappUrl } from '../render';
 
 const snapshot = (over: Partial<PublicSnapshot> = {}): PublicSnapshot => ({
   generatedAt: '2026-11-10T10:00:00Z',
@@ -59,10 +59,37 @@ describe('plans', () => {
     expect(html).toContain('10% off');
     expect(html).toContain('/ month');
     expect(html).toContain('/ year');
-    expect(html).toContain('Teens (13–17), Adults (18+)');
+    expect(html).toContain('For Teens (13–17), Adults (18+)');
     expect(html).toContain('Home delivery available');
-    expect(html).toContain('Refundable deposit ₹1,000');
-    expect(html).toContain('href="https://app.example"');
+    expect(html).toContain('+ ₹1,000 refundable deposit (paid once)');
+    // Choosing a plan keeps the plan and the period through sign-in.
+    expect(html).toContain('href="https://app.example/membership?plan=p1&amp;d=MONTHLY"');
+  });
+
+  it('shows one price per card, picked with a billing-period switcher', () => {
+    const html = plansSection(snapshot(), 'x');
+    expect(html).toContain('<div class="plans" data-show="MONTHLY">');
+    expect(html.match(/class="period"/g)).toHaveLength(2);
+    expect(html).toContain('data-period="ANNUAL" aria-pressed="false">Yearly');
+    expect(html.match(/class="price-row" data-d="ANNUAL"/g)).toHaveLength(1);
+    // A plan without a period the others have says so.
+    const two = snapshot({ plans: [snapshot().plans[0], { ...snapshot().plans[0], id: 'p2', prices: [snapshot().plans[0].prices[0]] }] });
+    expect(plansSection(two, 'x')).toContain('Not offered for year');
+    // Only one period: no switcher.
+    expect(plansSection(two, 'x', 1).includes('class="periods"')).toBe(true);
+    expect(plansSection(snapshot({ plans: [two.plans[1]] }), 'x')).not.toContain('class="periods"');
+  });
+
+  it('works out the monthly cost and the saving of longer periods', () => {
+    const monthly = { duration: 'MONTHLY', months: 1, listPriceMinor: 40000, priceMinor: 40000, discountLabel: null };
+    expect(priceNote({ duration: 'QUARTERLY', months: 3, listPriceMinor: 120000, priceMinor: 100000, discountLabel: null }, monthly)).toBe('₹333 a month · save 17% on monthly');
+    expect(priceNote(monthly, monthly)).toBe('');
+    expect(priceNote({ duration: 'ANNUAL', months: 12, listPriceMinor: 480000, priceMinor: 480000, discountLabel: null }, monthly)).toBe('₹400 a month');
+  });
+
+  it('says "all ages" when a plan suits everyone', () => {
+    expect(audienceLine(['CHILDREN', 'TEENS', 'ADULTS'])).toBe('For all ages');
+    expect(audienceLine(['CHILDREN'])).toBe('For Children (under 13)');
   });
 
   it('groups plans by organization only when several sell plans', () => {
@@ -89,6 +116,29 @@ describe('branches', () => {
     expect(html).toContain('google.com/maps/search/?api=1&amp;query=12%20MG%20Road');
   });
 
+  const branch = {
+    id: 'b1', orgId: 'corp', name: 'Central', phone: '7259921508', email: null,
+    address: { line1: '12 MG Road', line2: '', city: 'Bengaluru', state: 'Karnataka', postalCode: '560001' },
+    hours: [], weeklyOffs: [], delivery: { offered: false, feeMinor: 0 },
+  };
+
+  it('writes phone numbers the way people read them and offers WhatsApp for mobiles', () => {
+    expect(formatPhone('7259921508')).toBe('+91 72599 21508');
+    expect(formatPhone('+917259921508')).toBe('+91 72599 21508');
+    expect(formatPhone('+91 80 1234 5678')).toBe('+91 80 1234 5678');
+    expect(whatsappUrl('07259921508')).toBe('https://wa.me/917259921508');
+    expect(whatsappUrl('+91 44 2345 6789')).toBeNull();
+    expect(branchCard(branch)).toContain('href="https://wa.me/917259921508?text=');
+  });
+
+  it('puts a single branch beside its map, and lists every branch on the contact page', () => {
+    const one = branchesSection(snapshot({ branches: [branch] }));
+    expect(one).toContain('class="branch-solo"');
+    expect(one).toContain('<iframe class="map" title="Map showing Central" loading="lazy"');
+    expect(branchesSection(snapshot({ branches: [branch, { ...branch, id: 'b2' }] }))).not.toContain('iframe');
+    expect(contactsSection(snapshot({ branches: [branch] }))).toContain('Call +91 72599 21508');
+  });
+
   it('summarizes titles and branches', () => {
     expect(statsLine(snapshot({ branches: [{} as never, {} as never] }))).toBe('2,400 titles to choose from · 2 branches');
   });
@@ -106,12 +156,24 @@ describe('book shelves', () => {
     expect(html).not.toContain('<Matilda>');
     expect(html).toContain('<span class="ribbon">#1</span>');
     expect(html).toContain('Borrowed 3 times this month');
-    expect(html).toContain('href="https://app.example/explore"');
+    expect(html).toContain('class="book-open" data-book="b1" data-kind="trending" data-index="0"');
     expect(bookCard(book('b2', { coverUrl: 'https://img/x.jpg' }), 'popular', 1, 'x')).toContain('<img src="https://img/x.jpg"');
     expect(coverColour('same')).toBe(coverColour('same'));
   });
 
+  it('opens a quick view that says how to borrow the book', () => {
+    const html = bookDialog(book('b1', { genres: ['FANTASY'] }), 'trending', 'https://app.example');
+    expect(html).toContain('id="book-dialog-title">Title b1');
+    expect(html).toContain('Fantasy');
+    expect(html).toContain('href="https://app.example/explore?q=Title%20b1"');
+    expect(html).toContain('href="https://app.example/sign-in?create=1&amp;next=%2Fexplore%3Fq%3DTitle%20b1"');
+    const s = withShowcase({ trending: [book('a', { count: 9 })], popular: [book('a', { count: 90 })] });
+    expect(findBook(s, 'popular', 'a')?.count).toBe(90);
+    expect(findBook(s, 'trending', 'zzz')).toBeUndefined();
+  });
+
   it('says why a book is on each shelf', () => {
+    expect(reason('byAge', book('a', { ageGroup: 'TEENS' }))).toBe('Popular with teens');
     expect(ribbon('newArrivals', book('a'), 4)).toBe('New');
     expect(ribbon('mostWanted', book('a', { count: 5 }), 0)).toBe('5 waiting');
     expect(reason('mostWanted', book('a', { count: 1 }))).toBe('1 reader in the queue');
@@ -134,6 +196,7 @@ describe('book shelves', () => {
     expect(html.match(/role="tab"/g)).toHaveLength(2);
     expect(html).toContain('aria-selected="true"');
     expect(html).toMatch(/id="panel-ADULTS"[^>]*hidden/);
-    expect(genreChips(withShowcase({ genres: [{ key: 'SELF_HELP', count: 1200 }] }), 'x')).toContain('Self-help <span class="chip-count">1,200</span>');
+    expect(genreChips(withShowcase({ genres: [{ key: 'SELF_HELP', count: 1200 }] }), 'x')).toContain('Self-help <span class="chip-count">1,200<span class="visually-hidden"> titles</span></span>');
+    expect(genreChips(withShowcase({ genres: [{ key: 'SELF_HELP', count: 1 }] }), 'x')).not.toContain('<a ');
   });
 });

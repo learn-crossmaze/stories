@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 
 import { errorText } from '../data/api';
 import { DURATION_LABELS, type Duration, label, PER_PERIOD, planWithOption } from '../data/common';
@@ -59,6 +60,10 @@ function MembershipBody({ m }: { m: Membership }) {
   const { overview } = useMemberData();
   const term = currentTerm(m);
   const pending = pendingSubscription(m);
+  // The plan (and how often to pay) a visitor picked on the website's Plans page: ?plan=<id>&d=<duration>.
+  const [params] = useSearchParams();
+  const picked = params.get('plan');
+  const pickedDuration = params.get('d') as Duration | null;
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const act = async (key: string, fn: () => Promise<unknown>, ok?: string) => {
@@ -193,6 +198,8 @@ function MembershipBody({ m }: { m: Membership }) {
                 <PlanCard
                   key={p.id}
                   plan={p}
+                  picked={p.id === picked}
+                  initialDuration={p.id === picked ? pickedDuration : null}
                   busy={busy === p.id}
                   disabled={busy !== null || m.member.status !== 'ACTIVE'}
                   onChoose={(duration) => void act(p.id, () => subscribeToPlan(m, p.id, duration))}
@@ -283,11 +290,32 @@ function MembershipBody({ m }: { m: Membership }) {
 }
 
 /** A plan with its billing options: the member picks how often to pay, then chooses the plan. */
-function PlanCard({ plan, busy, disabled, onChoose }: { plan: MyPlan; busy: boolean; disabled: boolean; onChoose: (duration: Duration) => void }) {
-  const [pick, setPick] = useState<Duration>(plan.options[0]?.duration ?? 'MONTHLY');
+function PlanCard({
+  plan,
+  picked = false,
+  initialDuration = null,
+  busy,
+  disabled,
+  onChoose,
+}: {
+  plan: MyPlan;
+  picked?: boolean;
+  initialDuration?: Duration | null;
+  busy: boolean;
+  disabled: boolean;
+  onChoose: (duration: Duration) => void;
+}) {
+  const [pick, setPick] = useState<Duration>(
+    plan.options.some((o) => o.duration === initialDuration) ? initialDuration! : (plan.options[0]?.duration ?? 'MONTHLY'),
+  );
   const chosen = plan.options.find((o) => o.duration === pick) ?? plan.options[0];
   return (
-    <li className="plan-card">
+    <li
+      className={picked ? 'plan-card is-picked' : 'plan-card'}
+      ref={picked ? (el) => el?.scrollIntoView({ block: 'center' }) : undefined}
+      aria-label={picked ? `${plan.name}, ${t.mePickedOnWebsite}` : undefined}
+    >
+      {picked && <span className="picked-note small">{t.mePickedOnWebsite}</span>}
       <strong>{plan.name}</strong>
       {plan.options.length > 1 ? (
         <fieldset className="choices">

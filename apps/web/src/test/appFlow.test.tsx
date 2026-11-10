@@ -29,17 +29,27 @@ describe('app flow', () => {
     const { router } = renderApp(fakeAuth(), '/orders');
     expect(await screen.findByRole('heading', { name: t.signInTitle })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/sign-in');
+    expect(router.state.location.search).toBe('?next=%2Forders');
 
     await user.type(screen.getByLabelText(t.emailLabel), 'reader@example.com');
     await user.type(screen.getByLabelText(t.passwordLabel), 'correct-horse');
     await user.click(screen.getByRole('button', { name: t.signInButton }));
 
+    // Back to the page they asked for (the old /orders address is the Membership page now).
+    expect(await screen.findByRole('heading', { name: t.navMembership, level: 1 })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/membership');
+    await user.click(screen.getByRole('link', { name: t.memberAreaAccount }));
     expect(await screen.findByRole('heading', { name: t.greetingFallback })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: t.navProfile }));
     expect(await screen.findByText(t.profileSignedInAs('reader@example.com'))).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: t.signOut })[0]);
     expect(await screen.findByRole('heading', { name: t.signInTitle })).toBeInTheDocument();
+  });
+
+  it('opens on the create-account form from the website\'s "Become a member"', async () => {
+    renderApp(fakeAuth(), '/sign-in?create=1');
+    expect(await screen.findByRole('heading', { name: t.createAccountTitle })).toBeInTheDocument();
   });
 
   it('creates an account and greets by first name', async () => {

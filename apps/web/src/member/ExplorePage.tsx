@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router';
 
 import { BookCover } from '../shared/BookCover';
 import { call } from '../data/api';
@@ -29,7 +30,9 @@ export function ExplorePage() {
 
 function ExploreBody({ m }: { m: Membership }) {
   const { overview } = useMemberData();
-  const [q, setQ] = useState('');
+  // The website's book quick-view links here with the title filled in (?q=).
+  const [params] = useSearchParams();
+  const [q, setQ] = useState(() => params.get('q') ?? '');
   const debounced = useDebounced(q);
   const [open, setOpen] = useState<string | null>(null);
   const list = usePagedQuery<Book>((after) => searchBooks(debounced, m.member.audience === 'ADULTS' ? '' : m.member.audience, after, 'ACTIVE'), [debounced, m.member.audience]);

@@ -1,5 +1,7 @@
 import { cloneElement, type FormEvent, type InputHTMLAttributes, type ReactElement, useId, useState } from 'react';
 
+import { useLocation } from 'react-router';
+
 import { useAuth } from '../auth/AuthContext';
 import { AuthFailure } from '../auth/models';
 import type { AuthRepository } from '../auth/repository';
@@ -17,7 +19,9 @@ type Errors = Partial<Record<'name' | 'email' | 'password', string>>;
  */
 export function SignInPage({ staff = true, websiteUrl }: { staff?: boolean; websiteUrl?: string } = {}) {
   const { repo } = useAuth();
-  const [creating, setCreating] = useState(false);
+  // "Become a member" on the website opens straight on the create-account form.
+  const { search } = useLocation();
+  const [creating, setCreating] = useState(() => new URLSearchParams(search).get('create') === '1');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

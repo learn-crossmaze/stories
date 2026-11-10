@@ -5,7 +5,7 @@ import { useAuth } from './auth/AuthContext';
 import { env } from './config/env';
 import { MemberShell } from './member/MemberShell';
 import { SignInPage } from './public/SignIn';
-import { authRedirect, paths } from './paths';
+import { memberRedirect, paths } from './paths';
 import { RouteError } from './shared/RouteError';
 import { t } from './strings';
 
@@ -17,12 +17,12 @@ const MyBooksPage = lazy(() => import('./member/MyBooksPage').then((m) => ({ def
 const MembershipPage = lazy(() => import('./member/MembershipPage').then((m) => ({ default: m.MembershipPage })));
 const ProfilePage = lazy(() => import('./member/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 
-/** Everyone in the member area is a reader: signed out → sign-in, signed in → their account. Staff may use it too. */
+/** Everyone in the member area is a reader: signed out → sign-in (then back to the page they asked for), signed in → their account. Staff may use it too. */
 function MemberGate() {
   const { user } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   if (user === undefined) return <p className="loading">{t.loading}</p>;
-  const target = authRedirect(user !== null, pathname);
+  const target = memberRedirect(user !== null, pathname, search);
   return target ? <Navigate to={target} replace /> : <Outlet />;
 }
 

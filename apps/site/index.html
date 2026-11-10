@@ -29,7 +29,7 @@
               <h1 class="headline">Every book begins a <span class="squiggle">new story.</span></h1>
               <p class="lead">Subscribe once, borrow within your plan and swap books as often as you like. Pick them up at your branch or have them brought to your door.</p>
               <p class="actions">
-                <a class="btn btn-filled btn-large" href="%VITE_APP_URL%" data-app-link>Become a member</a>
+                <a class="btn btn-filled btn-large" href="%VITE_APP_URL%/sign-in?create=1" data-app-link="/sign-in?create=1">Become a member</a>
                 <a class="btn btn-outlined btn-large" href="/plans">See plans and prices</a>
               </p>
               <p class="stats" data-live="stats"></p>
@@ -127,7 +127,7 @@
         <div class="wrap">
           <div class="section-head">
             <h2 id="h-trending"><span class="emoji-dot d-coral" aria-hidden="true"></span>Trending this month</h2>
-            <a href="/books">All books →</a>
+            <a class="more" href="/books">All books →</a>
           </div>
           <div data-live="shelf" data-shelf="trending" data-label="Trending this month" data-limit="10" data-what="books" data-hide-empty><p class="muted">Loading books…</p></div>
         </div>
@@ -137,7 +137,7 @@
         <div class="wrap">
           <div class="section-head">
             <h2 id="h-new"><span class="emoji-dot d-grape" aria-hidden="true"></span>New to the library</h2>
-            <a href="/books#new">More new arrivals →</a>
+            <a class="more" href="/books#new">More new arrivals →</a>
           </div>
           <div data-live="shelf" data-shelf="newArrivals" data-label="New to the library" data-limit="10" data-what="books" data-hide-empty><p class="muted">Loading books…</p></div>
           <div class="genres-home" data-live="genres" data-what="genres"></div>
@@ -149,10 +149,10 @@
           <h2>How it works</h2>
           <ol class="steps">
             <li><h3>Choose a plan</h3><p>Each plan lets you hold a number of books at a time: monthly, quarterly, half-yearly or yearly.</p></li>
-            <li><h3>Borrow</h3><p>Pick books at your branch, or reserve them in the app and we'll keep them ready for you.</p></li>
+            <li><h3>Borrow</h3><p>Pick books at your branch, or reserve them online and we'll keep them ready for you.</p></li>
             <li><h3>Swap anytime</h3><p>Bring books back and take new ones, as often as you like, while your plan is active.</p></li>
           </ol>
-          <p><a href="/how-it-works">Read all the details →</a></p>
+          <p><a class="more" href="/how-it-works">Read all the details →</a></p>
         </div>
       </section>
 
@@ -160,7 +160,7 @@
         <div class="wrap">
           <div class="section-head">
             <h2>Popular plans</h2>
-            <a href="/plans">All plans →</a>
+            <a class="more" href="/plans">All plans →</a>
           </div>
           <div data-live="plans" data-limit="3"><p class="muted">Loading plans…</p></div>
         </div>
@@ -181,7 +181,7 @@
         <div class="wrap">
           <div class="section-head">
             <h2>Visit a branch</h2>
-            <a href="/branches">All branches →</a>
+            <a class="more" href="/branches">All branches →</a>
           </div>
           <div data-live="branches" data-limit="3"><p class="muted">Loading branches…</p></div>
         </div>
@@ -190,7 +190,7 @@
       <section class="band band-pink cta">
         <div class="wrap">
           <h2>Bring Stories to your neighbourhood</h2>
-          <p>Open a Stories franchise: we provide the catalogue, the member app and the tools to run the branch.</p>
+          <p>Open a Stories franchise: we provide the catalogue, the online member area and the tools to run the branch.</p>
           <p><a class="btn btn-grape btn-large" href="/franchise">Learn about franchising</a></p>
         </div>
       </section>
