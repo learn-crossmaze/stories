@@ -196,22 +196,20 @@ stories/
 - Cross-domain calls go through exported functions (for example, member self-service calls the billing and
   circulation cores with an ownership check); a domain never writes another domain's collections except inside
   those shared cores.
-- **Views:** the staff console has three views, plus the member app as the fourth.
-  - **Admin** (`/admin`): setup and back office. Organization, People, Time & leave, Payroll, Settings, Audit log.
-  - **Operations** (`/ops`): daily running of branches. Circulation, Collection, Members, and My team (attendance
-    board, leave requests).
-  - **Staff** (`/me`): self-service. Home, attendance, leave, payslips.
-  - **Member** (`/`): the member app.
+- **One menu (as in LITMUS):** the staff console has a single sidebar, the same for everyone, showing only what
+  each person's roles allow (no view switcher). In order: **Dashboard**; **Circulation**, **Collection** and
+  **Members** (a branch's daily work); **Website** and **Enquiries** (storiesforall.in); **Staff** (employees,
+  documents, letters, attendance, leave, payroll); **Organization** (organizations, branches, departments, roles &
+  access, website admins, audit log); **Settings**; and **My employment** for every staff member (my profile,
+  attendance, leave, payslips, deliveries, completing the profile). Members (no staff role) never see the console:
+  they are sent to the member area on the website. Staff who are also members open it from the account menu.
 
-  **Landing:** after sign-in, head office, HR, finance, franchise owners and Super Admins land in Admin. Branch
-  managers, librarians, delivery staff and catalogue managers land in Operations. Everyone else lands in Staff
-  (`homeViewFor` in `auth/claims.ts`).
+  **Landing:** after sign-in, people whose roles go beyond their own job land on the Dashboard (`/admin`); everyone
+  else on My profile (`/me`) (`staffHome` in `auth/claims.ts`). Addresses keep their prefixes (`/admin`, `/ops`,
+  `/website`, `/me`); old ones that moved redirect (`MOVED` in `nav.ts`).
 
-  **Switcher:** the switcher at the top of the menu lists only the views that hold something for you. Old
-  `/admin/...` addresses of pages that moved redirect to them.
-
-  Views only arrange screens; the rules and functions still check every read and write.
-- **Menus and page access:** each view's menu is defined once in `apps/web/src/admin/nav.ts`: pages and groups of
+  The menu only arranges screens; the rules and functions still check every read and write.
+- **Menus and page access:** the menu is defined once in `apps/web/src/admin/nav.ts` (`MENU`): pages and groups of
   pages, at most one level deep, with icon, who sees each item and who may open the page. Routes in `AdminApp.tsx`
   take their guard from it.
   - **Groups** open and close. The group holding the current page opens on arrival, and open groups are

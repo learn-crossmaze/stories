@@ -1,11 +1,10 @@
 import { type ComponentType, lazy, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
-import type { ViewId } from '../auth/claims';
 import { AdminShell } from './AdminShell';
 import { NoAccess, Require } from './guards';
 import { MOVED, movedTo, navItemFor, type Requirement } from './nav';
-import { paths, viewHome } from '../paths';
+import { paths } from '../paths';
 import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
 
@@ -88,11 +87,10 @@ function Moved() {
   return <Navigate to={movedTo(pathname, search) ?? paths.admin} replace />;
 }
 
-/** Routes of one view, relative to its base (e.g. '/ops/desk' → 'desk'). */
-function viewRoutes(view: ViewId): [string, ReactNode][] {
-  switch (view) {
-    case 'ops':
-      return [
+/** Every page of the console, by its address. */
+function allRoutes(): [string, ReactNode][] {
+  return [
+    ...([
         [paths.adminDesk, guard(paths.adminDesk, <DeskPage />)],
         [paths.adminBooks, guard(paths.adminBooks, <CataloguePage />)],
         [paths.adminBooksBulk, guard(paths.adminBooksBulk, <BulkAddBooksPage />)],
@@ -109,12 +107,8 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminPlans, guard(paths.adminPlans, <PlansPage />)],
         [paths.adminPayments, guard(paths.adminPayments, <PaymentsPage />)],
         [paths.adminDeposits, guard(paths.adminDeposits, <DepositApprovalsPage />)],
-        [paths.opsAttendance, guard(paths.opsAttendance, <AttendancePage />)],
-        [paths.opsLeave, guard(paths.opsLeave, <LeavePage />)],
-        [paths.opsOffers, guard(paths.opsOffers, <OfferLettersPage />)],
-      ];
-    case 'staff':
-      return [
+    ] as [string, ReactNode][]),
+    ...([
         [paths.adminMyAttendance, <MyAttendancePage />],
         [paths.adminMyOnboarding, <MyOnboardingPage />],
         [paths.adminMyLeave, <MyLeavePage />],
@@ -130,9 +124,8 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
             <AppearanceSettings />
           </>,
         ],
-      ];
-    case 'admin':
-      return [
+    ] as [string, ReactNode][]),
+    ...([
         [paths.adminOrgs, guard(paths.adminOrgs, <OrganizationsPage />)],
         [paths.adminBranches, guard(paths.adminBranches, <BranchesPage />)],
         [paths.adminDepartments, guard(paths.adminDepartments, <DepartmentsPage />)],
@@ -154,14 +147,12 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminSettingsWhatsApp, guard(paths.adminSettingsWhatsApp, <WhatsAppPage />)],
         [paths.adminSettingsDelivery, guard(paths.adminSettingsDelivery, <DeliverySettingsPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
-      ];
-    case 'web':
-      return [
+    ] as [string, ReactNode][]),
+    ...([
         [paths.adminWebsiteSettings, guard(paths.adminWebsiteSettings, <SiteSettingsPage />)],
         [paths.adminWebsiteSections, guard(paths.adminWebsiteSections, <SectionsPage />)],
         [paths.adminWebsiteBranches, guard(paths.adminWebsiteBranches, <BranchPagesPage />)],
         [paths.adminWebsiteBranch(':orgId', ':branchId'), guard(paths.adminWebsiteBranches, <BranchPageEditorPage />)],
-        [paths.adminWebsitePlans, guard(paths.adminWebsitePlans, <PlansPage />)],
         [paths.adminWebsitePromotions, guard(paths.adminWebsitePromotions, <PromotionsPage />)],
         [paths.adminWebsitePromotion(':promotionId'), guard(paths.adminWebsitePromotions, <PromotionEditorPage />)],
         [paths.adminWebsiteJobs, guard(paths.adminWebsiteJobs, <JobsPage />)],
@@ -176,28 +167,29 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminWebsiteCalls, guard(paths.adminWebsiteCalls, <CallsPage />)],
         [paths.adminWebsiteConnections, guard(paths.adminWebsiteConnections, <ConnectionsPage />)],
         [paths.adminWebsiteAdmins, guard(paths.adminWebsiteAdmins, <AdminsPage />)],
-      ];
-  }
+    ] as [string, ReactNode][]),
+  ];
 }
 
-const HOME: Record<ViewId, ReactNode> = { admin: <DashboardPage />, web: <WebsiteOverviewPage />, ops: <DashboardPage />, staff: <MyProfilePage /> };
-
 /**
- * Staff console (lazy-loaded chunk), mounted once per view at its base
- * (/admin, /ops, /me). Each page is guarded by the rule of its menu item
- * (nav.ts); the server enforces the real permission regardless.
+ * The staff console (lazy-loaded chunk): one shell with one menu (nav.ts) for every staff page. Each page is guarded
+ * by the rule of its menu item; the server enforces the real permission regardless.
  */
-export default function AdminApp({ view }: { view: ViewId }) {
-  const base = viewHome[view];
-  const rel = (path: string) => path.slice(base.length + 1);
+export default function AdminApp() {
+  const rel = (path: string) => path.replace(/^\//, '');
   return (
     <Routes>
-      <Route element={<AdminShell view={view} />}>
-        <Route index element={HOME[view]} />
-        {viewRoutes(view).map(([path, element]) => (
+      <Route element={<AdminShell />}>
+        <Route path={rel(paths.admin)} element={<DashboardPage />} />
+        <Route path={rel(paths.ops)} element={<Navigate to={paths.admin} replace />} />
+        <Route path={rel(paths.web)} element={guard(paths.adminWebsite, <WebsiteOverviewPage />)} />
+        <Route path={rel(paths.staff)} element={<MyProfilePage />} />
+        {allRoutes().map(([path, element]) => (
           <Route key={path} path={rel(path)} element={element} />
         ))}
-        {view === 'admin' && MOVED.map(([from]) => <Route key={from} path={`${rel(from)}/*`} element={<Moved />} />)}
+        {MOVED.map(([from]) => (
+          <Route key={from} path={`${rel(from)}/*`} element={<Moved />} />
+        ))}
         <Route path="*" element={<NoAccess />} />
       </Route>
     </Routes>

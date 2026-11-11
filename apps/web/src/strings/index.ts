@@ -241,6 +241,8 @@ export const t = {
   groupCollection: 'Collection',
   groupMembers: 'Members',
   groupTeam: 'My team',
+  groupStaff: 'Staff',
+  groupMyEmployment: 'My employment',
   groupOrganization: 'Organization',
   groupPeople: 'People',
   groupTime: 'Time & leave',

@@ -2,9 +2,9 @@ import { Suspense, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
-import { homeViewFor, isStaff } from '../auth/claims';
+import { isStaff, staffHome } from '../auth/claims';
 import { env } from '../config/env';
-import { paths, viewHome } from '../paths';
+import { paths } from '../paths';
 import { Icon, type IconName, SkeletonRows } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
@@ -80,7 +80,7 @@ export function MemberShell() {
           </nav>
           <div className="m-header-actions">
             {isStaff(claims) && (
-              <a className="m-btn m-btn-outlined" href={`${env.staffUrl}${viewHome[homeViewFor(claims)]}`}>
+              <a className="m-btn m-btn-outlined" href={`${env.staffUrl}${staffHome(claims)}`}>
                 <Icon name="console" /> {t.staffConsole}
               </a>
             )}

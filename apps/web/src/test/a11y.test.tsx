@@ -4,7 +4,7 @@ import { createMemoryRouter, Link, Outlet, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { Dialog } from '../admin/components/Dialog';
-import { isGroup, MENUS, movedTo, navItemFor, VIEW_ORDER } from '../admin/nav';
+import { isGroup, MENU, movedTo, navItemFor } from '../admin/nav';
 import { useRouteFocus } from '../shared/useRouteFocus';
 
 describe('dialog', () => {
@@ -69,20 +69,18 @@ describe('route focus', () => {
 });
 
 describe('menu', () => {
-  it('gives every entry in a view its own icon, and nests one level at most', () => {
-    for (const view of VIEW_ORDER) {
-      const icons = MENUS[view].map((e) => e.icon);
-      expect(new Set(icons).size, view).toBe(icons.length);
-      for (const e of MENUS[view]) if (isGroup(e)) expect(e.items.every((i) => !isGroup(i as never))).toBe(true);
-    }
+  it('gives every entry its own icon, and nests one level at most', () => {
+    const icons = MENU.map((e) => e.icon);
+    expect(new Set(icons).size).toBe(icons.length);
+    for (const e of MENU) if (isGroup(e)) expect(e.items.every((i) => !isGroup(i as never))).toBe(true);
   });
 
   it('finds the menu item for detail pages and view homes', () => {
     expect(navItemFor('/ops/members/abc')?.label).toBe('Members');
     expect(navItemFor('/admin/people/x1')?.label).toBe('Employees');
     expect(navItemFor('/admin')?.label).toBe('Dashboard');
-    expect(navItemFor('/ops')?.label).toBe('Today');
-    expect(navItemFor('/me')?.label).toBe('Home');
+    expect(navItemFor('/me')?.label).toBe('My profile');
+    expect(navItemFor('/website/blog/p1')?.label).toBe('Blog');
     expect(navItemFor('/admin/settings/leave')?.label).toBe('Leave types');
   });
 

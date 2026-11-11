@@ -1,6 +1,6 @@
-import { can, isStaff, type StoriesClaims, type ViewId } from '../auth/claims';
+import { can, isStaff, type StoriesClaims } from '../auth/claims';
 import type { Permission } from '../generated/rbac';
-import { paths, viewHome } from '../paths';
+import { paths } from '../paths';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
 import { lt } from '../strings/library';
@@ -20,7 +20,7 @@ export interface NavItem {
   requires: Requirement;
   /** Who may open the page (defaults to `requires`); wider than the menu for reference pages. */
   page?: Requirement;
-  /** The view's home page: it doesn't make a view worth showing on its own. */
+  /** The Dashboard: matches its address only, not the pages under it. */
   home?: boolean;
 }
 
@@ -36,204 +36,158 @@ export type NavEntry = NavItem | NavGroup;
 export const isGroup = (e: NavEntry): e is NavGroup => 'items' in e;
 
 /**
- * The staff console menus, one per view (Admin: setup and back office;
- * Operations: daily running of branches; Staff: self-service). Items sit in
- * groups of related pages, at most one level deep. The Member view is the
- * member app itself. Security is not decided here: the rules and functions
- * check every read and write.
+ * The staff console's one menu (as in LITMUS): the Dashboard, then groups by who the work is for, in the order it
+ * happens: the branch's daily work (circulation, the collection, members), the website, staff and HR, the
+ * organization and its settings, and last each person's own job ("My employment"). Everyone sees only what their
+ * roles allow; a group with nothing left for someone isn't shown. Members never see this: they use the member area
+ * on the website. Security is not decided here: the rules and functions check every read and write.
  */
-export const MENUS: Record<ViewId, NavEntry[]> = {
-  ops: [
-    { to: paths.ops, label: t.navToday, icon: 'dashboard', requires: null, home: true },
-    {
-      id: 'circulation',
-      label: t.groupCirculation,
-      icon: 'scan',
-      items: [
-        { to: paths.adminDesk, label: t.navDesk, icon: 'scan', requires: 'loans.issue' },
-        { to: paths.adminReservations, label: t.navReservations, icon: 'bookmark', requires: 'reservations.manage' },
-        { to: paths.adminTransfers, label: t.navTransfers, icon: 'truck', requires: 'books.transfer' },
-        { to: paths.opsDeliveries, label: dt.nav, icon: 'parcel', requires: 'delivery.manage' },
-      ],
-    },
-    {
-      id: 'collection',
-      label: t.groupCollection,
-      icon: 'book',
-      items: [
-        { to: paths.adminBooks, label: t.navCatalogue, icon: 'book', requires: 'books.view' },
-        { to: paths.adminBooksBulk, label: lt.bulkNav, icon: 'plus', requires: ['copies.manage', 'books.create'] },
-        { to: paths.adminInventory, label: t.navInventory, icon: 'shelves', requires: 'books.view' },
-        { to: paths.adminShelve, label: lt.shelveNav, icon: 'shelves', requires: 'copies.manage' },
-      ],
-    },
-    {
-      id: 'members',
-      label: t.groupMembers,
-      icon: 'person',
-      items: [
-        { to: paths.adminMembers, label: t.navMembers, icon: 'person', requires: 'members.view' },
-        { to: paths.adminPlans, label: t.navPlans, icon: 'card', requires: 'plans.manage' },
-        { to: paths.adminPayments, label: lt.navPayments, icon: 'payments', requires: 'payments.view' },
-        { to: paths.adminDeposits, label: t.navDepositApprovals, icon: 'wallet', requires: 'deposits.approve' },
-      ],
-    },
-    {
-      id: 'team',
-      label: t.groupTeam,
-      icon: 'people',
-      items: [
-        { to: paths.opsAttendance, label: ht.navAttendanceShort, icon: 'clock', requires: 'attendance.manage', page: 'attendance.view' },
-        { to: paths.opsLeave, label: ht.navLeaveRequests, icon: 'calendar', requires: 'leave.approve', page: 'attendance.view' },
-        { to: paths.opsOffers, label: ht.navOffers, icon: 'folder', requires: ['offers.release', 'letters.issue'] },
-      ],
-    },
-  ],
-  admin: [
-    { to: paths.admin, label: t.navDashboard, icon: 'dashboard', requires: null, home: true },
-    {
-      id: 'organization',
-      label: t.groupOrganization,
-      icon: 'building',
-      items: [
-        { to: paths.adminOrgs, label: t.navOrganizations, icon: 'building', requires: 'superAdmin' },
-        // Everyone may look a branch or department up; the menu shows them to those who run them.
-        { to: paths.adminBranches, label: t.navBranches, icon: 'store', requires: ['branches.manage', 'staff.view'], page: 'branches.view' },
-        { to: paths.adminDepartments, label: t.navDepartments, icon: 'tree', requires: ['departments.manage', 'staff.view'], page: 'branches.view' },
-        { to: paths.adminStaff, label: t.navStaff, icon: 'key', requires: 'staff.view' },
-      ],
-    },
-    {
-      id: 'people',
-      label: t.groupPeople,
-      icon: 'badge',
-      items: [
-        { to: paths.adminPeopleOverview, label: ht.navOverview, icon: 'insights', requires: 'employees.view' },
-        { to: paths.adminPeople, label: ht.navEmployees, icon: 'badge', requires: 'employees.view' },
-        { to: paths.adminDocuments, label: ht.navDocuments, icon: 'folder', requires: 'documents.verify' },
-        { to: paths.adminOffers, label: ht.navOffers, icon: 'folder', requires: ['offers.release', 'letters.issue'] },
-      ],
-    },
-    {
-      id: 'time',
-      label: t.groupTime,
-      icon: 'clock',
-      items: [
-        { to: paths.adminAttendance, label: ht.navAttendance, icon: 'clock', requires: ['attendance.finalize', 'hr.config'], page: 'attendance.view' },
-        // Approvers see the menu item; anyone who views attendance may open the page.
-        { to: paths.adminLeave, label: ht.navLeave, icon: 'calendar', requires: 'leave.adjust', page: 'attendance.view' },
-      ],
-    },
-    // Those who prepare or approve payroll see the menu item; salary viewers may open the page.
-    { to: paths.adminPayroll, label: ht.navPayrollRuns, icon: 'payments', requires: ['payroll.run', 'payroll.approve'], page: 'salary.view' },
-    {
-      id: 'settings',
-      label: t.groupSettings,
-      icon: 'tune',
-      items: [
-        { to: paths.adminHrSettings, label: ht.navJobSettings, icon: 'badge', requires: 'hr.config' },
-        { to: paths.adminSettingsSchedule, label: ht.navScheduleSettings, icon: 'clock', requires: 'hr.config' },
-        { to: paths.adminSettingsLeave, label: ht.navLeaveTypes, icon: 'calendar', requires: 'hr.config' },
-        { to: paths.adminSettingsDocuments, label: ht.navDocumentTypes, icon: 'folder', requires: 'hr.config' },
-        { to: paths.adminSettingsLetters, label: ht.navLetterTemplates, icon: 'folder', requires: 'hr.config' },
-        { to: paths.adminSettingsPayroll, label: ht.navPayrollSettings, icon: 'payments', requires: 'salary.edit' },
-        { to: paths.adminSettingsWhatsApp, label: wt.nav, icon: 'chat', requires: 'messaging.manage' },
-        { to: paths.adminSettingsDelivery, label: dt.navSettings, icon: 'parcel', requires: 'delivery.configure' },
-      ],
-    },
-    { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
-  ],
-  // The website admin, in the order of crossmaze.in/admin: Dashboard; Website; Stories; Enquiries; Settings.
-  web: [
-    { to: paths.adminWebsite, label: st.navDashboard, icon: 'dashboard', requires: ['website.manage', 'website.branch', 'blog.write'], home: true },
-    {
-      id: 'web-website',
-      label: st.groupWebsite,
-      icon: 'explore',
-      items: [
-        { to: paths.adminWebsiteSettings, label: st.navSettings, icon: 'tune', requires: 'website.manage' },
-        { to: paths.adminWebsiteSections, label: st.navSections, icon: 'folder', requires: 'website.manage' },
-        { to: paths.adminWebsiteBranches, label: st.navBranches, icon: 'store', requires: ['website.manage', 'website.branch'] },
-        { to: paths.adminWebsitePlans, label: st.navPlans, icon: 'card', requires: 'plans.manage' },
-        { to: paths.adminWebsitePromotions, label: st.navPromotions, icon: 'bell', requires: 'website.manage' },
-        { to: paths.adminWebsiteJobs, label: st.navJobs, icon: 'badge', requires: 'website.manage' },
-      ],
-    },
-    {
-      id: 'web-stories',
-      label: st.groupStories,
-      icon: 'book',
-      items: [
-        { to: paths.adminWebsiteBlog, label: st.navBlog, icon: 'book', requires: ['website.manage', 'website.branch', 'blog.write'] },
-        { to: paths.adminWebsiteCards, label: st.navCards, icon: 'palette', requires: 'website.manage' },
-        { to: paths.adminWebsiteTestimonials, label: st.navTestimonials, icon: 'chat', requires: 'website.manage' },
-      ],
-    },
-    {
-      id: 'web-enquiries',
-      label: st.groupEnquiries,
-      icon: 'chat',
-      items: [
-        { to: paths.adminWebsiteSubmissions, label: st.navSubmissions, icon: 'folder', requires: ['website.manage', 'website.branch'] },
-        { to: paths.adminWebsiteCalls, label: st.navCalls, icon: 'insights', requires: 'website.manage' },
-      ],
-    },
-    {
-      id: 'web-settings',
-      label: st.groupSettings,
-      icon: 'key',
-      items: [
-        { to: paths.adminWebsiteConnections, label: st.navConnections, icon: 'tune', requires: 'website.manage' },
-        { to: paths.adminWebsiteAdmins, label: st.navAdmins, icon: 'people', requires: 'website.manage' },
-      ],
-    },
-  ],
-  staff: [
-    { to: paths.staff, label: t.navHome, icon: 'home', requires: null, home: true },
-    { to: paths.adminMyAttendance, label: ht.navAttendanceShort, icon: 'clock', requires: null },
-    { to: paths.adminMyLeave, label: ht.navLeave, icon: 'calendar', requires: null },
-    { to: paths.adminMyPayslips, label: ht.navMyPayslips, icon: 'payments', requires: null },
-    { to: paths.adminMyDeliveries, label: dt.navMine, icon: 'parcel', requires: ['delivery.execute', 'delivery.manage'] },
-    { to: paths.adminMyOnboarding, label: ht.obNav, icon: 'badge', requires: null },
-  ],
-};
-
-export const VIEW_ORDER: ViewId[] = ['admin', 'web', 'ops', 'staff'];
-export const VIEW_ICONS: Record<ViewId | 'member', IconName> = { admin: 'tune', web: 'explore', ops: 'scan', staff: 'person', member: 'home' };
+export const MENU: NavEntry[] = [
+  { to: paths.admin, label: t.navDashboard, icon: 'dashboard', requires: null, home: true },
+  {
+    id: 'circulation',
+    label: t.groupCirculation,
+    icon: 'scan',
+    items: [
+      { to: paths.adminDesk, label: t.navDesk, icon: 'scan', requires: 'loans.issue' },
+      { to: paths.adminReservations, label: t.navReservations, icon: 'bookmark', requires: 'reservations.manage' },
+      { to: paths.adminTransfers, label: t.navTransfers, icon: 'truck', requires: 'books.transfer' },
+      { to: paths.opsDeliveries, label: dt.nav, icon: 'parcel', requires: 'delivery.manage' },
+    ],
+  },
+  {
+    id: 'collection',
+    label: t.groupCollection,
+    icon: 'book',
+    items: [
+      { to: paths.adminBooks, label: t.navCatalogue, icon: 'book', requires: 'books.view' },
+      { to: paths.adminBooksBulk, label: lt.bulkNav, icon: 'plus', requires: ['copies.manage', 'books.create'] },
+      { to: paths.adminInventory, label: t.navInventory, icon: 'shelves', requires: 'books.view' },
+      { to: paths.adminShelve, label: lt.shelveNav, icon: 'shelves', requires: 'copies.manage' },
+    ],
+  },
+  {
+    id: 'members',
+    label: t.groupMembers,
+    icon: 'person',
+    items: [
+      { to: paths.adminMembers, label: t.navMembers, icon: 'person', requires: 'members.view' },
+      { to: paths.adminPlans, label: t.navPlans, icon: 'card', requires: 'plans.manage' },
+      { to: paths.adminPayments, label: lt.navPayments, icon: 'payments', requires: 'payments.view' },
+      { to: paths.adminDeposits, label: t.navDepositApprovals, icon: 'wallet', requires: 'deposits.approve' },
+    ],
+  },
+  // The website, in the order of the crossmaze.in admin panel.
+  {
+    id: 'website',
+    label: st.groupWebsite,
+    icon: 'explore',
+    items: [
+      { to: paths.adminWebsite, label: st.navWebsiteHome, icon: 'dashboard', requires: ['website.manage', 'website.branch', 'blog.write'] },
+      { to: paths.adminWebsiteSettings, label: st.navSettings, icon: 'tune', requires: 'website.manage' },
+      { to: paths.adminWebsiteSections, label: st.navSections, icon: 'folder', requires: 'website.manage' },
+      { to: paths.adminWebsiteBranches, label: st.navBranchPages, icon: 'store', requires: ['website.manage', 'website.branch'] },
+      { to: paths.adminWebsitePromotions, label: st.navPromotions, icon: 'bell', requires: 'website.manage' },
+      { to: paths.adminWebsiteJobs, label: st.navJobs, icon: 'badge', requires: 'website.manage' },
+      { to: paths.adminWebsiteBlog, label: st.navBlog, icon: 'book', requires: ['website.manage', 'website.branch', 'blog.write'] },
+      { to: paths.adminWebsiteCards, label: st.navCards, icon: 'palette', requires: 'website.manage' },
+      { to: paths.adminWebsiteTestimonials, label: st.navTestimonials, icon: 'chat', requires: 'website.manage' },
+    ],
+  },
+  {
+    id: 'enquiries',
+    label: st.groupEnquiries,
+    icon: 'chat',
+    items: [
+      { to: paths.adminWebsiteSubmissions, label: st.navSubmissions, icon: 'folder', requires: ['website.manage', 'website.branch'] },
+      { to: paths.adminWebsiteCalls, label: st.navCalls, icon: 'insights', requires: 'website.manage' },
+    ],
+  },
+  {
+    id: 'staff',
+    label: t.groupStaff,
+    icon: 'badge',
+    items: [
+      { to: paths.adminPeopleOverview, label: ht.navOverview, icon: 'insights', requires: 'employees.view' },
+      { to: paths.adminPeople, label: ht.navEmployees, icon: 'badge', requires: 'employees.view' },
+      { to: paths.adminDocuments, label: ht.navDocuments, icon: 'folder', requires: 'documents.verify' },
+      { to: paths.adminOffers, label: ht.navOffers, icon: 'folder', requires: ['offers.release', 'letters.issue'] },
+      // Branch managers mark attendance and approve leave; HR also finalizes and adjusts. Anyone who views attendance may open the pages.
+      { to: paths.adminAttendance, label: ht.navAttendance, icon: 'clock', requires: ['attendance.manage', 'attendance.finalize', 'hr.config'], page: 'attendance.view' },
+      { to: paths.adminLeave, label: ht.navLeave, icon: 'calendar', requires: ['leave.approve', 'leave.adjust'], page: 'attendance.view' },
+      // Those who prepare or approve payroll see the menu item; salary viewers may open the page.
+      { to: paths.adminPayroll, label: ht.navPayrollRuns, icon: 'payments', requires: ['payroll.run', 'payroll.approve'], page: 'salary.view' },
+    ],
+  },
+  {
+    id: 'organization',
+    label: t.groupOrganization,
+    icon: 'building',
+    items: [
+      { to: paths.adminOrgs, label: t.navOrganizations, icon: 'building', requires: 'superAdmin' },
+      // Everyone may look a branch or department up; the menu shows them to those who run them.
+      { to: paths.adminBranches, label: t.navBranches, icon: 'store', requires: ['branches.manage', 'staff.view'], page: 'branches.view' },
+      { to: paths.adminDepartments, label: t.navDepartments, icon: 'tree', requires: ['departments.manage', 'staff.view'], page: 'branches.view' },
+      { to: paths.adminStaff, label: t.navStaff, icon: 'key', requires: 'staff.view' },
+      { to: paths.adminWebsiteAdmins, label: st.navWebsiteAdmins, icon: 'people', requires: 'website.manage' },
+      { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
+    ],
+  },
+  {
+    id: 'settings',
+    label: t.groupSettings,
+    icon: 'tune',
+    items: [
+      { to: paths.adminHrSettings, label: ht.navJobSettings, icon: 'badge', requires: 'hr.config' },
+      { to: paths.adminSettingsSchedule, label: ht.navScheduleSettings, icon: 'clock', requires: 'hr.config' },
+      { to: paths.adminSettingsLeave, label: ht.navLeaveTypes, icon: 'calendar', requires: 'hr.config' },
+      { to: paths.adminSettingsDocuments, label: ht.navDocumentTypes, icon: 'folder', requires: 'hr.config' },
+      { to: paths.adminSettingsLetters, label: ht.navLetterTemplates, icon: 'folder', requires: 'hr.config' },
+      { to: paths.adminSettingsPayroll, label: ht.navPayrollSettings, icon: 'payments', requires: 'salary.edit' },
+      { to: paths.adminSettingsWhatsApp, label: wt.nav, icon: 'chat', requires: 'messaging.manage' },
+      { to: paths.adminSettingsDelivery, label: dt.navSettings, icon: 'parcel', requires: 'delivery.configure' },
+      { to: paths.adminWebsiteConnections, label: st.navConnections, icon: 'tune', requires: 'website.manage' },
+    ],
+  },
+  // Every staff member's own job: their profile, attendance, leave, payslips and documents.
+  {
+    id: 'me',
+    label: t.groupMyEmployment,
+    icon: 'home',
+    items: [
+      { to: paths.staff, label: ht.navMyProfile, icon: 'person', requires: null },
+      { to: paths.adminMyAttendance, label: ht.navMyAttendance, icon: 'clock', requires: null },
+      { to: paths.adminMyLeave, label: ht.navMyLeave, icon: 'calendar', requires: null },
+      { to: paths.adminMyPayslips, label: ht.navMyPayslips, icon: 'payments', requires: null },
+      { to: paths.adminMyDeliveries, label: dt.navMine, icon: 'parcel', requires: ['delivery.execute', 'delivery.manage'] },
+      { to: paths.adminMyOnboarding, label: ht.obNav, icon: 'badge', requires: null },
+    ],
+  },
+];
 
 const itemsOf = (entries: NavEntry[]) => entries.flatMap((e) => (isGroup(e) ? e.items : [e]));
 
-/** Every page in every view, for guards and titles. */
-export const NAV: (NavItem & { view: ViewId })[] = VIEW_ORDER.flatMap((view) => itemsOf(MENUS[view]).map((i) => ({ ...i, view })));
+/** Every page in the menu, for guards and titles. */
+export const NAV: NavItem[] = itemsOf(MENU);
 
 export const allowed = (claims: StoriesClaims, orgId: string | null, requires: Requirement) =>
   requires === null ? true : requires === 'superAdmin' ? claims.sa : (Array.isArray(requires) ? requires : [requires]).some((p) => can(claims, p, orgId));
 
-/** A view's menu for the current user: items they may use, groups with none left removed (UI convenience only). */
-export function visibleMenu(claims: StoriesClaims, orgId: string | null, view: ViewId): NavEntry[] {
-  return MENUS[view].flatMap((e): NavEntry[] => {
+/** The menu for the current user: items they may use, groups with none left removed (UI convenience only). */
+export function visibleMenu(claims: StoriesClaims, orgId: string | null): NavEntry[] {
+  if (!isStaff(claims)) return [];
+  return MENU.flatMap((e): NavEntry[] => {
     if (!isGroup(e)) return allowed(claims, orgId, e.requires) ? [e] : [];
     const items = e.items.filter((i) => allowed(claims, orgId, i.requires));
     return items.length ? [{ ...e, items }] : [];
   });
 }
 
-/** The pages a user sees in the menu of a view (or all views), flattened. */
-export const visibleNav = (claims: StoriesClaims, orgId: string | null, view?: ViewId) =>
-  (view ? [view] : VIEW_ORDER).flatMap((v) => itemsOf(visibleMenu(claims, orgId, v)));
-
-/** Views worth offering: Staff to every staff member; Admin and Operations when they hold more than the home page. */
-export function availableViews(claims: StoriesClaims, orgId: string | null): ViewId[] {
-  if (!isStaff(claims)) return [];
-  return VIEW_ORDER.filter((v) => v === 'staff' || itemsOf(visibleMenu(claims, orgId, v)).some((i) => !i.home));
-}
-
-/** The view a location belongs to. */
-export const viewOf = (pathname: string): ViewId =>
-  (VIEW_ORDER.find((v) => pathname === viewHome[v] || pathname.startsWith(`${viewHome[v]}/`)) ?? 'admin') as ViewId;
+/** The pages a user sees in the menu, flattened. */
+export const visibleNav = (claims: StoriesClaims, orgId: string | null) => itemsOf(visibleMenu(claims, orgId));
 
 /** The menu item a location belongs to (longest matching path), for guards and titles. */
-export function navItemFor(pathname: string): (NavItem & { view: ViewId }) | undefined {
+export function navItemFor(pathname: string): NavItem | undefined {
   return NAV.filter((i) => pathname === i.to || (!i.home && pathname.startsWith(`${i.to}/`))).sort((a, b) => b.to.length - a.to.length)[0];
 }
 
@@ -243,6 +197,11 @@ export const groupFor = (entries: NavEntry[], pathname: string) =>
 
 /** Old /admin addresses (bookmarks, earlier notifications) → where the page lives now. */
 export const MOVED: [string, string][] = [
+  // The Operations view's home, and its team pages, now in the one menu.
+  ['/ops/attendance', paths.adminAttendance],
+  ['/ops/leave', paths.adminLeave],
+  ['/ops/offer-letters', paths.adminOffers],
+  ['/website/plans', paths.adminPlans],
   // The Website section was in the Admin view before it became its own view.
   ['/admin/website/festive-cards', paths.adminWebsiteCards],
   ['/admin/website/cards', paths.adminWebsiteCards],

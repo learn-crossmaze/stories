@@ -108,12 +108,12 @@ describe('app flow', () => {
   it('opens the console for staff in the staff app', async () => {
     const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
     const { router } = renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/', true);
-    await waitFor(() => expect(router.state.location.pathname).toBe('/ops'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin'));
   });
 
   it('links staff from the member area to the console they work in', async () => {
     const staff: StoriesClaims = { v: 1, sa: false, o: { corp: { r: ['LIB'], b: ['cen'] } } };
     renderApp(fakeAuth({ uid: 's1', email: 's@x.in', displayName: 'Sam', emailVerified: true }, staff), '/profile');
-    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', `${env.staffUrl}/ops`);
+    expect(await screen.findByRole('link', { name: t.staffConsole })).toHaveAttribute('href', `${env.staffUrl}/admin`);
   });
 });

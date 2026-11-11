@@ -232,7 +232,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
   - **Day**: who is in, check in or out at the desk, adjust, change a shift.
   - **Month**: summaries, finalize and reopen.
   - **Corrections**: approve or reject.
-- **Today** card on the dashboard, and **Attendance** in the Staff view (`/me/attendance`): check in and out, see the month, request a
+- **Today** card on the dashboard, and **Attendance** in My employment (`/me/attendance`): check in and out, see the month, request a
   correction.
 - The employee profile's **Attendance** tab: shift, weekly offs, and the month with adjust.
 - **Settings → Shifts & holidays**.
@@ -302,7 +302,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
   - **Requests**: approve or reject.
   - **Away**: approved leave in a month, and who is on leave today.
   - **Balances**: everyone's days left for a year, record leave, adjust, and **Credit leave**.
-- **Leave** in the Staff view (`/me/leave`): balances, apply, cancel, and the ledger history.
+- **Leave** in My employment (`/me/leave`): balances, apply, cancel, and the ledger history.
 - The employee profile's **Leave** tab: balances, requests with decisions, the ledger, record and adjust.
 - **Settings → Leave types**.
 - The attendance board shows **On leave**. The dashboard reminds approvers of leave to decide.
@@ -378,7 +378,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - Admin → **Payroll**: month and branch, prepare, submit, approve or send back, totals, problems, a payslip per
   person with **TDS and extras** and **Payslip PDF**.
 - The employee profile's **Salary** tab: salary versions, **New salary**, and payslips.
-- **My payslips** in the Staff view (`/me/payslips`).
+- **My payslips** in My employment (`/me/payslips`).
 - **Settings → Payroll settings**.
 - The dashboard reminds approvers of runs to approve.
 
@@ -409,7 +409,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 - **Screen:** the header **bell** shows the unread count and the latest 30 notifications. Opening one marks it
   read; **Mark all read** clears the count.
 
-**My profile** (Staff view home, `/me`; also in the account menu), for any staff member with an employee record:
+**My profile** (My employment, `/me`; also in the account menu), for any staff member with an employee record:
 
 - Their job details and today's check-in.
 - This month's attendance, leave left this year, and the latest payslip (with its PDF), each linking to its page.
@@ -458,7 +458,7 @@ a branch manager's own letter comes from HR or another manager at the branch. Th
   transaction (which checks the letter's content is still what the PDF says, else asks to try again, and deletes the
   file if it does not commit):
   - files it in the employee's documents as a verified **Offer letter** (the letter and the document are created
-    with that id, never over existing ones), so it shows under **My documents** in the Staff view at once;
+    with that id, never over existing ones), so it shows under **My documents** in My employment at once;
   - marks any earlier released letter, and its document, as replaced;
   - notifies the employee (`offer.released`) and writes an `employee.offer.release` audit entry.
 - **Open** (`offers-open`): the letter for releasers at the branch or the employee, audited. The employee can also

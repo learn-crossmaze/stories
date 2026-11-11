@@ -9,6 +9,9 @@ export const st = {
   // The Website view's menu, in crossmaze.in/admin's order.
   navDashboard: 'Dashboard',
   groupWebsite: 'Website',
+  navWebsiteHome: 'Website overview',
+  navBranchPages: 'Branch pages',
+  navWebsiteAdmins: 'Website admins',
   navSettings: 'Site settings',
   navSections: 'Page sections',
   navBranches: 'Branches',

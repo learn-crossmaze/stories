@@ -162,7 +162,7 @@ See [CIRCULATION.md §Transfers](CIRCULATION.md#transfers).
 
 ## Staff dashboard
 
-The home page of the Admin and Operations views (`admin/dashboard/Dashboard.tsx`) answers "what do I need to do
+The Dashboard (`admin/dashboard/Dashboard.tsx`) answers "what do I need to do
 now?". Each part shows only when the person may see it:
 
 - **Needs attention:** inspections, books to put back on the shelf (new or returned, for staff who look after

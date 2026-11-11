@@ -87,7 +87,7 @@ export function WebsiteOverviewPage() {
     <>
       <header className="page-header page-header-row">
         <div>
-          <h1>{st.navDashboard}</h1>
+          <h1>{st.navWebsiteHome}</h1>
           <p className="muted">{st.signedInAs(user?.email ?? '')}</p>
         </div>
         <a className="btn btn-outlined" href={SITE_URL} target="_blank" rel="noopener">

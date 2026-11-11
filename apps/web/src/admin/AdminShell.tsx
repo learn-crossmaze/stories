@@ -3,15 +3,14 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
-import { rolesIn, type ViewId } from '../auth/claims';
+import { rolesIn, staffHome } from '../auth/claims';
 import { ROLES } from '../generated/rbac';
-import { paths, viewHome } from '../paths';
+import { paths } from '../paths';
 import { Icon, SkeletonRows } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
-import { availableViews, groupFor, isGroup, type NavEntry, navItemFor, VIEW_ICONS, visibleMenu } from './nav';
-import { ViewContext } from './view';
+import { groupFor, isGroup, type NavEntry, navItemFor, visibleMenu } from './nav';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 import { OnboardingReminder } from './people/OnboardingReminder';
@@ -219,28 +218,7 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
   );
 }
 
-/** Switches between the views this person can use, and the member app. */
-function ViewSwitcher({ view }: { view: ViewId }) {
-  const { claims } = useAuth();
-  const { org } = useWorkspace();
-  const views = availableViews(claims, org?.id ?? null);
-  return (
-    <nav className="view-switch" aria-label={t.views}>
-      {views.map((v) => (
-        <Link key={v} to={viewHome[v]} className={v === view ? 'view-pill active' : 'view-pill'} aria-current={v === view ? 'true' : undefined}>
-          <Icon name={VIEW_ICONS[v]} />
-          <span>{t.viewNames[v]}</span>
-        </Link>
-      ))}
-      <a href={memberAreaUrl()} className="view-pill">
-        <Icon name={VIEW_ICONS.member} />
-        <span>{t.viewNames.member}</span>
-      </a>
-    </nav>
-  );
-}
-
-function Shell({ view }: { view: ViewId }) {
+function Shell() {
   const { claims } = useAuth();
   const { org } = useWorkspace();
   const { pathname } = useLocation();
@@ -264,10 +242,10 @@ function Shell({ view }: { view: ViewId }) {
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
-  const entries = visibleMenu(claims, org?.id ?? null, view);
-  const home = viewHome[view];
+  const entries = visibleMenu(claims, org?.id ?? null);
+  const home = staffHome(claims);
   return (
-    <ViewContext.Provider value={view}>
+    <>
       <div className={`admin${menuOpen ? ' admin-menu-open' : ''}`}>
         <a className="skip-link" href={`#${MAIN_ID}`}>
           {t.skipToContent}
@@ -282,8 +260,7 @@ function Shell({ view }: { view: ViewId }) {
               <Icon name="close" />
             </button>
           </div>
-          <ViewSwitcher view={view} />
-          <nav aria-label={`${t.mainMenu}: ${t.viewNames[view]}`}>
+          <nav aria-label={t.mainMenu}>
             <SideMenu entries={entries} />
           </nav>
         </aside>
@@ -306,7 +283,7 @@ function Shell({ view }: { view: ViewId }) {
               <span>{t.appTitle}</span>
             </Link>
             <WorkspaceBar />
-            {view === 'web' && (
+            {pathname.startsWith(paths.web) && (
               <Suspense fallback={null}>
                 <PublishButton />
               </Suspense>
@@ -322,14 +299,14 @@ function Shell({ view }: { view: ViewId }) {
           </main>
         </div>
       </div>
-    </ViewContext.Provider>
+    </>
   );
 }
 
-export function AdminShell({ view }: { view: ViewId }) {
+export function AdminShell() {
   return (
     <WorkspaceProvider>
-      <Shell view={view} />
+      <Shell />
     </WorkspaceProvider>
   );
 }

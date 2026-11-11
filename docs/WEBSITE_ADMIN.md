@@ -1,17 +1,16 @@
 # Managing the website (console → Website)
 
-The staff console has a **Website** view (next to Admin, Operations and Staff) at
-`https://stories-by-crossmaze.web.app/website` (later `app.storiesforall.in/website`). It is laid out like the
-crossmaze.in admin panel, in the same order: **Dashboard**, then **Website**, **Stories**, **Enquiries** and
-**Settings**, with a **Publish all** button in the top bar.
+The staff console's menu has a **Website** group (overview at `https://stories-by-crossmaze.web.app/website`, later
+`app.storiesforall.in/website`) and an **Enquiries** group, in the crossmaze.in admin panel's order; the website's
+settings and admins sit in the menu's **Settings** and **Organization** groups. On website pages a **Publish all**
+button sits in the top bar.
 
 | Group | Page | What it changes | On the website |
 | --- | --- | --- | --- |
-| | Dashboard | Changes waiting to be published (and Publish all), new enquiries, taps on call buttons this week, posts waiting for review, links to every page, what was published lately | — |
+| | Website overview | Changes waiting to be published (and Publish all), new enquiries, taps on call buttons this week, posts waiting for review, links to every page, what was published lately | — |
 | Website | Site settings | Contact details (main phone, WhatsApp, email, franchise and careers emails), the home page banner, the About page (story, figures, photos), the people behind Stories (with a switch to show them), social links | Footer, Contact, Franchise, Careers, home banner, `/about` |
 | | Page sections | Lists on the pages: the home page's promises, steps and reader groups; How it works' steps and questions; the Franchise and Careers points. An empty list keeps the page's own words | Home, How it works, Franchise, Careers |
 | | Branches | Each branch's page: tagline, welcome, about, photos, figures, amenities, **notices with dates**, good to know, **what's on**, the **head librarian's profile** and **their picks**, WhatsApp number, Google Maps link | `/branches/<address>`, with a call-me-back form |
-| | Plans | The plans and prices (the same page as Operations → Plans; head office) | `/plans` |
 | | Offers | A bar on every page, a once-a-day pop-up or a home page banner, with dates, a code and the pages it shows on | Every page / home / those branches' pages |
 | | Jobs | Open roles: title, where, type, overview, qualification, experience, timings, responsibilities | `/careers`, with an application form (CV upload) |
 | Stories | Blog | Posts in seven designs, private previews, review by a manager | `/blog`, the home page, branch pages |
@@ -24,14 +23,14 @@ crossmaze.in admin panel, in the same order: **Dashboard**, then **Website**, **
 
 ## Who can do what
 
-| Role | Website view |
+| Role | Website pages |
 | --- | --- |
 | Head Office Admin, **Website Editor** (corporate) | Everything, every branch; publish (Plans: head office only) |
 | Franchise Owner, Branch Manager | Their branches' pages and enquiries; posts about their branches (write, review, publish) |
 | Librarian | Write posts (their own) and **send them for review** |
 
 The server decides (functions/src/site/admin.ts, inbox.ts); the menu only hides pages. Give someone the Website
-Editor role on Admin → Roles & access; they land in the Website view when they sign in.
+Editor role on Organization → Roles & access.
 
 ## Forms and calls
 

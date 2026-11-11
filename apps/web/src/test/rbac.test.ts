@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { canManageMember, grantableRoles } from '../admin/grants';
-import { availableViews, isGroup, visibleMenu, visibleNav } from '../admin/nav';
-import { can, homeViewFor, isStaff, parseClaims, type StoriesClaims, type ViewId } from '../auth/claims';
+import { isGroup, visibleMenu, visibleNav } from '../admin/nav';
+import { can, isStaff, parseClaims, staffHome, type StoriesClaims } from '../auth/claims';
 import type { StaffMembership } from '../data/org';
 
 const claims = (o: StoriesClaims['o'], sa = false): StoriesClaims => ({ v: 1, sa, o });
@@ -35,60 +35,72 @@ describe('claims', () => {
 });
 
 describe('navigation', () => {
-  const labels = (c: StoriesClaims, view: ViewId) => visibleNav(c, 'corp', view).map((i) => i.label);
+  // One menu for everyone (as in LITMUS): what each role sees, group by group.
+  const menu = (c: StoriesClaims) => visibleMenu(c, 'corp').map((e) => (isGroup(e) ? `${e.label}: ${e.items.map((i) => i.label).join(', ')}` : e.label));
+  const labels = (c: StoriesClaims) => visibleNav(c, 'corp').map((i) => i.label);
   const hr = claims({ corp: { r: ['HR'], b: ['*'] } });
   const lib = claims({ corp: { r: ['LIB'], b: ['cen'] } });
   const fin = claims({ corp: { r: ['FIN'], b: ['*'] } });
   const bm = claims({ corp: { r: ['BM'], b: ['cen'] } });
   const emp = claims({ corp: { r: ['EMP'], b: ['cen'] } });
+  const del = claims({ corp: { r: ['DEL'], b: ['cen'] } });
+  const web = claims({ corp: { r: ['WEB'], b: ['*'] } });
+  const MY = 'My employment: My profile, My attendance, My leave, My payslips, Complete my profile';
 
-  it('lands each role in its view and offers only views with something in them', () => {
-    expect(homeViewFor(claims({}, true))).toBe('admin');
-    expect([hr, fin].map(homeViewFor)).toEqual(['admin', 'admin']);
-    expect([lib, bm, claims({ corp: { r: ['DEL'], b: ['cen'] } })].map(homeViewFor)).toEqual(['ops', 'ops', 'ops']);
-    expect(homeViewFor(emp)).toBe('staff');
-    expect(availableViews(emp, 'corp')).toEqual(['staff']);
-    // Librarians write blog posts (the Website view).
-    expect(availableViews(lib, 'corp')).toEqual(['web', 'ops', 'staff']);
-    expect(homeViewFor(claims({ corp: { r: ['WEB'], b: ['*'] } }))).toBe('web');
-    expect(availableViews(bm, 'corp')).toEqual(['admin', 'web', 'ops', 'staff']);
-    expect(availableViews(claims({}), 'corp')).toEqual([]);
+  it('starts people who only use their own pages on My profile, everyone else on the Dashboard', () => {
+    expect(staffHome(claims({}, true))).toBe('/admin');
+    expect([hr, fin, lib, bm, del, web].map(staffHome)).toEqual(['/admin', '/admin', '/admin', '/admin', '/admin', '/admin']);
+    expect(staffHome(emp)).toBe('/me');
   });
 
-  it('shows each role only what it may use, view by view', () => {
-    expect(labels(claims({}, true), 'admin')).toHaveLength(21);
-    // The Website view, in crossmaze.in/admin's order: the website team sees all of it (Plans is for head office),
-    // branch managers their branch pages, enquiries and the blog, librarians the blog.
-    expect(labels(claims({ corp: { r: ['HO'], b: ['*'] } }), 'web')).toEqual([
-      'Dashboard', 'Site settings', 'Page sections', 'Branches', 'Plans', 'Offers', 'Jobs', 'Blog', 'Festival greetings', 'Testimonials', 'Submissions', 'Calls', 'Connections', 'Admins',
+  it('shows each role only what it may use, in one menu', () => {
+    expect(labels(claims({}, true))).toHaveLength(52);
+    expect(menu(emp)).toEqual(['Dashboard', MY]);
+    expect(menu(lib)).toEqual([
+      'Dashboard',
+      'Circulation: Circulation desk, Reservations, Transfers, Deliveries',
+      'Collection: Catalogue, Receive books, Inventory, Shelve books',
+      'Members: Members, Payments & refunds',
+      'Website: Website overview, Blog',
+      'My employment: My profile, My attendance, My leave, My payslips, My deliveries, Complete my profile',
     ]);
-    expect(labels(claims({ corp: { r: ['WEB'], b: ['*'] } }), 'web')).not.toContain('Plans');
-    expect(labels(bm, 'web')).toEqual(['Dashboard', 'Branches', 'Blog', 'Submissions']);
-    expect(labels(lib, 'web')).toEqual(['Dashboard', 'Blog']);
-    expect(labels(lib, 'admin')).toEqual(['Dashboard']);
-    expect(labels(hr, 'admin')).toEqual([
-      'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Letters', 'Attendance', 'Leave', 'Payroll',
-      'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Letter templates', 'Payroll settings', 'Audit log',
+    expect(menu(web)).toEqual([
+      'Dashboard',
+      'Collection: Catalogue, Inventory',
+      'Website: Website overview, Site settings, Page sections, Branch pages, Offers, Jobs, Blog, Festival greetings, Testimonials',
+      'Enquiries: Submissions, Calls',
+      'Organization: Website admins',
+      'Settings: Connections',
+      MY,
     ]);
-    expect(labels(lib, 'ops')).toEqual(['Today', 'Circulation desk', 'Reservations', 'Transfers', 'Deliveries', 'Catalogue', 'Receive books', 'Inventory', 'Shelve books', 'Members', 'Payments & refunds']);
-    expect(labels(fin, 'ops')).toEqual(['Today', 'Catalogue', 'Inventory', 'Members', 'Payments & refunds', 'Deposit approvals']);
-    expect(labels(fin, 'admin')).toEqual(['Dashboard', 'Payroll', 'Audit log']);
-    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }), 'ops')).toEqual(['Today', 'Catalogue', 'Inventory']);
-    expect(labels(claims({ fran: { r: ['FO'], b: ['*'] } }), 'admin')).toEqual(['Dashboard']);
-    expect(labels(bm, 'ops')).toEqual(expect.arrayContaining(['Attendance', 'Leave requests', 'Letters']));
-    expect(labels(lib, 'admin')).not.toContain('Letters');
-    // Branch managers run their branch: its staff and branch lists, but not HR settings.
-    expect(labels(bm, 'admin')).toEqual(expect.arrayContaining(['Branches', 'Departments', 'Employees']));
-    expect(labels(bm, 'admin')).not.toContain('Job titles & checklists');
-    expect(labels(emp, 'staff')).toEqual(['Home', 'Attendance', 'Leave', 'My payslips', 'Complete my profile']);
-    // Riders see their run in the Staff view; branch managers also set up delivery.
-    expect(labels(claims({ corp: { r: ['DEL'], b: ['cen'] } }), 'staff')).toContain('My deliveries');
-    expect(labels(bm, 'admin')).toContain('Delivery');
+    expect(menu(hr)).toEqual([
+      'Dashboard',
+      'Staff: Overview, Employees, Documents, Letters, Attendance, Leave, Payroll',
+      'Organization: Branches, Departments, Roles & access, Audit log',
+      'Settings: Job titles & checklists, Shifts & holidays, Leave types, Document types, Letter templates, Payroll settings',
+      MY,
+    ]);
+    expect(menu(fin)).toEqual(['Dashboard', 'Collection: Catalogue, Inventory', 'Members: Members, Payments & refunds, Deposit approvals', 'Staff: Payroll', 'Organization: Audit log', MY]);
+    // Branch managers run their branch: its circulation, members, website page and enquiries, team and settings.
+    expect(menu(bm)).toEqual(
+      expect.arrayContaining([
+        'Website: Website overview, Branch pages, Blog',
+        'Enquiries: Submissions',
+        'Staff: Overview, Employees, Letters, Attendance, Leave',
+        'Settings: WhatsApp, Delivery',
+      ]),
+    );
+    expect(labels(bm)).not.toContain('Job titles & checklists');
+    // Riders see their deliveries among their own pages.
+    expect(labels(del)).toContain('My deliveries');
+    // Roles in another organization don't show here (the menu follows the chosen organization).
+    expect(menu(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard', MY]);
+    // Members (no staff role) get no console menu at all: they use the member area.
+    expect(visibleMenu(claims({}), 'corp')).toEqual([]);
   });
 
   it('drops a group when nothing in it is visible', () => {
-    const groups = visibleMenu(lib, 'corp', 'ops').filter(isGroup).map((g) => g.id);
-    expect(groups).toEqual(['circulation', 'collection', 'members']);
+    expect(visibleMenu(lib, 'corp').filter(isGroup).map((g) => g.id)).toEqual(['circulation', 'collection', 'members', 'website', 'me']);
   });
 });
 

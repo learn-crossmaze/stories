@@ -20,20 +20,14 @@ export function parseClaims(raw: Record<string, unknown>): StoriesClaims {
 export const isStaff = (c: StoriesClaims) => c.sa || Object.keys(c.o).length > 0;
 
 /** The staff console's views (docs/ARCHITECTURE.md): setup and back office, daily running, and self-service. */
-export type ViewId = 'admin' | 'web' | 'ops' | 'staff';
+/** Roles whose work is more than their own job: they start on the Dashboard. Everyone else starts on My profile. */
+const BEYOND_SELF = ['HO', 'HR', 'FIN', 'FO', 'WEB', 'CM', 'BM', 'LIB', 'DEL'];
 
-const ADMIN_ROLES = ['HO', 'HR', 'FIN', 'FO'];
-const OPS_ROLES = ['BM', 'LIB', 'DEL', 'CM'];
-
-/** The view a staff member lands on: back-office roles in Admin, branch roles in Operations, everyone else in Staff. */
-export function homeViewFor(c: StoriesClaims): ViewId {
-  if (c.sa) return 'admin';
+/** Where a staff member lands after signing in: the Dashboard, or My profile for those who only use My employment. */
+export function staffHome(c: StoriesClaims): '/admin' | '/me' {
+  if (c.sa) return '/admin';
   const codes = Object.values(c.o).flatMap((m) => m.r);
-  if (codes.some((r) => ADMIN_ROLES.includes(r))) return 'admin';
-  // Website Editors work in the Website view (the console's website admin).
-  if (codes.includes('WEB')) return 'web';
-  if (codes.some((r) => OPS_ROLES.includes(r))) return 'ops';
-  return 'staff';
+  return codes.some((r) => BEYOND_SELF.includes(r)) ? '/admin' : '/me';
 }
 
 /**

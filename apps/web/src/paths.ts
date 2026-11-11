@@ -64,7 +64,6 @@ export const paths = {
   adminWebsiteSections: '/website/sections',
   adminWebsiteBranches: '/website/branches',
   adminWebsiteBranch: (orgId: string, branchId: string) => `/website/branches/${orgId}/${branchId}`,
-  adminWebsitePlans: '/website/plans',
   adminWebsitePromotions: '/website/offers',
   adminWebsitePromotion: (id: string) => `/website/offers/${id}`,
   adminWebsiteJobs: '/website/jobs',
@@ -81,7 +80,6 @@ export const paths = {
   adminWebsiteAdmins: '/website/admins',
 } as const;
 
-export const viewHome = { admin: paths.admin, web: paths.web, ops: paths.ops, staff: paths.staff } as const;
 
 /**
  * Pure redirect rule, kept separate so it can be unit tested. `staffHome` is
