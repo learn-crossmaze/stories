@@ -194,39 +194,3 @@ export function navItemFor(pathname: string): NavItem | undefined {
 /** The group holding a location, so it can start open. */
 export const groupFor = (entries: NavEntry[], pathname: string) =>
   entries.find((e) => isGroup(e) && e.items.some((i) => pathname === i.to || pathname.startsWith(`${i.to}/`))) as NavGroup | undefined;
-
-/** Old /admin addresses (bookmarks, earlier notifications) → where the page lives now. */
-export const MOVED: [string, string][] = [
-  // The Operations view's home, and its team pages, now in the one menu.
-  ['/ops/attendance', paths.adminAttendance],
-  ['/ops/leave', paths.adminLeave],
-  ['/ops/offer-letters', paths.adminOffers],
-  ['/website/plans', paths.adminPlans],
-  // The Website section was in the Admin view before it became its own view.
-  ['/admin/website/festive-cards', paths.adminWebsiteCards],
-  ['/admin/website/cards', paths.adminWebsiteCards],
-  ['/admin/website/promotions', paths.adminWebsitePromotions],
-  ['/admin/website/settings', paths.adminWebsiteSettings],
-  ['/admin/website', paths.adminWebsite],
-  ['/admin/desk', paths.adminDesk],
-  ['/admin/books', paths.adminBooks],
-  ['/admin/inventory', paths.adminInventory],
-  ['/admin/labels', paths.adminLabels],
-  ['/admin/reservations', paths.adminReservations],
-  ['/admin/transfers', paths.adminTransfers],
-  ['/admin/members', paths.adminMembers],
-  ['/admin/plans', paths.adminPlans],
-  ['/admin/deposits', paths.adminDeposits],
-  ['/admin/me', paths.staff],
-  ['/admin/my-attendance', paths.adminMyAttendance],
-  ['/admin/my-leave', paths.adminMyLeave],
-  ['/admin/my-payslips', paths.adminMyPayslips],
-  ['/admin/appearance', paths.adminAppearance],
-  ['/admin/hr-settings', paths.adminHrSettings],
-];
-
-/** Where an old address moved to (keeping anything after it, e.g. a book id, and the query), or null. */
-export function movedTo(pathname: string, search = ''): string | null {
-  const hit = MOVED.find(([from]) => pathname === from || pathname.startsWith(`${from}/`));
-  return hit ? `${hit[1]}${pathname.slice(hit[0].length)}${search}` : null;
-}

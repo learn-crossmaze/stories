@@ -39,7 +39,6 @@ export const memberRoutes = [
           { path: paths.explore, element: <ExplorePage /> },
           { path: paths.myBooks, element: <MyBooksPage /> },
           { path: paths.membership, element: <MembershipPage /> },
-          { path: '/orders', element: <Navigate to={paths.membership} replace /> },
           { path: paths.profile, element: <ProfilePage /> },
         ],
       },

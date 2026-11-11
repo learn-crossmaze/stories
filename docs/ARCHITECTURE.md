@@ -205,8 +205,14 @@ stories/
   they are sent to the member area on the website. Staff who are also members open it from the account menu.
 
   **Landing:** after sign-in, people whose roles go beyond their own job land on the Dashboard (`/admin`); everyone
-  else on My profile (`/me`) (`staffHome` in `auth/claims.ts`). Addresses keep their prefixes (`/admin`, `/ops`,
-  `/website`, `/me`); old ones that moved redirect (`MOVED` in `nav.ts`).
+  else on My profile (`/me`) (`staffHome` in `auth/claims.ts`).
+
+  **What waits for you** (as in LITMUS): beside each menu page, a count of what waits there for the person (books to
+  inspect or shelve, incoming transfers, deliveries, deposit approvals, renewals due, documents to verify,
+  attendance corrections and the month to finalize, leave and payroll to approve, website changes to publish, posts
+  to review, new enquiries, the person's own missing profile items); a closed group shows its total, and the browser
+  tab the overall total ("(5) Dashboard · Stories"). The same checks as the Dashboard's list (`admin/attention.ts`),
+  refreshed when moving between pages (at most every 30 seconds) and every 2 minutes.
 
   The menu only arranges screens; the rules and functions still check every read and write.
 - **Menus and page access:** the menu is defined once in `apps/web/src/admin/nav.ts` (`MENU`): pages and groups of

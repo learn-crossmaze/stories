@@ -1,9 +1,9 @@
 import { type ComponentType, lazy, type ReactNode } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router';
+import { Route, Routes } from 'react-router';
 
 import { AdminShell } from './AdminShell';
 import { NoAccess, Require } from './guards';
-import { MOVED, movedTo, navItemFor, type Requirement } from './nav';
+import { navItemFor, type Requirement } from './nav';
 import { paths } from '../paths';
 import { AppearanceSettings } from '../shared/AppearanceSettings';
 import { t } from '../strings';
@@ -80,11 +80,6 @@ const SiteSettingsPage = lazyPage(() => import('./website/Settings'), 'SiteSetti
 function guard(path: string, page: ReactNode, requires?: Requirement) {
   const item = navItemFor(path);
   return <Require requires={requires ?? item?.page ?? item?.requires ?? null}>{page}</Require>;
-}
-
-function Moved() {
-  const { pathname, search } = useLocation();
-  return <Navigate to={movedTo(pathname, search) ?? paths.admin} replace />;
 }
 
 /** Every page of the console, by its address. */
@@ -181,14 +176,10 @@ export default function AdminApp() {
     <Routes>
       <Route element={<AdminShell />}>
         <Route path={rel(paths.admin)} element={<DashboardPage />} />
-        <Route path={rel(paths.ops)} element={<Navigate to={paths.admin} replace />} />
         <Route path={rel(paths.web)} element={guard(paths.adminWebsite, <WebsiteOverviewPage />)} />
         <Route path={rel(paths.staff)} element={<MyProfilePage />} />
         {allRoutes().map(([path, element]) => (
           <Route key={path} path={rel(path)} element={element} />
-        ))}
-        {MOVED.map(([from]) => (
-          <Route key={from} path={`${rel(from)}/*`} element={<Moved />} />
         ))}
         <Route path="*" element={<NoAccess />} />
       </Route>

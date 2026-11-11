@@ -357,9 +357,18 @@ export const admins = query('site-admins', z.strictObject({}), async ({ actor })
   };
 });
 
-/** For the dashboard: enquiries waiting, taps this week. */
-export async function inboxCounts(manager: boolean) {
-  if (!manager) return { newSubmissions: null, callsThisWeek: null, openJobs: null };
+/** For the dashboard and the menu: enquiries waiting (website managers: all; branch managers: their branches'), taps this week. */
+export async function inboxCounts(r: Awaited<ReturnType<typeof rightsOf>>) {
+  if (!r.manager) {
+    const branchRoles = r.memberships.filter((m) => rolesGrant(m.roles, 'website.branch'));
+    if (!branchRoles.length) return { newSubmissions: null, callsThisWeek: null, openJobs: null };
+    const open = await db.collection('siteSubmissions').where('handled', '==', false).limit(500).get();
+    const mine = open.docs.filter((d) => {
+      const s = d.data() as { orgId?: string; branchId?: string };
+      return !!s.orgId && !!s.branchId && canEditBranch(r, s.orgId, s.branchId);
+    });
+    return { newSubmissions: mine.length, callsThisWeek: null, openJobs: null };
+  }
   const [subs, taps, jobs] = await Promise.all([
     db.collection('siteSubmissions').where('handled', '==', false).count().get(),
     db.collection('siteCalls').where('createdAt', '>=', Timestamp.fromMillis(Date.now() - 7 * 86_400_000)).count().get(),

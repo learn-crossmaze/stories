@@ -26,16 +26,16 @@ function renderApp(repo = fakeAuth(), path = '/', staffApp = false) {
 describe('app flow', () => {
   it('redirects to sign-in, signs in, then signs out', async () => {
     const user = userEvent.setup();
-    const { router } = renderApp(fakeAuth(), '/orders');
+    const { router } = renderApp(fakeAuth(), '/membership');
     expect(await screen.findByRole('heading', { name: t.signInTitle })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/sign-in');
-    expect(router.state.location.search).toBe('?next=%2Forders');
+    expect(router.state.location.search).toBe('?next=%2Fmembership');
 
     await user.type(screen.getByLabelText(t.emailLabel), 'reader@example.com');
     await user.type(screen.getByLabelText(t.passwordLabel), 'correct-horse');
     await user.click(screen.getByRole('button', { name: t.signInButton }));
 
-    // Back to the page they asked for (the old /orders address is the Membership page now).
+    // Back to the page they asked for.
     expect(await screen.findByRole('heading', { name: t.navMembership, level: 1 })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/membership');
     await user.click(screen.getByRole('link', { name: t.memberAreaAccount }));
@@ -97,12 +97,12 @@ describe('app flow', () => {
     expect(replace).toHaveBeenCalledWith(env.memberUrl);
   });
 
-  it('keeps old member links working by sending them to the same page in the member area', async () => {
+  it('sends members who open the staff app to the member area: they only ever see that', async () => {
     const replace = vi.fn();
     Object.defineProperty(window, 'location', { configurable: true, value: { ...window.location, replace } });
-    renderApp(fakeAuth({ uid: 'm1', email: 'm@x.in', displayName: 'Mira', emailVerified: true }), '/membership', true);
+    renderApp(fakeAuth({ uid: 'm1', email: 'm@x.in', displayName: 'Mira', emailVerified: true }), '/admin', true);
     await screen.findByText(t.toMemberArea);
-    expect(replace).toHaveBeenCalledWith(`${env.memberUrl}/membership`);
+    expect(replace).toHaveBeenCalledWith(env.memberUrl);
   });
 
   it('opens the console for staff in the staff app', async () => {

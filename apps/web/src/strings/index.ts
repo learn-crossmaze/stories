@@ -242,6 +242,7 @@ export const t = {
   groupMembers: 'Members',
   groupTeam: 'My team',
   groupStaff: 'Staff',
+  waitingForYou: (n: number) => `, ${n} waiting for you`,
   groupMyEmployment: 'My employment',
   groupOrganization: 'Organization',
   groupPeople: 'People',

@@ -242,7 +242,7 @@ export const overview = query('site-overview', z.strictObject({}), async ({ acto
       updatedBy: doc.updatedBy?.name ?? null,
       canPublish: canPublish(r, doc.kind, doc, itemId),
     }));
-  const counts = await inboxCounts(!!r.manager);
+  const counts = await inboxCounts(r);
   return {
     counts,
     rights: {

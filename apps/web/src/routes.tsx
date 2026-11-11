@@ -51,7 +51,7 @@ function StaffGate() {
   );
 }
 
-/** "/" and the old member addresses: staff go to their view, everyone else to the member area. */
+/** "/": staff go to their start page, everyone else to the member area. */
 function Home() {
   const { claims } = useAuth();
   const { pathname } = useLocation();
@@ -73,7 +73,6 @@ export const routes = [
         children: [`${paths.admin}/*`, `${paths.web}/*`, `${paths.ops}/*`, `${paths.staff}/*`].map((path) => ({ path, element: null })),
       },
       { path: paths.home, element: <Home /> },
-      ...[paths.explore, paths.myBooks, paths.membership, paths.profile, '/orders'].map((path) => ({ path, element: <Home /> })),
       { path: '*', element: <Navigate to={paths.home} replace /> },
     ],
   },

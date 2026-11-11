@@ -196,6 +196,9 @@ describe('website: enquiries, calls, jobs, testimonials, sections', () => {
     expect((await call<{ items: unknown[] }>(inbox.submissions, bm, {}, null)).items).toHaveLength(1);
     expect((await call<{ items: unknown[] }>(inbox.submissions, otherBm, {}, null)).items).toHaveLength(0);
     expect(await failure(call(inbox.submissions, lib, {}, null))).toBe('FORBIDDEN');
+    // The branch's managers count it among what waits for them; other branches' managers don't.
+    expect((await call<{ counts: { newSubmissions: number } }>(site.overview, bm, {}, null)).counts.newSubmissions).toBe(1);
+    expect((await call<{ counts: { newSubmissions: number } }>(site.overview, otherBm, {}, null)).counts.newSubmissions).toBe(0);
     await call(inbox.markHandled, bm, { id: all.docs[0].id, handled: true });
     expect((await call<{ counts: { newSubmissions: number } }>(site.overview, editor, {}, null)).counts.newSubmissions).toBe(0);
   });

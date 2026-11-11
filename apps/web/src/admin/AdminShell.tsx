@@ -7,9 +7,10 @@ import { rolesIn, staffHome } from '../auth/claims';
 import { ROLES } from '../generated/rbac';
 import { paths } from '../paths';
 import { Icon, SkeletonRows } from '../shared/ui';
-import { useRouteFocus } from '../shared/useRouteFocus';
+import { setWaitingInTitle, useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
+import { type Attention, useAttention } from './attention';
 import { groupFor, isGroup, type NavEntry, navItemFor, visibleMenu } from './nav';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
@@ -152,8 +153,19 @@ function readOpen(): Record<string, boolean> {
   }
 }
 
-/** A view's menu: single pages, and groups that open and close (remembered on this device). */
-function SideMenu({ entries }: { entries: NavEntry[] }) {
+/** "3 waiting for you", beside a page or on a closed group (the words are for screen readers; the badge shows the number). */
+function NavCount({ n }: { n: number | undefined }) {
+  if (!n) return null;
+  return (
+    <span className="nav-count">
+      <span aria-hidden="true">{n > 99 ? '99+' : n}</span>
+      <span className="sr-only">{t.waitingForYou(n)}</span>
+    </span>
+  );
+}
+
+/** The menu: single pages, and groups that open and close (remembered on this device), with what waits in each. */
+function SideMenu({ entries, counts }: { entries: NavEntry[]; counts: Attention }) {
   const { pathname } = useLocation();
   const [open, setOpen] = useState<Record<string, boolean>>(readOpen);
   const current = groupFor(entries, pathname)?.id;
@@ -181,10 +193,12 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
               <Link to={e.to} className={itemClass(e.to)} aria-current={e.to === activeTo ? 'page' : undefined}>
                 <Icon name={e.icon} />
                 <span>{e.label}</span>
+                <NavCount n={counts[e.to]} />
               </Link>
             </li>
           );
         }
+        const groupTotal = e.items.reduce((a, i) => a + (counts[i.to] ?? 0), 0);
         const isOpen = !!open[e.id];
         const listId = `menu-${e.id}`;
         return (
@@ -198,6 +212,8 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
             >
               <Icon name={e.icon} />
               <span>{e.label}</span>
+              {/* A closed group shows what waits in it, so nothing hides (as in LITMUS). */}
+              {!isOpen && <NavCount n={groupTotal} />}
               <span className="nav-caret" aria-hidden="true">
                 <Icon name="expand" />
               </span>
@@ -207,6 +223,7 @@ function SideMenu({ entries }: { entries: NavEntry[] }) {
                 <li key={i.to}>
                   <Link to={i.to} className={itemClass(i.to, ' nav-sub-item')} aria-current={i.to === activeTo ? 'page' : undefined}>
                     <span>{i.label}</span>
+                    <NavCount n={counts[i.to]} />
                   </Link>
                 </li>
               ))}
@@ -243,6 +260,12 @@ function Shell() {
   }, [menuOpen]);
 
   const entries = visibleMenu(claims, org?.id ?? null);
+  const attention = useAttention();
+  // The browser tab shows the total waiting: "(5) Dashboard · Stories".
+  useEffect(() => {
+    setWaitingInTitle(attention.total);
+    return () => setWaitingInTitle(0);
+  }, [attention.total]);
   const home = staffHome(claims);
   return (
     <>
@@ -261,7 +284,7 @@ function Shell() {
             </button>
           </div>
           <nav aria-label={t.mainMenu}>
-            <SideMenu entries={entries} />
+            <SideMenu entries={entries} counts={attention.counts} />
           </nav>
         </aside>
         <div className="admin-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />

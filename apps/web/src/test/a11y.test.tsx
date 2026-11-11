@@ -4,7 +4,7 @@ import { createMemoryRouter, Link, Outlet, RouterProvider } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 import { Dialog } from '../admin/components/Dialog';
-import { isGroup, MENU, movedTo, navItemFor } from '../admin/nav';
+import { isGroup, MENU, navItemFor } from '../admin/nav';
 import { useRouteFocus } from '../shared/useRouteFocus';
 
 describe('dialog', () => {
@@ -82,12 +82,5 @@ describe('menu', () => {
     expect(navItemFor('/me')?.label).toBe('My profile');
     expect(navItemFor('/website/blog/p1')?.label).toBe('Blog');
     expect(navItemFor('/admin/settings/leave')?.label).toBe('Leave types');
-  });
-
-  it('sends old addresses to where the page lives now', () => {
-    expect(movedTo('/admin/books/b1', '?tab=copies')).toBe('/ops/books/b1?tab=copies');
-    expect(movedTo('/admin/my-leave')).toBe('/me/leave');
-    expect(movedTo('/admin/hr-settings')).toBe('/admin/settings/jobs');
-    expect(movedTo('/admin/people')).toBeNull();
   });
 });
