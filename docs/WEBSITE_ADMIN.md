@@ -52,12 +52,11 @@ on Admin → Roles & access (head office).
   `greetings/dates.json` (to 2031); `node tools/site/festival-dates.mjs` refreshes them from Google's calendar of
   Indian holidays.
 
-## Deploying this the first time
+## Deploying
 
-`npm run deploy` (or `npm run deploy:backend` first, then `npm run build` + the app hosting deploy and
-`npm run deploy:site`): the backend adds the `sitePages` function and a Firestore index for the blog; the site's
-new addresses (`/blog`, `/branches/<address>`, `/about`, `/sitemap.xml`) are rewrites to that function, so deploy
-the backend before the site.
+`npm run publish:all` (docs/DEPLOYMENT.md §2): it deploys the backend (the `site-*` actions, the `sitePages`
+function and the blog's Firestore index) before the website, whose new addresses (`/blog`, `/branches/<address>`,
+`/about`, `/sitemap.xml`) are rewrites to that function.
 
 ## Ideas for later
 

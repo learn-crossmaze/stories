@@ -37,7 +37,26 @@ The job deploys without `--force`: if a change removes a function, the deploy st
 `npm run deploy:backend` once by hand and answer **yes**, then re-run the workflow. Unchanged functions are skipped,
 so a deploy that touches only the web app adds about a minute.
 
-## 2. Deploying the backend by hand
+## 2. Publishing from your computer: `npm run publish:all`
+
+One command publishes everything, in the safe order: it checks Firebase sign-in and that this copy has no local
+edits, gets the latest code (`git pull`), installs (`npm ci` for the apps and the functions), runs the quick checks
+and tests, builds the staff app, website and member area, deploys the **backend first** (functions, Firestore rules
+and indexes, Storage rules), then **both Hosting sites**, and checks that the live sites answer.
+
+```bash
+npm run publish:all
+```
+
+Options (after `--`): `--dry-run` (show the steps only), `--skip-tests`, `--no-pull`, `--no-install`,
+`--only=backend,app,site`. Example: `npm run publish:all -- --only=site --skip-tests`. The script is
+`tools/publish.mjs`; it works the same in PowerShell, cmd, macOS and Linux, and sets `FUNCTIONS_DISCOVERY_TIMEOUT`
+itself. If a deploy would delete a function, Firebase asks first: answer **yes** when the function was removed on
+purpose.
+
+The sections below are the single steps it runs, for when you need only one.
+
+## 3. Deploying the backend by hand
 
 **Once, before the first deploy that includes Storage** (book covers): Firebase console → **Storage** → *Get started* →
 location **asia-south1** (or the default), *production mode*. This creates the default bucket
@@ -55,10 +74,10 @@ Later deploys need only `git pull` and `npm run deploy:backend`: the functions p
 installs any new function dependencies before building.
 
 The first deploy enables the Cloud Functions, Cloud Build, Artifact Registry and Cloud Run APIs (a few minutes).
-Scheduled functions also enable Cloud Scheduler. The backend deploys as **17 services** (`maxInstances: 5` each) to
+Scheduled functions also enable Cloud Scheduler. The backend deploys as **18 services** (`maxInstances: 5` each) to
 stay inside the project's Cloud Run CPU quota: 7 routers (`admin`, `catalogue`, `inventory`, `members`, `billing`,
 `circulation`, `hr`), 3 webhooks (`razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`), the public website's
-data endpoint `sitePublic`, the `whatsapp-send`
+data endpoint `sitePublic` and its server-rendered pages `sitePages` (blog, branch pages, About, sitemap), the `whatsapp-send`
 trigger and 5 scheduled jobs (`expireSubscriptions` hourly, `expireHolds` and `maintenance` every 15 minutes,
 `expireDocuments` and `accrueLeave` daily). `maintenance` finishes interrupted work: token updates after role changes
 (users marked `claimsStale`), WhatsApp messages whose send never ran or was cut off, and the website's book shelves

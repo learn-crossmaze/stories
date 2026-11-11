@@ -21,6 +21,7 @@
     "test:functions": "npm --prefix functions run test:unit && firebase emulators:exec --project demo-stories --only firestore,auth,storage \"npm --prefix functions run test:emulator\"",
     "deploy:backend": "firebase deploy --only firestore,functions,storage --project stories-for-all",
     "deploy:site": "npm run build:site && firebase deploy --only hosting:site --project stories-for-all",
+    "publish:all": "node tools/publish.mjs",
     "dev:member": "npm run dev:member -w apps/web"
   },
   "devDependencies": {
