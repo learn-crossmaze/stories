@@ -6,12 +6,12 @@ import { logger } from 'firebase-functions';
 import type { Request } from 'firebase-functions/v2/https';
 
 import { db } from '../core/firebase.js';
-import type { BranchDraft, PostDraft, SettingsDraft } from './content.js';
-import { todayInIndia } from './content.js';
+import type { BranchDraft, JobDraft, PostDraft, SectionsDraft, SettingsDraft } from './content.js';
+import { sectionsDraft, settingsDraft, todayInIndia } from './content.js';
 import type { SiteDoc } from './admin.js';
 import { booksById, cardOf, livePosts } from './live.js';
 import { toPublicBranch } from './public.js';
-import { aboutHtml, blogIndexHtml, branchHtml, branchJsonLd, esc, notFoundHtml, plain, postHtml, type PostView } from './render.js';
+import { aboutHtml, blogIndexHtml, branchHtml, branchJsonLd, careersHtml, esc, notFoundHtml, plain, postHtml, type PostView } from './render.js';
 
 /** The website's addresses: the template is fetched from the one the visitor is on (others fall back to the first). */
 const SITE_HOSTS = ['storiesforall.in', 'www.storiesforall.in', 'storiesforall-website.web.app', 'storiesforall-website.firebaseapp.com'];
@@ -196,7 +196,7 @@ export async function resolvePage(path: string, search: URLSearchParams): Promis
 
   if (first === 'about' && parts.length === 1) {
     const s = (await db.doc('siteContent/settings').get()).get('live') as SettingsDraft | null | undefined;
-    const settings = s ?? ({ about: { heading: '', intro: '', body: '', photos: [], facts: [] }, team: [], faqs: [], social: { instagram: '', facebook: '', youtube: '', x: '' } } satisfies SettingsDraft);
+    const settings = s ?? settingsDraft.parse({});
     return {
       status: 200,
       title: 'About us',
@@ -207,11 +207,29 @@ export async function resolvePage(path: string, search: URLSearchParams): Promis
     };
   }
 
+  if (first === 'careers' && parts.length === 1) {
+    const [jobs, sections, settings] = await Promise.all([
+      db.collection('siteJobs').where('isLive', '==', true).get(),
+      db.doc('siteContent/sections').get(),
+      db.doc('siteContent/settings').get(),
+    ]);
+    const open = jobs.docs.map((d) => ({ id: d.id, job: d.get('live') as JobDraft })).filter((j) => j.job && !j.job.hidden).sort((a, b) => a.job.title.localeCompare(b.job.title));
+    const perks = ((sections.get('live') as SectionsDraft | undefined) ?? sectionsDraft.parse({})).careerPerks;
+    const email = ((settings.get('live') as SettingsDraft | undefined) ?? settingsDraft.parse({})).contact.careersEmail;
+    return {
+      status: 200,
+      title: 'Careers',
+      description: open.length ? `Join Stories for All: ${open.map((j) => j.job.title).join(', ')}.` : 'Work with books and readers at Stories for All. Send us your CV.',
+      path: '/careers',
+      main: careersHtml(open, perks, email),
+    };
+  }
+
   return missing('page', path);
 }
 
 /** The website's static pages (apps/site) and every published post and branch page. */
-export const STATIC_PAGES = ['/', '/books', '/plans', '/branches', '/how-it-works', '/blog', '/about', '/franchise', '/contact'];
+export const STATIC_PAGES = ['/', '/books', '/plans', '/branches', '/how-it-works', '/blog', '/about', '/careers', '/franchise', '/contact'];
 
 export async function sitemapXml() {
   const [posts, branches] = await Promise.all([livePosts(500), db.collection('siteBranches').where('isLive', '==', true).get()]);

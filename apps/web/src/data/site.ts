@@ -3,7 +3,8 @@ import { call, command } from './api';
 import { env } from '../config/env';
 import { shrinkToJpeg } from '../shared/image';
 
-export type Kind = 'settings' | 'greetings' | 'branch' | 'post' | 'promotion';
+export type Kind = 'settings' | 'sections' | 'greetings' | 'branch' | 'post' | 'promotion' | 'job' | 'testimonial';
+export type ListKind = 'branch' | 'post' | 'promotion' | 'job' | 'testimonial';
 export type SiteStatus = 'NONE' | 'DRAFT' | 'IN_REVIEW' | 'HIDDEN' | 'LIVE' | 'CHANGED' | 'UPCOMING' | 'ENDED';
 
 export interface SiteImage {
@@ -20,10 +21,45 @@ export interface BookRef {
 }
 
 export interface SettingsDraft {
+  contact: { phone: string; whatsapp: string; email: string; franchiseEmail: string; careersEmail: string };
+  banner: { heading: string; highlight: string; intro: string };
+  showTeam: boolean;
   about: { heading: string; intro: string; body: string; photos: SiteImage[]; facts: { value: string; label: string }[] };
   team: { name: string; role: string; photo: SiteImage | null; bio: string }[];
-  faqs: { q: string; a: string }[];
   social: { instagram: string; facebook: string; youtube: string; x: string };
+}
+
+export interface Tile {
+  title: string;
+  text: string;
+}
+export interface SectionsDraft {
+  promises: Tile[];
+  homeSteps: Tile[];
+  readers: Tile[];
+  howSteps: Tile[];
+  faqs: { q: string; a: string }[];
+  franchisePerks: Tile[];
+  careerPerks: Tile[];
+}
+
+export const JOB_TYPES = ['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'VOLUNTEER'] as const;
+export interface JobDraft {
+  title: string;
+  location: string;
+  type: (typeof JOB_TYPES)[number];
+  overview: string;
+  qualification: string;
+  experience: string;
+  timings: string;
+  responsibilities: string[];
+  hidden: boolean;
+}
+export interface TestimonialDraft {
+  quote: string;
+  name: string;
+  detail: string;
+  hidden: boolean;
 }
 
 export interface CardPick {
@@ -123,6 +159,7 @@ export interface Pending {
   canPublish: boolean;
 }
 export interface Overview {
+  counts: { newSubmissions: number | null; callsThisWeek: number | null; openJobs: number | null };
   rights: Rights;
   pending: Pending[];
   reviews: { id: string; title: string; by: string; at: string | null }[];
@@ -172,15 +209,15 @@ export interface Item<D> {
 }
 
 export const siteOverview = () => call<Overview>('site-overview', {});
-export const listSite = (kind: 'branch' | 'post' | 'promotion') => call<{ items: ListItem[] }>('site-list', { kind }).then((r) => r.items);
+export const listSite = (kind: ListKind) => call<{ items: ListItem[] }>('site-list', { kind }).then((r) => r.items);
 export const getSite = <D>(kind: Kind, id?: string, orgId?: string) => call<Item<D>>('site-get', { kind, ...(id ? { id } : {}), ...(orgId ? { orgId } : {}) });
 
 export const saveSite = (kind: Kind, draft: object, id?: string, orgId?: string) =>
   command<{ id: string; changed: boolean }>('site-save', { kind, draft, ...(id ? { id } : {}), ...(orgId ? { orgId } : {}) });
 export const publishSite = (kind: Kind, id?: string) => command<{ id: string; result: 'publish' | 'unpublish' | 'none' }>('site-publish', { kind, ...(id ? { id } : {}) });
-export const unpublishSite = (kind: 'branch' | 'post' | 'promotion', id: string) => command('site-unpublish', { kind, id });
+export const unpublishSite = (kind: ListKind, id: string) => command('site-unpublish', { kind, id });
 export const discardSite = (kind: Kind, id?: string) => command('site-discard', { kind, ...(id ? { id } : {}) });
-export const deleteSite = (kind: 'post' | 'promotion', id: string) => command('site-delete', { kind, id });
+export const deleteSite = (kind: Exclude<ListKind, 'branch'>, id: string) => command('site-delete', { kind, id });
 export const requestReview = (id: string, note = '') => command('site-requestReview', { id, note });
 export const publishAll = () => command<{ published: { kind: Kind; id: string; result: string }[]; blocked: { title: string; reason: string }[] }>('site-publishAll', {});
 
@@ -210,3 +247,93 @@ export const slugify = (title: string) =>
     .replace(/-+$/, '');
 
 export const todayInIndia = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+
+// ------------------------------------------------------------------ enquiries, calls, connections, admins
+
+export type Form = 'MEMBERSHIP' | 'FRANCHISE' | 'JOB' | 'CONTACT';
+export interface Submission {
+  id: string;
+  form: Form;
+  name: string;
+  phone: string;
+  email: string;
+  message: string;
+  city: string;
+  readers: string;
+  experience: string;
+  branchId: string | null;
+  branchName: string | null;
+  jobId: string | null;
+  jobTitle: string | null;
+  page: string;
+  resume: { name: string } | null;
+  handled: boolean;
+  handledBy?: { name: string } | null;
+  handledAt?: string | null;
+  note?: string;
+  createdAt: string | null;
+}
+export const listSubmissions = () => call<{ items: Submission[] }>('site-submissions', {}).then((r) => r.items);
+export const markHandled = (id: string, handled: boolean, note = '') => command('site-markHandled', { id, handled, note });
+export const deleteSubmission = (id: string) => command('site-deleteSubmission', { id });
+/** Downloads an applicant's CV (it is never public). */
+export async function downloadResume(id: string) {
+  const f = await call<{ name: string; type: string; data: string }>('site-resume', { id });
+  const bytes = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([bytes], { type: f.type }));
+  a.download = f.name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+export interface CallTap {
+  id: string;
+  channel: 'phone' | 'whatsapp';
+  number: string;
+  branch: string;
+  page: string;
+  place: string;
+  source: string;
+  visit: string;
+  device: string;
+  createdAt: string | null;
+}
+export const listCalls = (days: 7 | 30 | 90) => call<{ items: CallTap[] }>('site-calls', { days }).then((r) => r.items);
+
+export interface Connections {
+  alerts: string[];
+  alertBranchManagers: boolean;
+  branches: { id: string; name: string; whatsapp: boolean; payments: boolean }[];
+}
+export const getConnections = () => call<Connections>('site-connections', {});
+export const saveConnections = (alerts: string[], alertBranchManagers: boolean) => command('site-saveConnections', { alerts, alertBranchManagers });
+
+export interface WebsitePerson {
+  uid: string;
+  name: string;
+  email: string;
+  org: string;
+  roles: string[];
+  level: 'MANAGER' | 'BRANCH' | 'WRITER';
+  branches: string[];
+}
+export const listWebsiteAdmins = () => call<{ people: WebsitePerson[] }>('site-admins', {}).then((r) => r.people);
+
+/** Rows as a CSV file the person saves (Excel opens it). */
+export function downloadCsv(name: string, header: string[], rows: (string | number | null | undefined)[][]) {
+  const cell = (v: string | number | null | undefined) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) || /^[=+\-@]/.test(s) ? `"${s.replace(/^([=+\-@])/, "'$1").replace(/"/g, '""')}"` : s;
+  };
+  const csv = [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv' }));
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}

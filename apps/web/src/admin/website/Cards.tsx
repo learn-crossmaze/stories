@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router';
 
 // The website's own card engine (apps/site/src/greetings), so the previews here are exactly what visitors see.
 import { datesTable, nextDate } from '../../../../site/src/greetings/calendar';
@@ -11,7 +10,6 @@ import { occasions } from '../../../../site/src/greetings/occasions';
 import { paletteFor } from '../../../../site/src/greetings/palettes';
 import type { Occasion } from '../../../../site/src/greetings/types';
 import { type CardPick, discardSite, getSite, type GreetingsDraft, publishSite, saveSite, todayInIndia } from '../../data/site';
-import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { SelectField, TextField } from '../../shared/fields';
@@ -93,7 +91,6 @@ export function CardsPage() {
   return (
     <>
       <header className="page-header">
-        <p className="muted small"><Link to={paths.adminWebsite}>{st.title}</Link></p>
         <h1>{st.navCards}</h1>
         <p className="muted">{st.cardsIntro}</p>
       </header>

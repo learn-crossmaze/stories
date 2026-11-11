@@ -1,28 +1,45 @@
 # Managing the website (console → Website)
 
-The staff console has a **Website** section (Admin view) for everything storiesforall.in shows beyond the live
-catalogue, plans and branches. It follows the crossmaze.in admin panel's way of working (save, preview, publish;
-branch admins for their own branch; festival greetings), adapted to a library and to the Stories roles.
+The staff console has a **Website** view (next to Admin, Operations and Staff) at
+`https://stories-by-crossmaze.web.app/website` (later `app.storiesforall.in/website`). It is laid out like the
+crossmaze.in admin panel, in the same order: **Dashboard**, then **Website**, **Stories**, **Enquiries** and
+**Settings**, with a **Publish all** button in the top bar.
 
-| Page | What it changes | On the website |
-| --- | --- | --- |
-| Overview | What is waiting to be published or reviewed, what was published lately; **Publish all** | — |
-| Blog | Posts in seven designs, drafts with a private preview link, review by a manager | `/blog`, `/blog/<address>`, the home page's "From the library", the branch page's news |
-| Branch pages | Per branch: tagline, welcome, about, photos, figures, amenities, **notices with dates** (closures, changed hours), good to know, **what's on** (storytime, book club), the **head librarian's profile** (photo, words, quote, languages, books they love) and **their picks** from the catalogue, WhatsApp number, Google Maps link | `/branches/<address>`, linked from the branch cards |
-| Offers and promotions | Headline, message, button, code, picture, colour, **dates**, whole site or some branches, and where: a **bar** on top of every page, a **pop-up** once a day, or a **home page banner** | Every page / the home page / those branches' pages |
-| Festive cards | 36 days a year (festivals, national days, and the library days: Children's Book Day, World Book Day, Reading Day, Librarians' Day, Literacy Day): switch a day off, change the card's words, add your own picture, **Try another drawing**, books for the day, the offer beside the card | A toast on the day, and a pop-up with the card (Share on WhatsApp, Download), what the day is about, a reading idea and the offer |
-| Site settings | The About page (story, figures, photos), the people behind Stories, more questions for How it works, social links | `/about`, How it works, the footer |
+| Group | Page | What it changes | On the website |
+| --- | --- | --- | --- |
+| | Dashboard | Changes waiting to be published (and Publish all), new enquiries, taps on call buttons this week, posts waiting for review, links to every page, what was published lately | — |
+| Website | Site settings | Contact details (main phone, WhatsApp, email, franchise and careers emails), the home page banner, the About page (story, figures, photos), the people behind Stories (with a switch to show them), social links | Footer, Contact, Franchise, Careers, home banner, `/about` |
+| | Page sections | Lists on the pages: the home page's promises, steps and reader groups; How it works' steps and questions; the Franchise and Careers points. An empty list keeps the page's own words | Home, How it works, Franchise, Careers |
+| | Branches | Each branch's page: tagline, welcome, about, photos, figures, amenities, **notices with dates**, good to know, **what's on**, the **head librarian's profile** and **their picks**, WhatsApp number, Google Maps link | `/branches/<address>`, with a call-me-back form |
+| | Plans | The plans and prices (the same page as Operations → Plans; head office) | `/plans` |
+| | Offers | A bar on every page, a once-a-day pop-up or a home page banner, with dates, a code and the pages it shows on | Every page / home / those branches' pages |
+| | Jobs | Open roles: title, where, type, overview, qualification, experience, timings, responsibilities | `/careers`, with an application form (CV upload) |
+| Stories | Blog | Posts in seven designs, private previews, review by a manager | `/blog`, the home page, branch pages |
+| | Festival greetings | 36 days a year (festivals, national days, library days): switch a day off, own words or picture, new drawings, books for the day, the offer beside the card | A toast and a card on the day |
+| | Testimonials | Readers' words, with the name they chose | Home page: "What readers say" |
+| Enquiries | Submissions | Every membership enquiry, message, franchise enquiry and job application from the website's forms: call or WhatsApp back, note, mark as handled, download the CV, export to CSV | — |
+| | Calls | Every tap on a call or WhatsApp button: by branch, page, how the visitor found the site and device; 7 days, 30 days or 3 months; CSV | — |
+| Settings | Connections | Enquiry alerts (staff told about each new enquiry in the staff app and, where set up, on WhatsApp; and each branch's managers for their branch), and which branches have WhatsApp and online payments set up | — |
+| | Admins | Everyone who can change the website and what they may do; **Give someone access** opens Roles & access | — |
 
 ## Who can do what
 
-| Role | Website section |
+| Role | Website view |
 | --- | --- |
-| Head Office Admin, **Website Editor** (new role, corporate) | Everything, every branch; publish |
-| Franchise Owner, Branch Manager | Their branches' pages; posts about their branches (write, review, publish) |
-| Librarian | Write posts (their own) and **send them for review**; a manager of the branch the post is about, or the website team, publishes |
+| Head Office Admin, **Website Editor** (corporate) | Everything, every branch; publish (Plans: head office only) |
+| Franchise Owner, Branch Manager | Their branches' pages and enquiries; posts about their branches (write, review, publish) |
+| Librarian | Write posts (their own) and **send them for review** |
 
-The server decides (functions/src/site/admin.ts); the menu only hides pages. Give someone the Website Editor role
-on Admin → Roles & access (head office).
+The server decides (functions/src/site/admin.ts, inbox.ts); the menu only hides pages. Give someone the Website
+Editor role on Admin → Roles & access; they land in the Website view when they sign in.
+
+## Forms and calls
+
+- The website's forms post to `/api/submit` (served by `sitePublic`): saved first (`siteSubmissions`), then the
+  alerts go out. A hidden field catches robots; each visitor may send 8 an hour. CVs (PDF or Word, 2 MB) are kept in
+  Cloud Storage (`submissions/<id>/`), never public: the console downloads them through `site-resume`.
+- Taps on call and WhatsApp buttons post to `/api/tap` (`siteCalls`, kept 400 days). Nothing that identifies the
+  visitor is stored: the visit code is random and forgotten when the tab closes.
 
 ## Save, preview, publish
 
@@ -36,13 +53,13 @@ on Admin → Roles & access (head office).
 
 ## How it works
 
-- Content: Firestore `siteContent/{settings|greetings}`, `siteBranches/{branchId}`, `sitePosts/{id}`,
-  `sitePromotions/{id}`, each with `draft` and `live`; `sitePublishLog`. Clients can't read or write them
+- Content: Firestore `siteContent/{settings|sections|greetings}`, `siteBranches/{branchId}`, `sitePosts/{id}`,
+  `sitePromotions/{id}`, `siteJobs/{id}`, `siteTestimonials/{id}`, each with `draft` and `live`; `sitePublishLog`. Clients can't read or write them
   directly (rules deny); everything goes through the `site-*` actions (admin router).
 - Pictures: `site-uploadImage` stores them in Cloud Storage (`site/<month>/<id>.jpg`, shrunk in the browser first).
 - The website reads published content through `/api/public` (offers, festive cards, branch page links, latest posts,
   questions, social links) and through the **server-rendered pages** of the `sitePages` function: `/blog`,
-  `/blog/<address>`, `/branches/<address>`, `/about`, `/preview/…` and `/sitemap.xml`. Those pages fill the site's own
+  `/blog/<address>`, `/branches/<address>`, `/about`, `/careers`, `/preview/…` and `/sitemap.xml`. Those pages fill the site's own
   template (`apps/site/_t/page.html`, deployed with the site), so search engines read them in full; posts and branch
   pages carry structured data (BlogPosting, Library).
 - Festive cards: the card engine is the Crossmaze website's (`apps/site/src/greetings`, from
@@ -63,9 +80,7 @@ function and the blog's Firestore index) before the website, whose new addresses
 - **Events with sign-ups**: storytime, author visits, summer reading camp, with seats, a reminder on WhatsApp and a
   list for the branch.
 - **Reading challenges**: "read 10 books this summer", with badges in the member area.
-- **Enquiries inbox** (as on crossmaze.in): membership, franchise and "suggest a book" forms on the website, saved in
-  Firestore, followed up on WhatsApp.
-- **Calls and WhatsApp taps** per branch (crossmaze.in's "Calls" page), to see which pages bring visitors.
+- **Email alerts** for enquiries (crossmaze.in's Zoho email alerts), once a mail service is chosen.
 - **Book donations** and **book requests**: readers suggest titles; the catalogue team sees the most asked-for.
 - **Reader reviews** on books, shown on the website after a librarian approves them.
 - **Newsletter**: the month's new arrivals and posts, by email or WhatsApp.

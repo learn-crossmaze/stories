@@ -235,7 +235,7 @@ export const t = {
   mainMenu: 'Main menu',
   staffConsole: 'Staff console',
   views: 'Views',
-  viewNames: { admin: 'Admin', ops: 'Operations', staff: 'Staff', member: 'Member' } as Record<string, string>,
+  viewNames: { admin: 'Admin', web: 'Website', ops: 'Operations', staff: 'Staff', member: 'Member' } as Record<string, string>,
   navToday: 'Today',
   groupCirculation: 'Circulation',
   groupCollection: 'Collection',

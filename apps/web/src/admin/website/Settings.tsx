@@ -1,15 +1,13 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router';
 
 import { discardSite, getSite, publishSite, saveSite, type SettingsDraft, SITE_URL } from '../../data/site';
-import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
 import { ImageField, ImagesField, ListEditor, PublishBar, RichField, savedLine, useEditor } from './kit';
 
-/** Site-wide words: the About page, the people behind Stories, more questions for How it works, social links. */
+/** Site settings (as on crossmaze.in): contact details, the home page's banner, the About page and its people, social links. */
 export function SiteSettingsPage() {
   const item = useAsync(() => getSite<SettingsDraft>('settings'), []);
   const initial = useMemo(() => item.data?.draft ?? null, [item.data]);
@@ -28,7 +26,6 @@ export function SiteSettingsPage() {
   return (
     <>
       <header className="page-header">
-        <p className="muted small"><Link to={paths.adminWebsite}>{st.title}</Link></p>
         <h1>{st.navSettings}</h1>
         <p className="muted">{st.settingsIntro}</p>
       </header>
@@ -41,6 +38,28 @@ export function SiteSettingsPage() {
         onDiscard={() => void e.run('discard', async () => { await discardSite('settings'); item.reload(); }, st.discarded)}
       />
       <div className="editor-main">
+        <section className="card" aria-labelledby="h-contact">
+          <h2 id="h-contact" className="h3">{st.contactDetails}</h2>
+          <p className="muted small">{st.contactDetailsHint}</p>
+          <div className="form-grid">
+            <TextField label={st.mainPhone} type="tel" value={d.contact.phone} onChange={(phone) => e.update({ contact: { ...d.contact, phone } })} />
+            <TextField label={st.whatsapp} hint={st.whatsappHint} type="tel" value={d.contact.whatsapp} onChange={(whatsapp) => e.update({ contact: { ...d.contact, whatsapp } })} />
+            <TextField label={st.generalEmail} hint={st.generalEmailHint} type="email" value={d.contact.email} onChange={(email) => e.update({ contact: { ...d.contact, email: email.trim() } })} />
+            <TextField label={st.franchiseEmail} hint={st.emptyUsesGeneral} type="email" value={d.contact.franchiseEmail} onChange={(franchiseEmail) => e.update({ contact: { ...d.contact, franchiseEmail: franchiseEmail.trim() } })} />
+            <TextField label={st.careersEmail} type="email" value={d.contact.careersEmail} onChange={(careersEmail) => e.update({ contact: { ...d.contact, careersEmail: careersEmail.trim() } })} />
+          </div>
+        </section>
+
+        <section className="card" aria-labelledby="h-banner">
+          <h2 id="h-banner" className="h3">{st.homeBanner}</h2>
+          <p className="muted small">{st.homeBannerHint}</p>
+          <div className="form-grid">
+            <TextField label={st.heading} value={d.banner.heading} onChange={(heading) => e.update({ banner: { ...d.banner, heading } })} />
+            <TextField label={st.highlight} hint={st.highlightHint} value={d.banner.highlight} onChange={(highlight) => e.update({ banner: { ...d.banner, highlight } })} />
+          </div>
+          <TextArea label={st.introLabel} rows={3} value={d.banner.intro} onChange={(intro) => e.update({ banner: { ...d.banner, intro } })} />
+        </section>
+
         <section className="card" aria-labelledby="h-about">
           <h2 id="h-about" className="h3">{st.aboutPage}</h2>
           <TextField label={st.heading} hint={st.aboutHeadingHint} value={about.heading} onChange={(heading) => setAbout({ heading })} />
@@ -59,6 +78,9 @@ export function SiteSettingsPage() {
 
         <section className="card" aria-labelledby="h-team">
           <h2 id="h-team" className="h3">{st.team}</h2>
+          <label className="check">
+            <input type="checkbox" checked={d.showTeam} onChange={(ev) => e.update({ showTeam: ev.target.checked })} /> {st.showTeam}
+          </label>
           <ListEditor legend={st.team} hint={st.teamHint} items={d.team} onChange={(team) => e.update({ team })} make={() => ({ name: '', role: '', photo: null, bio: '' })} max={12} addLabel={st.addPerson}>
             {(m, set) => (
               <>
@@ -68,18 +90,6 @@ export function SiteSettingsPage() {
                 </div>
                 <ImageField label={st.librarianPhoto} value={m.photo} onChange={(photo) => set({ ...m, photo })} />
                 <TextArea label={st.bio} rows={3} value={m.bio} onChange={(bio) => set({ ...m, bio })} />
-              </>
-            )}
-          </ListEditor>
-        </section>
-
-        <section className="card" aria-labelledby="h-faqs">
-          <h2 id="h-faqs" className="h3">{st.faqs}</h2>
-          <ListEditor legend={st.faqs} hint={st.faqsHint} items={d.faqs} onChange={(faqs) => e.update({ faqs })} make={() => ({ q: '', a: '' })} max={30} addLabel={st.addFaq}>
-            {(f, set) => (
-              <>
-                <TextField label={st.question} value={f.q} onChange={(q) => set({ ...f, q })} />
-                <TextArea label={st.answer} rows={3} value={f.a} onChange={(a) => set({ ...f, a })} />
               </>
             )}
           </ListEditor>

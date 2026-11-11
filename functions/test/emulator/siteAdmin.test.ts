@@ -5,6 +5,8 @@ import * as branches from '../../src/organization/branches.js';
 import * as orgs from '../../src/organization/orgs.js';
 import * as staff from '../../src/organization/staff.js';
 import * as site from '../../src/site/admin.js';
+import * as inbox from '../../src/site/inbox.js';
+import { handleSitePublic } from '../../src/site/public.js';
 import { todayInIndia } from '../../src/site/content.js';
 import { readLiveSite } from '../../src/site/live.js';
 import { fill, resolvePage, sitemapXml } from '../../src/site/pages.js';
@@ -140,25 +142,130 @@ describe('website: promotions, settings, publish all', () => {
   });
 
   it('publishes every change at once, and can go back to what is live', async () => {
-    await call(site.save, editor, { kind: 'settings', draft: { faqs: [{ q: 'Can I pause my plan?', a: 'Yes, ask at your branch.' }] } });
+    await call(site.save, editor, { kind: 'sections', draft: { faqs: [{ q: 'Can I pause my plan?', a: 'Yes, ask at your branch.' }] } });
     await call(site.save, editor, { kind: 'greetings', draft: { autoOpen: false } });
     await call(site.save, bm, { kind: 'branch', id: central, orgId: org, draft: { slug: 'central' } });
     const pending = (await call<{ pending: { kind: string }[] }>(site.overview, editor, {}, null)).pending.map((p) => p.kind).sort();
-    expect(pending).toEqual(['branch', 'greetings', 'settings']);
+    expect(pending).toEqual(['branch', 'greetings', 'sections']);
     // A branch manager may only publish their own part.
     const mine = await call<{ published: { kind: string }[] }>(site.publishAll, bm, {});
     expect(mine.published.map((p) => p.kind)).toEqual(['branch']);
     const rest = await call<{ published: { kind: string }[] }>(site.publishAll, editor, {});
-    expect(rest.published.map((p) => p.kind).sort()).toEqual(['greetings', 'settings']);
+    expect(rest.published.map((p) => p.kind).sort()).toEqual(['greetings', 'sections']);
     const live = await readLiveSite();
     expect(live.faqs).toEqual([{ q: 'Can I pause my plan?', a: 'Yes, ask at your branch.' }]);
     expect(live.greetings).toMatchObject({ enabled: true, autoOpen: false });
 
-    await call(site.save, editor, { kind: 'settings', draft: { faqs: [] } });
-    await call(site.discard, editor, { kind: 'settings' });
-    expect((await call<{ draft: { faqs: unknown[] }; changed: boolean }>(site.get, editor, { kind: 'settings' }, null)).draft.faqs).toHaveLength(1);
+    await call(site.save, editor, { kind: 'sections', draft: { faqs: [] } });
+    await call(site.discard, editor, { kind: 'sections' });
+    expect((await call<{ draft: { faqs: unknown[] }; changed: boolean }>(site.get, editor, { kind: 'sections' }, null)).draft.faqs).toHaveLength(1);
     // Everyone else is kept out.
     expect(await failure(call(site.save, lib, { kind: 'settings', draft: {} }))).toBe('FORBIDDEN');
     expect(await failure(call(site.overview, await createUser('member@stories.test'), {}, null))).toBe('FORBIDDEN');
+  });
+});
+
+describe('website: enquiries, calls, jobs, testimonials, sections', () => {
+  const reply = () => {
+    const r = { code: 0, body: undefined as unknown };
+    const res = { status(n: number) { r.code = n; return res; }, set() { return res; }, json(b: unknown) { r.body = b; }, send(b?: unknown) { r.body = b; } };
+    return { r, res };
+  };
+  const post = (path: string, body: unknown, ip = '203.0.113.7') => ({ method: 'POST', path, url: path, body, headers: { 'x-forwarded-for': ip }, ip } as never);
+
+  it('saves enquiries from the website, alerts the branch managers, and shows them to the right people', async () => {
+    const { r, res } = reply();
+    await handleSitePublic(post('/api/submit', { form: 'MEMBERSHIP', name: 'Asha Rao', phone: '+91 72599 21508', branchId: central, readers: 'Children', page: '/branches/central' }), res as never);
+    expect(r).toMatchObject({ code: 200, body: { ok: true } });
+    // A robot (hidden field filled) is thanked, and nothing is kept.
+    const bot = reply();
+    await handleSitePublic(post('/api/submit', { form: 'CONTACT', name: 'Spam Bot', phone: '9999999999', website: 'http://spam' }), bot.res as never);
+    expect(bot.r.code).toBe(200);
+    const bad = reply();
+    await handleSitePublic(post('/api/submit', { form: 'CONTACT', name: 'A', phone: '12' }), bad.res as never);
+    expect(bad.r.code).toBe(400);
+
+    const all = await db.collection('siteSubmissions').get();
+    expect(all.docs.map((d) => d.get('name'))).toEqual(['Asha Rao']);
+    expect(all.docs[0].data()).toMatchObject({ form: 'MEMBERSHIP', branchId: central, branchName: 'Central', orgId: org, handled: false });
+    const alerted = await db.collection(`users/${bm.uid}/notifications`).get();
+    expect(alerted.docs.map((d) => d.get('title'))).toEqual(['Membership enquiry from Asha Rao']);
+    expect((await db.collection(`users/${otherBm.uid}/notifications`).get()).size).toBe(0);
+
+    expect((await call<{ items: unknown[] }>(inbox.submissions, editor, {}, null)).items).toHaveLength(1);
+    expect((await call<{ items: unknown[] }>(inbox.submissions, bm, {}, null)).items).toHaveLength(1);
+    expect((await call<{ items: unknown[] }>(inbox.submissions, otherBm, {}, null)).items).toHaveLength(0);
+    expect(await failure(call(inbox.submissions, lib, {}, null))).toBe('FORBIDDEN');
+    await call(inbox.markHandled, bm, { id: all.docs[0].id, handled: true });
+    expect((await call<{ counts: { newSubmissions: number } }>(site.overview, editor, {}, null)).counts.newSubmissions).toBe(0);
+  });
+
+  it('keeps job applications with their CV private, and lists the jobs on Careers', async () => {
+    const { id: jobId } = await call<{ id: string }>(site.save, editor, { kind: 'job', draft: { title: 'Librarian', location: 'Stories Central', overview: 'Help readers find books.', responsibilities: ['Run storytime'] } });
+    await call(site.publish, editor, { kind: 'job', id: jobId });
+    const page = await resolvePage('/careers', new URLSearchParams());
+    expect(page.main).toContain('Librarian');
+    expect(page.main).toContain(`<option value="${jobId}">Librarian</option>`);
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(200, 32)]).toString('base64');
+    const { r, res } = reply();
+    await handleSitePublic(post('/api/submit', { form: 'JOB', name: 'Ravi Kumar', phone: '9876543210', jobId, resume: { name: 'ravi.pdf', data: pdf } }), res as never);
+    expect(r.code).toBe(200);
+    const sub = (await db.collection('siteSubmissions').where('form', '==', 'JOB').get()).docs[0];
+    expect(sub.get('jobTitle')).toBe('Librarian');
+    const cv = await call<{ name: string; data: string }>(inbox.resumeFile, editor, { id: sub.id }, null);
+    expect(cv.name).toBe('ravi.pdf');
+    expect(Buffer.from(cv.data, 'base64').subarray(0, 4).toString()).toBe('%PDF');
+    // Not a branch's enquiry: branch managers don't see it.
+    expect(await failure(call(inbox.resumeFile, bm, { id: sub.id }, null))).toBe('NOT_FOUND');
+    const notPdf = reply();
+    await handleSitePublic(post('/api/submit', { form: 'JOB', name: 'Ravi Kumar', phone: '9876543210', resume: { name: 'x.exe', data: Buffer.from('MZ....').toString('base64') } }, '198.51.100.1'), notPdf.res as never);
+    expect(notPdf.r.code).toBe(400);
+  });
+
+  it('counts taps on call and WhatsApp buttons, without keeping who tapped', async () => {
+    for (const channel of ['phone', 'whatsapp', 'phone']) {
+      const { res } = reply();
+      await handleSitePublic(post('/api/tap', JSON.stringify({ channel, number: '+91 72599 21508', branch: 'Central', page: '/branches/central', place: 'Visit us', device: 'Phone', visit: 'abc123def' })), res as never);
+    }
+    const { items } = await call<{ items: { channel: string; number: string }[] }>(inbox.calls, editor, { days: 7 }, null);
+    expect(items.map((i) => i.channel).sort()).toEqual(['phone', 'phone', 'whatsapp']);
+    expect(items[0].number).toBe('917259921508');
+    expect(JSON.stringify(items)).not.toContain('203.0.113.7');
+    expect(await failure(call(inbox.calls, bm, { days: 7 }, null))).toBe('FORBIDDEN');
+  });
+
+  it('publishes testimonials, page sections and contact details to the website', async () => {
+    const { id: t } = await call<{ id: string }>(site.save, editor, { kind: 'testimonial', draft: { quote: 'My daughter reads a book a day now!', name: 'Meera S.', detail: 'Member since 2026' } });
+    await call(site.publish, editor, { kind: 'testimonial', id: t });
+    await call(site.save, editor, { kind: 'sections', draft: { promises: [{ title: 'No due dates', text: 'Keep it while you read.' }], faqs: [{ q: 'Can I pause my plan?', a: 'Yes, at your branch.' }] } });
+    await call(site.publish, editor, { kind: 'sections' });
+    await call(site.save, editor, { kind: 'settings', draft: { contact: { email: 'hello@storiesforall.in' }, banner: { heading: 'Every book begins a', highlight: 'new story.' } } });
+    await call(site.publish, editor, { kind: 'settings' });
+    const live = await readLiveSite();
+    expect(live.testimonials).toEqual([{ quote: 'My daughter reads a book a day now!', name: 'Meera S.', detail: 'Member since 2026' }]);
+    expect(live.sections.promises).toHaveLength(1);
+    expect(live.faqs).toEqual([{ q: 'Can I pause my plan?', a: 'Yes, at your branch.' }]);
+    expect(live.contact.email).toBe('hello@storiesforall.in');
+    expect(live.banner.highlight).toBe('new story.');
+  });
+
+  it('lists who can change the website, and who hears about enquiries', async () => {
+    const { people } = await call<{ people: { email: string; level: string }[] }>(inbox.admins, editor, {}, null);
+    expect(Object.fromEntries(people.map((p) => [p.email, p.level]))).toMatchObject({
+      'sa@stories.test': 'MANAGER', 'web@stories.test': 'MANAGER', 'bm@stories.test': 'BRANCH', 'lib@stories.test': 'WRITER',
+    });
+    await call(inbox.saveConnections, editor, { alerts: ['WEB@stories.test'], alertBranchManagers: false });
+    expect((await call<{ alerts: string[]; alertBranchManagers: boolean }>(inbox.connections, editor, {}, null))).toMatchObject({ alerts: ['web@stories.test'], alertBranchManagers: false });
+    expect(await failure(call(inbox.saveConnections, editor, { alerts: ['nobody@stories.test'], alertBranchManagers: true }))).toBe('USER_NOT_FOUND');
+  });
+});
+
+describe('website: every single page opens before anything is saved', () => {
+  it('gives a blank draft for site settings, page sections and festival greetings', async () => {
+    for (const kind of ['settings', 'sections', 'greetings']) {
+      const item = await call<{ draft: unknown; exists: boolean }>(site.get, editor, { kind }, null);
+      expect(item.exists, kind).toBe(false);
+      expect(item.draft, kind).toBeTruthy();
+    }
   });
 });

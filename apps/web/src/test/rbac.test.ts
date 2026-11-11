@@ -48,20 +48,24 @@ describe('navigation', () => {
     expect([lib, bm, claims({ corp: { r: ['DEL'], b: ['cen'] } })].map(homeViewFor)).toEqual(['ops', 'ops', 'ops']);
     expect(homeViewFor(emp)).toBe('staff');
     expect(availableViews(emp, 'corp')).toEqual(['staff']);
-    // Librarians write blog posts (Website section, admin view).
-    expect(availableViews(lib, 'corp')).toEqual(['admin', 'ops', 'staff']);
-    expect(homeViewFor(claims({ corp: { r: ['WEB'], b: ['*'] } }))).toBe('admin');
-    expect(availableViews(bm, 'corp')).toEqual(['admin', 'ops', 'staff']);
+    // Librarians write blog posts (the Website view).
+    expect(availableViews(lib, 'corp')).toEqual(['web', 'ops', 'staff']);
+    expect(homeViewFor(claims({ corp: { r: ['WEB'], b: ['*'] } }))).toBe('web');
+    expect(availableViews(bm, 'corp')).toEqual(['admin', 'web', 'ops', 'staff']);
     expect(availableViews(claims({}), 'corp')).toEqual([]);
   });
 
   it('shows each role only what it may use, view by view', () => {
-    expect(labels(claims({}, true), 'admin')).toHaveLength(27);
-    // The Website section: the website team sees all of it, branch managers their pages and the blog, librarians the blog.
-    expect(labels(claims({ corp: { r: ['WEB'], b: ['*'] } }), 'admin')).toEqual(['Dashboard', 'Overview', 'Blog', 'Branch pages', 'Offers and promotions', 'Festive cards', 'Site settings']);
-    expect(labels(bm, 'admin')).toEqual(expect.arrayContaining(['Overview', 'Blog', 'Branch pages']));
-    expect(labels(bm, 'admin')).not.toContain('Offers and promotions');
-    expect(labels(lib, 'admin')).toEqual(['Dashboard', 'Overview', 'Blog']);
+    expect(labels(claims({}, true), 'admin')).toHaveLength(21);
+    // The Website view, in crossmaze.in/admin's order: the website team sees all of it (Plans is for head office),
+    // branch managers their branch pages, enquiries and the blog, librarians the blog.
+    expect(labels(claims({ corp: { r: ['HO'], b: ['*'] } }), 'web')).toEqual([
+      'Dashboard', 'Site settings', 'Page sections', 'Branches', 'Plans', 'Offers', 'Jobs', 'Blog', 'Festival greetings', 'Testimonials', 'Submissions', 'Calls', 'Connections', 'Admins',
+    ]);
+    expect(labels(claims({ corp: { r: ['WEB'], b: ['*'] } }), 'web')).not.toContain('Plans');
+    expect(labels(bm, 'web')).toEqual(['Dashboard', 'Branches', 'Blog', 'Submissions']);
+    expect(labels(lib, 'web')).toEqual(['Dashboard', 'Blog']);
+    expect(labels(lib, 'admin')).toEqual(['Dashboard']);
     expect(labels(hr, 'admin')).toEqual([
       'Dashboard', 'Branches', 'Departments', 'Roles & access', 'Overview', 'Employees', 'Documents', 'Letters', 'Attendance', 'Leave', 'Payroll',
       'Job titles & checklists', 'Shifts & holidays', 'Leave types', 'Document types', 'Letter templates', 'Payroll settings', 'Audit log',

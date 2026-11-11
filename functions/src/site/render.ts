@@ -1,6 +1,6 @@
 // HTML for the website's server-rendered pages (blog, branch pages, About), injected into the site's own page
 // template (apps/site/_t/page.html) by pages.ts. Pure functions: every value from the data is escaped here.
-import type { BranchDraft, PostDraft, SettingsDraft, SiteImage } from './content.js';
+import type { BranchDraft, JobDraft, PostDraft, SectionsDraft, SettingsDraft, SiteImage } from './content.js';
 import type { PublicBranch } from './public.js';
 
 export const esc = (v: unknown) =>
@@ -366,7 +366,8 @@ ${librarian}
 ${picks}
 ${activities}
 ${galleryHtml}
-${postsHtml}`;
+${postsHtml}
+${branchEnquiryHtml(b.id, name)}`;
 }
 
 /** What search engines read about a branch: a schema.org Library with its address, phone and hours. */
@@ -393,7 +394,7 @@ export function aboutHtml(s: SettingsDraft) {
   const a = s.about;
   const facts = a.facts.length ? `<ul class="highlights" role="list">${a.facts.map((f) => `<li><strong>${esc(f.value)}</strong><span>${esc(f.label)}</span></li>`).join('')}</ul>` : '';
   const photos = a.photos.length ? `<ul class="gallery" role="list">${a.photos.map((p) => `<li>${figure(p)}</li>`).join('')}</ul>` : '';
-  const team = s.team.length
+  const team = s.showTeam !== false && s.team.length
     ? `<section class="band" aria-labelledby="h-team"><div class="wrap"><h2 id="h-team">The people behind Stories</h2><div class="grid">${s.team
         .map((m) => `<article class="card team-card">${m.photo ? img(m.photo, 'team-photo') : `<span class="librarian-initials small" aria-hidden="true">${esc(m.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join(''))}</span>`}<h3>${esc(m.name)}</h3>${m.role ? `<p class="eyebrow">${esc(m.role)}</p>` : ''}${m.bio ? `<p>${esc(m.bio)}</p>` : ''}</article>`)
         .join('')}</div></div></section>`
@@ -407,3 +408,68 @@ ${team}
 /** A page that isn't there (or was taken down). */
 export const notFoundHtml = (what = 'page') =>
   `<section class="page-head"><div class="wrap"><h1>We couldn’t find that ${esc(what)}</h1><p class="lead">It may have moved, or it isn’t on the website any more.</p><p class="actions"><a class="btn btn-filled" href="/">Go to the home page</a><a class="btn btn-outlined" href="/blog">Read the blog</a></p></div></section>`;
+
+// ------------------------------------------------------------------ careers
+
+const JOB_TYPE: Record<JobDraft['type'], string> = { FULL_TIME: 'Full time', PART_TIME: 'Part time', INTERNSHIP: 'Internship', VOLUNTEER: 'Volunteer' };
+const DEFAULT_PERKS: SectionsDraft['careerPerks'] = [
+  { title: 'Work among books', text: 'Help readers of every age find their next favourite, every day.' },
+  { title: 'Learn as you go', text: 'Training in library work, our systems and talking with readers.' },
+  { title: 'Grow with us', text: 'New branches open often: room to take on more.' },
+];
+
+/** The form fields every enquiry form shares (the website's script sends it to /api/submit). */
+export const formCommon = (prefix: string) => `
+  <div class="form-row"><label for="${prefix}-name">Your name</label><input id="${prefix}-name" name="name" autocomplete="name" required minlength="2" maxlength="80" /></div>
+  <div class="form-row"><label for="${prefix}-phone">Phone</label><input id="${prefix}-phone" name="phone" type="tel" autocomplete="tel" required inputmode="tel" pattern="[+0-9 ()-]{10,18}" /></div>
+  <div class="form-row"><label for="${prefix}-email">Email (optional)</label><input id="${prefix}-email" name="email" type="email" autocomplete="email" maxlength="120" /></div>
+  <div class="hp" aria-hidden="true"><label for="${prefix}-website">Leave this empty</label><input id="${prefix}-website" name="website" tabindex="-1" autocomplete="off" /></div>`;
+
+export function careersHtml(jobs: { id: string; job: JobDraft }[], perks: SectionsDraft['careerPerks'], careersEmail: string) {
+  const list = perks.length ? perks : DEFAULT_PERKS;
+  const jobCards = jobs.length
+    ? `<div class="jobs">${jobs
+        .map(({ id: jobId, job: j }) => `<details class="card job" id="job-${esc(jobId)}">
+  <summary><span class="job-title">${esc(j.title)}</span><span class="muted">${[JOB_TYPE[j.type], j.location].filter(Boolean).map(esc).join(' · ')}</span></summary>
+  ${j.overview ? `<div class="prose">${richText(j.overview)}</div>` : ''}
+  <dl class="job-facts">
+    ${j.qualification ? `<dt>Qualification</dt><dd>${esc(j.qualification)}</dd>` : ''}
+    ${j.experience ? `<dt>Experience</dt><dd>${esc(j.experience)}</dd>` : ''}
+    ${j.timings ? `<dt>Timings</dt><dd>${esc(j.timings)}</dd>` : ''}
+  </dl>
+  ${j.responsibilities.length ? `<h3>What you’ll do</h3><ul>${j.responsibilities.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+  <p><a class="btn btn-filled" href="#apply" data-pick-job="${esc(jobId)}">Apply for this job</a></p>
+</details>`)
+        .join('')}</div>`
+    : `<p class="notice">No openings right now. You can still send us your CV below: we’ll keep it for when a role opens.</p>`;
+  return `<section class="page-head"><div class="wrap">${crumbs([['Home', '/'], ['Careers', null]])}<h1>Work with us</h1><p class="lead">Love books and people? Join the team that runs Stories for All’s libraries.</p></div></section>
+<section class="section-tight"><div class="wrap"><h2>Why work with us</h2><div class="grid">${list.map((p) => `<article class="card tint"><h3>${esc(p.title)}</h3>${p.text ? `<p>${esc(p.text)}</p>` : ''}</article>`).join('')}</div></div></section>
+<section class="band"><div class="wrap"><h2>Open roles</h2>${jobCards}</div></section>
+<section id="apply"><div class="wrap narrow">
+  <h2>Apply</h2>
+  <form class="card site-form" data-form="JOB" novalidate>
+    <div class="form-row"><label for="job-role">Role</label><select id="job-role" name="jobId"><option value="">Any role (send my CV)</option>${jobs.map(({ id: jobId, job }) => `<option value="${esc(jobId)}">${esc(job.title)}</option>`).join('')}</select></div>
+    ${formCommon('job')}
+    <div class="form-row"><label for="job-exp">Experience</label><input id="job-exp" name="experience" maxlength="60" placeholder="2 years in a library" /></div>
+    <div class="form-row"><label for="job-msg">A few words about you</label><textarea id="job-msg" name="message" rows="4" maxlength="2000"></textarea></div>
+    <div class="form-row"><label for="job-cv">Your CV (PDF or Word, 2 MB at most)</label><input id="job-cv" name="resume" type="file" accept=".pdf,.doc,.docx,application/pdf" /></div>
+    <p class="form-status" role="status"></p>
+    <button class="btn btn-filled" type="submit">Send my application</button>
+    ${careersEmail ? `<p class="muted small">Or email us at <a href="mailto:${esc(careersEmail)}">${esc(careersEmail)}</a>.</p>` : ''}
+  </form>
+</div></section>`;
+}
+
+/** The membership enquiry form on a branch page. */
+export const branchEnquiryHtml = (branchId: string, name: string) => `<section id="enquire" aria-labelledby="h-enquire"><div class="wrap narrow">
+  <h2 id="h-enquire">Ask ${esc(name)} about membership</h2>
+  <p class="muted">Leave your number and the branch will call you back.</p>
+  <form class="card site-form" data-form="MEMBERSHIP" novalidate>
+    <input type="hidden" name="branchId" value="${esc(branchId)}" />
+    ${formCommon('enq')}
+    <div class="form-row"><label for="enq-readers">Who is it for?</label><select id="enq-readers" name="readers"><option>Children</option><option>Teens</option><option>Adults</option><option>The whole family</option></select></div>
+    <div class="form-row"><label for="enq-msg">Your question (optional)</label><textarea id="enq-msg" name="message" rows="3" maxlength="2000"></textarea></div>
+    <p class="form-status" role="status"></p>
+    <button class="btn btn-filled" type="submit">Call me back</button>
+  </form>
+</div></section>`;

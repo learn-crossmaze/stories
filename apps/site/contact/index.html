@@ -23,6 +23,22 @@
           <div data-live="contacts" data-what="branches"><p class="muted">Loading branches…</p></div>
         </div>
       </section>
+      <section class="section-tight" aria-labelledby="h-message">
+        <div class="wrap narrow">
+          <h2 id="h-message">Send us a message</h2>
+          <p class="muted">Ask about membership, books or anything else: we'll call or write back, usually the same day.</p>
+          <form class="card site-form" data-form="CONTACT" novalidate>
+            <div class="form-row"><label for="ct-name">Your name</label><input id="ct-name" name="name" autocomplete="name" required minlength="2" maxlength="80" /></div>
+            <div class="form-row"><label for="ct-phone">Phone</label><input id="ct-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required /></div>
+            <div class="form-row"><label for="ct-email">Email (optional)</label><input id="ct-email" name="email" type="email" autocomplete="email" /></div>
+            <div class="form-row"><label for="ct-branch">Nearest branch (optional)</label><select id="ct-branch" name="branchId" data-branch-options><option value="">Not sure</option></select></div>
+            <div class="form-row"><label for="ct-msg">Your message</label><textarea id="ct-msg" name="message" rows="4" maxlength="2000" required></textarea></div>
+            <div class="hp" aria-hidden="true"><label for="ct-website">Leave this empty</label><input id="ct-website" name="website" tabindex="-1" autocomplete="off" /></div>
+            <p class="form-status" role="status"></p>
+            <button class="btn btn-filled" type="submit">Send</button>
+          </form>
+        </div>
+      </section>
       <section class="band band-sky section-tight">
         <div class="wrap">
           <div class="grid">

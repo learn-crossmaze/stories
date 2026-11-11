@@ -57,19 +57,31 @@ export const paths = {
   adminPayroll: '/admin/payroll',
   adminMyPayslips: '/me/payslips',
   adminMyDeliveries: '/me/deliveries',
-  // The Website section (admin view): what storiesforall.in shows.
-  adminWebsite: '/admin/website',
-  adminWebsiteBlog: '/admin/website/blog',
-  adminWebsitePost: (id: string) => `/admin/website/blog/${id}`,
-  adminWebsiteBranches: '/admin/website/branches',
-  adminWebsiteBranch: (orgId: string, branchId: string) => `/admin/website/branches/${orgId}/${branchId}`,
-  adminWebsitePromotions: '/admin/website/promotions',
-  adminWebsitePromotion: (id: string) => `/admin/website/promotions/${id}`,
-  adminWebsiteCards: '/admin/website/cards',
-  adminWebsiteSettings: '/admin/website/settings',
+  // The Website view (/website, like crossmaze.in/admin): what storiesforall.in shows.
+  web: '/website',
+  adminWebsite: '/website',
+  adminWebsiteSettings: '/website/site',
+  adminWebsiteSections: '/website/sections',
+  adminWebsiteBranches: '/website/branches',
+  adminWebsiteBranch: (orgId: string, branchId: string) => `/website/branches/${orgId}/${branchId}`,
+  adminWebsitePlans: '/website/plans',
+  adminWebsitePromotions: '/website/offers',
+  adminWebsitePromotion: (id: string) => `/website/offers/${id}`,
+  adminWebsiteJobs: '/website/jobs',
+  adminWebsiteJob: (id: string) => `/website/jobs/${id}`,
+  adminWebsiteBlog: '/website/blog',
+  adminWebsitePost: (id: string) => `/website/blog/${id}`,
+  adminWebsiteCards: '/website/greetings',
+  adminWebsiteTestimonials: '/website/testimonials',
+  adminWebsiteTestimonial: (id: string) => `/website/testimonials/${id}`,
+  adminWebsiteSubmissions: '/website/submissions',
+  adminWebsiteSubmission: (id: string) => `/website/submissions/${id}`,
+  adminWebsiteCalls: '/website/calls',
+  adminWebsiteConnections: '/website/connections',
+  adminWebsiteAdmins: '/website/admins',
 } as const;
 
-export const viewHome = { admin: paths.admin, ops: paths.ops, staff: paths.staff } as const;
+export const viewHome = { admin: paths.admin, web: paths.web, ops: paths.ops, staff: paths.staff } as const;
 
 /**
  * Pure redirect rule, kept separate so it can be unit tested. `staffHome` is

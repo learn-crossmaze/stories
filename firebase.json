@@ -138,6 +138,20 @@
           }
         },
         {
+          "source": "/api/submit",
+          "function": {
+            "functionId": "sitePublic",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/api/tap",
+          "function": {
+            "functionId": "sitePublic",
+            "region": "asia-south1"
+          }
+        },
+        {
           "source": "/blog",
           "function": {
             "functionId": "sitePages",
@@ -160,6 +174,13 @@
         },
         {
           "source": "/about",
+          "function": {
+            "functionId": "sitePages",
+            "region": "asia-south1"
+          }
+        },
+        {
+          "source": "/careers",
           "function": {
             "functionId": "sitePages",
             "region": "asia-south1"

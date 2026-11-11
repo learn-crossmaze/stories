@@ -16,12 +16,14 @@ import { notify } from '../core/notify.js';
 import { type Actor, coversBranch, type Membership, rolesGrant } from '../core/rbac.js';
 import { id } from '../core/schemas.js';
 import { bucket, downloadUrl, IMAGE_TYPES } from '../catalogue/covers.js';
+import { inboxCounts } from './inbox.js';
 import {
   type BranchDraft,
   collectionOf,
   draftSchema,
   type Kind,
   KINDS,
+  LISTS,
   type PostDraft,
   promotionWindow,
   type PromotionDraft,
@@ -206,6 +208,8 @@ function publishInTx(tx: Transaction, kind: Kind, itemId: string, doc: SiteDoc, 
 // ------------------------------------------------------------------ schemas
 
 const kind = z.enum(KINDS);
+/** Kinds whose new items get an id on their first save. */
+const isNewable = (k: Kind) => k === 'post' || k === 'promotion' || k === 'job' || k === 'testimonial';
 const itemRef = { kind, id: id.optional() };
 const resolveId = (k: Kind, itemId: string | undefined) => {
   const key = SINGLETONS[k] ?? itemId;
@@ -238,7 +242,9 @@ export const overview = query('site-overview', z.strictObject({}), async ({ acto
       updatedBy: doc.updatedBy?.name ?? null,
       canPublish: canPublish(r, doc.kind, doc, itemId),
     }));
+  const counts = await inboxCounts(!!r.manager);
   return {
+    counts,
     rights: {
       manager: !!r.manager,
       canWrite: canWrite(r),
@@ -254,7 +260,7 @@ export const overview = query('site-overview', z.strictObject({}), async ({ acto
 });
 
 /** Lists one kind: posts, promotions or branch pages (every active branch the caller may edit, with or without a page). */
-export const list = query('site-list', z.strictObject({ kind: z.enum(['branch', 'post', 'promotion']) }), async ({ actor, input }) => {
+export const list = query('site-list', z.strictObject({ kind: z.enum(LISTS) }), async ({ actor, input }) => {
   const r = await rightsOf(actor);
   const today = todayInIndia();
   if (input.kind === 'branch') {
@@ -287,7 +293,7 @@ export const list = query('site-list', z.strictObject({ kind: z.enum(['branch', 
         .sort((a, b) => a.title.localeCompare(b.title)),
     };
   }
-  if (input.kind === 'promotion' && !r.manager) throw errors.forbidden();
+  if (input.kind !== 'post' && !r.manager) throw errors.forbidden();
   if (input.kind === 'post' && !canWrite(r)) throw errors.forbidden();
   const snap = await db.collection(collectionOf[input.kind]).orderBy('updatedAt', 'desc').limit(300).get();
   return {
@@ -339,7 +345,7 @@ export const get = query('site-get', z.strictObject({ ...itemRef, orgId: id.opti
     doc?.draft ??
     (input.kind === 'branch'
       ? parseDraft('branch', { slug: slugify(branchName ?? 'branch') || 'branch' })
-      : input.kind === 'settings' || input.kind === 'greetings'
+      : SINGLETONS[input.kind]
         ? parseDraft(input.kind, {})
         : null);
   return {
@@ -362,7 +368,7 @@ export const get = query('site-get', z.strictObject({ ...itemRef, orgId: id.opti
     publishedAt: iso(doc?.publishedAt),
     publishedBy: doc?.publishedBy?.name ?? null,
     canPublish: doc ? canPublish(r, input.kind, doc, itemId) : input.kind === 'post' ? !!r.manager : input.kind === 'branch' ? true : !!r.manager,
-    canDelete: input.kind === 'post' ? !!doc && (!!r.manager || (doc.createdBy?.uid === actor.uid && !doc.isLive)) : input.kind === 'promotion' && !!r.manager,
+    canDelete: input.kind === 'post' ? !!doc && (!!r.manager || (doc.createdBy?.uid === actor.uid && !doc.isLive)) : input.kind !== 'branch' && !SINGLETONS[input.kind] && !!r.manager,
   };
 });
 
@@ -374,11 +380,11 @@ export const save = command(
   z.strictObject({ ...itemRef, orgId: id.optional(), draft: z.record(z.string(), z.unknown()) }),
   async ({ actor, input, requestId }, tx) => {
     const r = await rightsOf(actor, tx);
-    const creating = (input.kind === 'post' || input.kind === 'promotion') && !input.id;
+    const creating = isNewable(input.kind) && !input.id;
     const itemId = creating ? db.collection(collectionOf[input.kind]).doc().id : resolveId(input.kind, input.id);
     const ref = refOf(input.kind, itemId);
     const snap = await tx.get(ref);
-    if (!creating && !snap.exists && (input.kind === 'post' || input.kind === 'promotion')) throw errors.notFound(input.kind === 'post' ? 'Post' : 'Promotion');
+    if (!creating && !snap.exists && isNewable(input.kind)) throw errors.notFound('This item');
     const doc = snap.exists ? (snap.data() as SiteDoc) : null;
     const draft = parseDraft(input.kind, input.draft);
 
@@ -479,14 +485,14 @@ export const publish = command('site-publish', itemInput, async ({ actor, input,
     // Tell the writer their post went live.
     if (input.kind === 'post' && result === 'publish' && doc.createdBy) {
       const org = auditOrg(r, b?.orgId);
-      if (org) notify(tx, doc.createdBy.uid, { orgId: org, kind: 'site.post.published', title: `Your post “${titleOf('post', doc.draft)}” is on the website`, link: `/admin/website/blog/${itemId}` }, actor.uid);
+      if (org) notify(tx, doc.createdBy.uid, { orgId: org, kind: 'site.post.published', title: `Your post “${titleOf('post', doc.draft)}” is on the website`, link: `/website/blog/${itemId}` }, actor.uid);
     }
   }
   return { id: itemId, result };
 });
 
 /** Takes an item off the website (its draft stays, to publish again later). */
-export const unpublish = command('site-unpublish', z.strictObject({ kind: z.enum(['branch', 'post', 'promotion']), id }), async ({ actor, input, requestId }, tx) => {
+export const unpublish = command('site-unpublish', z.strictObject({ kind: z.enum(LISTS), id }), async ({ actor, input, requestId }, tx) => {
   const r = await rightsOf(actor, tx);
   const doc = await load(tx, input.kind, input.id);
   if (!canPublish(r, input.kind, doc, input.id)) throw errors.forbidden();
@@ -514,10 +520,10 @@ export const discard = command('site-discard', itemInput, async ({ actor, input 
 });
 
 /** Deletes a post (website managers; writers their own unpublished ones) or a promotion. */
-export const remove = command('site-delete', z.strictObject({ kind: z.enum(['post', 'promotion']), id }), async ({ actor, input, requestId }, tx) => {
+export const remove = command('site-delete', z.strictObject({ kind: z.enum(['post', 'promotion', 'job', 'testimonial']), id }), async ({ actor, input, requestId }, tx) => {
   const r = await rightsOf(actor, tx);
   const doc = await load(tx, input.kind, input.id);
-  const allowed = input.kind === 'promotion' ? !!r.manager : !!r.manager || (doc.createdBy?.uid === actor.uid && !doc.isLive);
+  const allowed = input.kind !== 'post' ? !!r.manager : !!r.manager || (doc.createdBy?.uid === actor.uid && !doc.isLive);
   if (!allowed) throw errors.forbidden(doc.isLive ? 'Take it off the website first, or ask the website team.' : undefined);
   tx.delete(refOf(input.kind, input.id));
   const by = personOf(actor);
@@ -544,7 +550,7 @@ export const requestReview = command('site-requestReview', z.strictObject({ id, 
 /** Publishes everything with unpublished changes that the caller may publish (at most 100 at a time). */
 export const publishAll = command('site-publishAll', z.strictObject({}), async ({ actor, requestId }, tx) => {
   const r = await rightsOf(actor, tx);
-  const snaps = await Promise.all((['settings', 'branch', 'post', 'promotion'] as const).map((k) => tx.get(db.collection(collectionOf[k]).where('changed', '==', true).limit(100))));
+  const snaps = await Promise.all((['settings', 'branch', 'post', 'promotion', 'job', 'testimonial'] as const).map((k) => tx.get(db.collection(collectionOf[k]).where('changed', '==', true).limit(100))));
   const by = personOf(actor);
   const done: { kind: Kind; id: string; result: string }[] = [];
   const blocked: { kind: Kind; id: string; title: string; reason: string }[] = [];

@@ -77,9 +77,19 @@ export interface PostCard {
 }
 
 /** What the console's Website section published (functions/src/site/live.ts). */
+export interface Tile {
+  title: string;
+  text: string;
+}
+
 export interface PublicSite {
+  contact: { phone: string; whatsapp: string; email: string; franchiseEmail: string; careersEmail: string };
+  banner: { heading: string; highlight: string; intro: string };
   social: { instagram: string; facebook: string; youtube: string; x: string };
+  sections: { promises: Tile[]; homeSteps: Tile[]; readers: Tile[]; howSteps: Tile[]; faqs: { q: string; a: string }[]; franchisePerks: Tile[]; careerPerks: Tile[] };
   faqs: { q: string; a: string }[];
+  testimonials: { quote: string; name: string; detail: string }[];
+  openJobs: number;
   greetings: import('./greetings/ui').GreetingsConfig | null;
   promotions: PublicPromotion[];
   branchPages: Record<string, { slug: string; tagline: string; photo: SiteImage | null }>;

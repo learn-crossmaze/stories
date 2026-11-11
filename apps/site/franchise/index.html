@@ -20,7 +20,7 @@
 
       <section>
         <div class="wrap">
-          <div class="grid">
+          <div class="grid" data-section="franchisePerks">
             <article class="card tint">
               <h2>One shared catalogue</h2>
               <p>Head office maintains the catalogue, so every title arrives with its details and cover. You own the copies on your shelves.</p>
@@ -45,7 +45,17 @@
         <div class="wrap prose">
           <h2>Interested?</h2>
           <p>Tell us where you'd like to open and a little about yourself, and we'll get in touch.</p>
-          <p data-contact-email hidden><a class="btn btn-filled" data-subject="Franchise enquiry">Write to us</a></p>
+          <form class="card site-form" data-form="FRANCHISE" novalidate>
+            <div class="form-row"><label for="fr-name">Your name</label><input id="fr-name" name="name" autocomplete="name" required minlength="2" maxlength="80" /></div>
+            <div class="form-row"><label for="fr-phone">Phone</label><input id="fr-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required /></div>
+            <div class="form-row"><label for="fr-email">Email (optional)</label><input id="fr-email" name="email" type="email" autocomplete="email" /></div>
+            <div class="form-row"><label for="fr-city">Where would you like to open?</label><input id="fr-city" name="city" maxlength="80" placeholder="Area and city" /></div>
+            <div class="form-row"><label for="fr-msg">A little about you (optional)</label><textarea id="fr-msg" name="message" rows="3" maxlength="2000"></textarea></div>
+            <div class="hp" aria-hidden="true"><label for="fr-website">Leave this empty</label><input id="fr-website" name="website" tabindex="-1" autocomplete="off" /></div>
+            <p class="form-status" role="status"></p>
+            <button class="btn btn-filled" type="submit">Send</button>
+          </form>
+          <p data-contact-email="franchise" hidden>Or write to us: <a data-subject="Franchise enquiry"></a></p>
           <p class="muted">You can also visit or call any of our <a href="/branches">branches</a>.</p>
         </div>
       </section>

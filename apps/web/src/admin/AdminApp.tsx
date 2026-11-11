@@ -58,6 +58,16 @@ const PeoplePage = lazyPage(() => import('./people/People'), 'PeoplePage');
 const OrganizationsPage = lazyPage(() => import('./organization/Organizations'), 'OrganizationsPage');
 const StaffPage = lazyPage(() => import('./organization/Staff'), 'StaffPage');
 const WebsiteOverviewPage = lazyPage(() => import('./website/Overview'), 'WebsiteOverviewPage');
+const SectionsPage = lazyPage(() => import('./website/Sections'), 'SectionsPage');
+const JobsPage = lazyPage(() => import('./website/Collections'), 'JobsPage');
+const JobEditorPage = lazyPage(() => import('./website/Collections'), 'JobEditorPage');
+const TestimonialsPage = lazyPage(() => import('./website/Collections'), 'TestimonialsPage');
+const TestimonialEditorPage = lazyPage(() => import('./website/Collections'), 'TestimonialEditorPage');
+const SubmissionsPage = lazyPage(() => import('./website/Submissions'), 'SubmissionsPage');
+const SubmissionPage = lazyPage(() => import('./website/Submissions'), 'SubmissionPage');
+const CallsPage = lazyPage(() => import('./website/Calls'), 'CallsPage');
+const ConnectionsPage = lazyPage(() => import('./website/People'), 'ConnectionsPage');
+const AdminsPage = lazyPage(() => import('./website/People'), 'AdminsPage');
 const BlogPage = lazyPage(() => import('./website/Blog'), 'BlogPage');
 const PostEditorPage = lazyPage(() => import('./website/Blog'), 'PostEditorPage');
 const BranchPagesPage = lazyPage(() => import('./website/BranchPages'), 'BranchPagesPage');
@@ -144,20 +154,33 @@ function viewRoutes(view: ViewId): [string, ReactNode][] {
         [paths.adminSettingsWhatsApp, guard(paths.adminSettingsWhatsApp, <WhatsAppPage />)],
         [paths.adminSettingsDelivery, guard(paths.adminSettingsDelivery, <DeliverySettingsPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
-        [paths.adminWebsite, guard(paths.adminWebsite, <WebsiteOverviewPage />)],
-        [paths.adminWebsiteBlog, guard(paths.adminWebsiteBlog, <BlogPage />)],
-        [paths.adminWebsitePost(':postId'), guard(paths.adminWebsiteBlog, <PostEditorPage />)],
+      ];
+    case 'web':
+      return [
+        [paths.adminWebsiteSettings, guard(paths.adminWebsiteSettings, <SiteSettingsPage />)],
+        [paths.adminWebsiteSections, guard(paths.adminWebsiteSections, <SectionsPage />)],
         [paths.adminWebsiteBranches, guard(paths.adminWebsiteBranches, <BranchPagesPage />)],
         [paths.adminWebsiteBranch(':orgId', ':branchId'), guard(paths.adminWebsiteBranches, <BranchPageEditorPage />)],
+        [paths.adminWebsitePlans, guard(paths.adminWebsitePlans, <PlansPage />)],
         [paths.adminWebsitePromotions, guard(paths.adminWebsitePromotions, <PromotionsPage />)],
         [paths.adminWebsitePromotion(':promotionId'), guard(paths.adminWebsitePromotions, <PromotionEditorPage />)],
+        [paths.adminWebsiteJobs, guard(paths.adminWebsiteJobs, <JobsPage />)],
+        [paths.adminWebsiteJob(':jobId'), guard(paths.adminWebsiteJobs, <JobEditorPage />)],
+        [paths.adminWebsiteBlog, guard(paths.adminWebsiteBlog, <BlogPage />)],
+        [paths.adminWebsitePost(':postId'), guard(paths.adminWebsiteBlog, <PostEditorPage />)],
         [paths.adminWebsiteCards, guard(paths.adminWebsiteCards, <CardsPage />)],
-        [paths.adminWebsiteSettings, guard(paths.adminWebsiteSettings, <SiteSettingsPage />)],
+        [paths.adminWebsiteTestimonials, guard(paths.adminWebsiteTestimonials, <TestimonialsPage />)],
+        [paths.adminWebsiteTestimonial(':testimonialId'), guard(paths.adminWebsiteTestimonials, <TestimonialEditorPage />)],
+        [paths.adminWebsiteSubmissions, guard(paths.adminWebsiteSubmissions, <SubmissionsPage />)],
+        [paths.adminWebsiteSubmission(':submissionId'), guard(paths.adminWebsiteSubmissions, <SubmissionPage />)],
+        [paths.adminWebsiteCalls, guard(paths.adminWebsiteCalls, <CallsPage />)],
+        [paths.adminWebsiteConnections, guard(paths.adminWebsiteConnections, <ConnectionsPage />)],
+        [paths.adminWebsiteAdmins, guard(paths.adminWebsiteAdmins, <AdminsPage />)],
       ];
   }
 }
 
-const HOME: Record<ViewId, ReactNode> = { admin: <DashboardPage />, ops: <DashboardPage />, staff: <MyProfilePage /> };
+const HOME: Record<ViewId, ReactNode> = { admin: <DashboardPage />, web: <WebsiteOverviewPage />, ops: <DashboardPage />, staff: <MyProfilePage /> };
 
 /**
  * Staff console (lazy-loaded chunk), mounted once per view at its base

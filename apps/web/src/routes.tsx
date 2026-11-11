@@ -68,6 +68,7 @@ export const routes = [
       { path: paths.signIn, element: <SignInPage /> },
       { path: paths.setup, element: <SetupPage /> },
       { path: `${paths.admin}/*`, element: <StaffGate view="admin" /> },
+      { path: `${paths.web}/*`, element: <StaffGate view="web" /> },
       { path: `${paths.ops}/*`, element: <StaffGate view="ops" /> },
       { path: `${paths.staff}/*`, element: <StaffGate view="staff" /> },
       { path: paths.home, element: <Home /> },

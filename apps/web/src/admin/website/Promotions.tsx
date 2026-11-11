@@ -16,8 +16,7 @@ export function PromotionsPage() {
     <>
       <header className="page-header page-header-row">
         <div>
-          <p className="muted small"><Link to={paths.adminWebsite}>{st.title}</Link></p>
-          <h1>{st.navPromotions}</h1>
+            <h1>{st.navPromotions}</h1>
           <p className="muted">{st.promotionsIntro}</p>
         </div>
         <Link className="btn btn-filled" to={paths.adminWebsitePromotion('new')}>
@@ -97,7 +96,7 @@ export function PromotionEditorPage() {
     <>
       <header className="page-header">
         <p className="muted small">
-          <Link to={paths.adminWebsite}>{st.title}</Link> › <Link to={paths.adminWebsitePromotions}>{st.navPromotions}</Link>
+          <Link to={paths.adminWebsitePromotions}>{st.navPromotions}</Link>
         </p>
         <h1>{isNew ? st.newPromotion : d.title || st.untitled}</h1>
       </header>

@@ -21,8 +21,7 @@ export function BlogPage() {
     <>
       <header className="page-header page-header-row">
         <div>
-          <p className="muted small"><Link to={paths.adminWebsite}>{st.title}</Link></p>
-          <h1>{st.navBlog}</h1>
+            <h1>{st.navBlog}</h1>
           <p className="muted">{st.blogIntro}</p>
         </div>
         <Link className="btn btn-filled" to={paths.adminWebsitePost('new')}>
@@ -114,7 +113,7 @@ export function PostEditorPage() {
     <>
       <header className="page-header">
         <p className="muted small">
-          <Link to={paths.adminWebsite}>{st.title}</Link> › <Link to={paths.adminWebsiteBlog}>{st.navBlog}</Link>
+          <Link to={paths.adminWebsiteBlog}>{st.navBlog}</Link>
         </p>
         <h1>{isNew ? st.newPost : d.title || st.untitled}</h1>
       </header>

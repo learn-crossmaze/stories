@@ -15,7 +15,6 @@ export function BranchPagesPage() {
   return (
     <>
       <header className="page-header">
-        <p className="muted small"><Link to={paths.adminWebsite}>{st.title}</Link></p>
         <h1>{st.navBranches}</h1>
         <p className="muted">{st.branchesIntro}</p>
       </header>
@@ -82,7 +81,7 @@ export function BranchPageEditorPage() {
     <>
       <header className="page-header">
         <p className="muted small">
-          <Link to={paths.adminWebsite}>{st.title}</Link> › <Link to={paths.adminWebsiteBranches}>{st.navBranches}</Link>
+          <Link to={paths.adminWebsiteBranches}>{st.navBranches}</Link>
         </p>
         <h1>{info.branchName}</h1>
         <p className="muted">{st.branchEditorIntro}</p>

@@ -3,6 +3,7 @@ import type { Request } from 'firebase-functions/v2/https';
 
 import { db } from '../core/firebase.js';
 import { type Plan, pricesFor } from '../billing/plans.js';
+import { handleSubmit, handleTap } from './inbox.js';
 import { type PublicSite, readLiveSite } from './live.js';
 import { readShowcase, type Showcase } from './showcase.js';
 
@@ -115,8 +116,12 @@ export async function publicSnapshot(now = new Date()): Promise<PublicSnapshot> 
 
 type Res = { status: (n: number) => Res; set: (k: string, v: string) => Res; json: (b: unknown) => void; send: (b?: unknown) => void };
 
-/** GET /api/public (website). Public and read-only; the CDN caches it for 5 minutes, browsers for 1. */
+/** GET /api/public (website), and POST /api/submit and /api/tap (inbox.ts). /api/public is read-only; the CDN caches it for 5 minutes, browsers for 1. */
 export async function handleSitePublic(req: Request, res: Res) {
+  // The website's forms and call/WhatsApp taps come here too (one function: Cloud Run CPU quota).
+  const path = (req.path || req.url || '').split('?')[0];
+  if (req.method === 'POST' && path.endsWith('/api/submit')) return handleSubmit(req, res);
+  if (req.method === 'POST' && path.endsWith('/api/tap')) return handleTap(req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).set('Allow', 'GET').send('method not allowed');
   try {
     const snapshot = await publicSnapshot();

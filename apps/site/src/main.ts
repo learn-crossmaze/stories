@@ -7,21 +7,30 @@ import { APP_URL, CONTACT_EMAIL } from './config';
 import { loadSnapshot, type PublicSnapshot } from './data';
 import { wireThemeSwitch } from './theme';
 import { greetingDaysOn } from './greetings/today';
+import { applySections } from './sections';
+import { wireForms } from './forms';
+import { wireTaps } from './taps';
 import {
-  ageShelves, bookDialog, branchesSection, contactsSection, esc, faqsHtml, findBook, genreChips, plansSection, postsStrip, promoBar, promoHome,
+  ageShelves, contactLine, testimonialsHtml, bookDialog, branchesSection, contactsSection, esc, faqsHtml, findBook, genreChips, plansSection, postsStrip, promoBar, promoHome,
   promoPopup, promotionsFor, shelf, type ShelfKind, socialLinks, statsLine,
 } from './render';
 
 // Links to the app and the enquiry address (set in apps/site/.env).
 document.querySelectorAll<HTMLAnchorElement>('[data-app-link]').forEach((a) => (a.href = APP_URL + (a.dataset.appLink || '')));
-document.querySelectorAll<HTMLElement>('[data-contact-email]').forEach((el) => {
-  if (!CONTACT_EMAIL) return el.remove();
-  el.querySelectorAll<HTMLAnchorElement>('a').forEach((a) => {
-    a.href = `mailto:${CONTACT_EMAIL}${a.dataset.subject ? `?subject=${encodeURIComponent(a.dataset.subject)}` : ''}`;
-    a.textContent = a.textContent?.trim() ? a.textContent : CONTACT_EMAIL;
+/** Shows the email on `[data-contact-email]` (franchise ones may use their own address); hides them without one. */
+function applyEmails(general: string, franchise = '') {
+  document.querySelectorAll<HTMLElement>('[data-contact-email]').forEach((el) => {
+    const email = (el.dataset.contactEmail === 'franchise' && franchise) || general;
+    if (!email) return void (el.hidden = true);
+    el.querySelectorAll<HTMLAnchorElement>('a').forEach((a) => {
+      a.href = `mailto:${email}${a.dataset.subject ? `?subject=${encodeURIComponent(a.dataset.subject)}` : ''}`;
+      if (!a.dataset.label) a.dataset.label = a.textContent?.trim() ?? '';
+      a.textContent = a.dataset.label || email;
+    });
+    el.hidden = false;
   });
-  el.hidden = false;
-});
+}
+applyEmails(CONTACT_EMAIL);
 
 // The current page in the menu.
 const here = location.pathname.replace(/\/$/, '') || '/';
@@ -72,6 +81,8 @@ const renderers: Record<string, (s: PublicSnapshot, el: HTMLElement) => string> 
   posts: (s, el) => postsStrip(s, Number(el.dataset.limit) || 3),
   faqs: (s) => faqsHtml(s),
   social: (s) => socialLinks(s),
+  testimonials: (s) => testimonialsHtml(s),
+  'contact-line': (s) => contactLine(s),
   'promo-home': (s) => promotionsFor(s.site, 'HOME', pageBranch).slice(0, 1).map(promoHome).join(''),
 };
 
@@ -185,6 +196,33 @@ async function showGreetings(s: PublicSnapshot): Promise<boolean> {
   return showGreeting(cfg, { home: isHome });
 }
 
+/** Published site settings: the home banner's words, page sections, contact addresses, branch lists in forms. */
+function applyWebsiteSettings(s: PublicSnapshot) {
+  const site = s.site;
+  if (!site) return;
+  const b = site.banner;
+  const headline = document.querySelector<HTMLElement>('.hero .headline');
+  if (headline && b.heading) {
+    headline.textContent = `${b.heading} `;
+    if (b.highlight) {
+      const span = document.createElement('span');
+      span.className = 'squiggle';
+      span.textContent = b.highlight;
+      headline.append(span);
+    }
+  }
+  const lead = document.querySelector<HTMLElement>('.hero .lead');
+  if (lead && b.intro) lead.textContent = b.intro;
+  applySections(site.sections);
+  applyEmails(site.contact.email || CONTACT_EMAIL, site.contact.franchiseEmail);
+  document.querySelectorAll<HTMLSelectElement>('select[data-branch-options]').forEach((sel) => {
+    for (const br of s.branches) sel.append(new Option(`${br.name}, ${br.address.city}`, br.id));
+  });
+}
+
+wireForms();
+wireTaps();
+
 // "Copy link" on blog posts.
 document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((b) =>
   b.addEventListener('click', () => {
@@ -236,7 +274,7 @@ function hideDeadJumps() {
 
 const live = [...document.querySelectorAll<HTMLElement>('[data-live]')];
 let extrasShown = false;
-const QUIET = new Set(['stats', 'social', 'faqs', 'promo-home', 'posts']);
+const QUIET = new Set(['stats', 'social', 'faqs', 'promo-home', 'posts', 'testimonials', 'contact-line']);
 
 async function fill() {
   live.forEach((el) => el.setAttribute('aria-busy', 'true'));
@@ -256,6 +294,7 @@ async function fill() {
     hideDeadJumps();
     if (!extrasShown) {
       extrasShown = true;
+      applyWebsiteSettings(snapshot);
       void showGreetings(snapshot).then((greeting) => showPromotions(snapshot, greeting), () => showPromotions(snapshot, false));
     }
   } catch {

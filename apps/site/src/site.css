@@ -774,3 +774,38 @@ a.more { display: inline-flex; align-items: center; min-height: 44px; padding: 0
 }
 .booklist .drawn-title { font-size: 0.88rem; overflow-wrap: normal; }
 .booklist .drawn-cover { padding: 12px 8px 12px 16px; }
+
+/* Forms (Contact, Franchise, branch pages, Careers) */
+.wrap.narrow { max-width: 760px; }
+.site-form { gap: 14px; margin: 16px 0; }
+.form-row { display: flex; flex-direction: column; gap: 6px; }
+.form-row label { font: 600 0.95rem/1.3 var(--font-display); }
+.form-row input, .form-row select, .form-row textarea {
+  width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  background: var(--menu-bg); color: var(--ink); font: inherit;
+}
+.form-row textarea { min-height: 96px; resize: vertical; }
+.form-row input:focus-visible, .form-row select:focus-visible, .form-row textarea:focus-visible { outline: 3px solid var(--purple); outline-offset: 1px; }
+.form-row input[type='file'] { min-height: 0; padding: 10px; }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.form-status { margin: 0; font-weight: 700; min-height: 1.2em; }
+.form-status[data-tone='ok'] { color: var(--mint-fg); }
+.form-status[data-tone='error'] { color: #b3261e; }
+.site-form .btn { align-self: flex-start; }
+
+/* What readers say */
+.voices { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.voice blockquote { margin: 0; font: 600 1.05rem/1.55 var(--font-display); }
+.voice blockquote p::before { content: '“'; color: var(--pink); font-size: 1.6em; line-height: 0; vertical-align: -0.25em; margin-right: 2px; }
+.voice-by { margin: 0; display: flex; flex-direction: column; color: var(--ink-muted); }
+.voice-by strong { color: var(--ink); }
+
+/* Careers */
+.jobs { display: grid; gap: 12px; }
+.job summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; align-items: baseline; }
+.job-title { font: 700 1.15rem/1.3 var(--font-display); }
+.job-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 10px 0; }
+.job-facts dt { font-weight: 800; }
+.job-facts dd { margin: 0; }
+.footer-contact a { color: #fff; }
+.footer-contact:empty { display: none; }

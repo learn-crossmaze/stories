@@ -1,5 +1,5 @@
 import { memberAreaUrl } from '../routes';
-import { Suspense, useEffect, useId, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
@@ -15,6 +15,9 @@ import { ViewContext } from './view';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 import { OnboardingReminder } from './people/OnboardingReminder';
+
+/** The Website view's Publish button (loaded with the Website pages). */
+const PublishButton = lazy(() => import('./website/Overview').then((m) => ({ default: m.PublishButton })));
 
 const MAIN_ID = 'main';
 
@@ -303,6 +306,11 @@ function Shell({ view }: { view: ViewId }) {
               <span>{t.appTitle}</span>
             </Link>
             <WorkspaceBar />
+            {view === 'web' && (
+              <Suspense fallback={null}>
+                <PublishButton />
+              </Suspense>
+            )}
             <NotificationBell />
             <AccountMenu />
           </header>

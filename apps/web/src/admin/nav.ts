@@ -141,20 +141,52 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
         { to: paths.adminSettingsDelivery, label: dt.navSettings, icon: 'parcel', requires: 'delivery.configure' },
       ],
     },
+    { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
+  ],
+  // The website admin, in the order of crossmaze.in/admin: Dashboard; Website; Stories; Enquiries; Settings.
+  web: [
+    { to: paths.adminWebsite, label: st.navDashboard, icon: 'dashboard', requires: ['website.manage', 'website.branch', 'blog.write'], home: true },
     {
-      id: 'website',
-      label: st.title,
+      id: 'web-website',
+      label: st.groupWebsite,
       icon: 'explore',
       items: [
-        { to: paths.adminWebsite, label: st.navOverview, icon: 'dashboard', requires: ['website.manage', 'website.branch', 'blog.write'] },
-        { to: paths.adminWebsiteBlog, label: st.navBlog, icon: 'folder', requires: ['website.manage', 'website.branch', 'blog.write'] },
-        { to: paths.adminWebsiteBranches, label: st.navBranches, icon: 'store', requires: ['website.manage', 'website.branch'] },
-        { to: paths.adminWebsitePromotions, label: st.navPromotions, icon: 'card', requires: 'website.manage' },
-        { to: paths.adminWebsiteCards, label: st.navCards, icon: 'palette', requires: 'website.manage' },
         { to: paths.adminWebsiteSettings, label: st.navSettings, icon: 'tune', requires: 'website.manage' },
+        { to: paths.adminWebsiteSections, label: st.navSections, icon: 'folder', requires: 'website.manage' },
+        { to: paths.adminWebsiteBranches, label: st.navBranches, icon: 'store', requires: ['website.manage', 'website.branch'] },
+        { to: paths.adminWebsitePlans, label: st.navPlans, icon: 'card', requires: 'plans.manage' },
+        { to: paths.adminWebsitePromotions, label: st.navPromotions, icon: 'bell', requires: 'website.manage' },
+        { to: paths.adminWebsiteJobs, label: st.navJobs, icon: 'badge', requires: 'website.manage' },
       ],
     },
-    { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
+    {
+      id: 'web-stories',
+      label: st.groupStories,
+      icon: 'book',
+      items: [
+        { to: paths.adminWebsiteBlog, label: st.navBlog, icon: 'book', requires: ['website.manage', 'website.branch', 'blog.write'] },
+        { to: paths.adminWebsiteCards, label: st.navCards, icon: 'palette', requires: 'website.manage' },
+        { to: paths.adminWebsiteTestimonials, label: st.navTestimonials, icon: 'chat', requires: 'website.manage' },
+      ],
+    },
+    {
+      id: 'web-enquiries',
+      label: st.groupEnquiries,
+      icon: 'chat',
+      items: [
+        { to: paths.adminWebsiteSubmissions, label: st.navSubmissions, icon: 'folder', requires: ['website.manage', 'website.branch'] },
+        { to: paths.adminWebsiteCalls, label: st.navCalls, icon: 'insights', requires: 'website.manage' },
+      ],
+    },
+    {
+      id: 'web-settings',
+      label: st.groupSettings,
+      icon: 'key',
+      items: [
+        { to: paths.adminWebsiteConnections, label: st.navConnections, icon: 'tune', requires: 'website.manage' },
+        { to: paths.adminWebsiteAdmins, label: st.navAdmins, icon: 'people', requires: 'website.manage' },
+      ],
+    },
   ],
   staff: [
     { to: paths.staff, label: t.navHome, icon: 'home', requires: null, home: true },
@@ -166,8 +198,8 @@ export const MENUS: Record<ViewId, NavEntry[]> = {
   ],
 };
 
-export const VIEW_ORDER: ViewId[] = ['admin', 'ops', 'staff'];
-export const VIEW_ICONS: Record<ViewId | 'member', IconName> = { admin: 'tune', ops: 'scan', staff: 'person', member: 'home' };
+export const VIEW_ORDER: ViewId[] = ['admin', 'web', 'ops', 'staff'];
+export const VIEW_ICONS: Record<ViewId | 'member', IconName> = { admin: 'tune', web: 'explore', ops: 'scan', staff: 'person', member: 'home' };
 
 const itemsOf = (entries: NavEntry[]) => entries.flatMap((e) => (isGroup(e) ? e.items : [e]));
 
@@ -211,6 +243,12 @@ export const groupFor = (entries: NavEntry[], pathname: string) =>
 
 /** Old /admin addresses (bookmarks, earlier notifications) → where the page lives now. */
 export const MOVED: [string, string][] = [
+  // The Website section was in the Admin view before it became its own view.
+  ['/admin/website/festive-cards', paths.adminWebsiteCards],
+  ['/admin/website/cards', paths.adminWebsiteCards],
+  ['/admin/website/promotions', paths.adminWebsitePromotions],
+  ['/admin/website/settings', paths.adminWebsiteSettings],
+  ['/admin/website', paths.adminWebsite],
   ['/admin/desk', paths.adminDesk],
   ['/admin/books', paths.adminBooks],
   ['/admin/inventory', paths.adminInventory],

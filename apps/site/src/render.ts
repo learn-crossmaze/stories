@@ -406,3 +406,25 @@ export function socialLinks(s: PublicSnapshot) {
   const links = SOCIAL.filter(([k]) => s.site?.social[k] && /^https:\/\//.test(s.site.social[k]));
   return links.map(([k, label]) => `<a href="${esc(s.site!.social[k])}" target="_blank" rel="noopener me">${label}</a>`).join(' · ');
 }
+
+/** Readers' words for the home page ('' when there are none, so the section hides). */
+export function testimonialsHtml(s: PublicSnapshot) {
+  const list = s.site?.testimonials ?? [];
+  if (!list.length) return '';
+  return `<ul class="voices" role="list">${list
+    .slice(0, 6)
+    .map((t, i) => `<li class="card voice k-${i % 6}"><blockquote><p>${esc(t.quote)}</p></blockquote><p class="voice-by"><strong>${esc(t.name)}</strong>${t.detail ? `<span>${esc(t.detail)}</span>` : ''}</p></li>`)
+    .join('')}</ul>`;
+}
+
+/** The footer's way to reach head office ('' when none is set). */
+export function contactLine(s: PublicSnapshot) {
+  const c = s.site?.contact;
+  if (!c) return '';
+  const parts: string[] = [];
+  if (c.phone) parts.push(`<a href="tel:${esc(c.phone.replace(/[^+\d]/g, ''))}" data-tap-name="Head office">${esc(formatPhone(c.phone))}</a>`);
+  const wa = whatsappUrl(c.whatsapp || c.phone);
+  if (wa) parts.push(`<a href="${esc(wa)}" target="_blank" rel="noopener" data-tap-name="Head office">WhatsApp</a>`);
+  if (c.email) parts.push(`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
+  return parts.join(' · ');
+}

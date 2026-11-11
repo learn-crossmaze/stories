@@ -6,18 +6,24 @@ import { z } from 'zod';
 
 import { id } from '../core/schemas.js';
 
-export const KINDS = ['settings', 'greetings', 'branch', 'post', 'promotion'] as const;
+export const KINDS = ['settings', 'sections', 'greetings', 'branch', 'post', 'promotion', 'job', 'testimonial'] as const;
 export type Kind = (typeof KINDS)[number];
 
 /** Where each kind is stored. Settings and greetings are single documents. */
 export const collectionOf: Record<Kind, string> = {
   settings: 'siteContent',
+  sections: 'siteContent',
   greetings: 'siteContent',
   branch: 'siteBranches',
   post: 'sitePosts',
   promotion: 'sitePromotions',
+  job: 'siteJobs',
+  testimonial: 'siteTestimonials',
 };
-export const SINGLETONS: Partial<Record<Kind, string>> = { settings: 'settings', greetings: 'greetings' };
+export const SINGLETONS: Partial<Record<Kind, string>> = { settings: 'settings', sections: 'sections', greetings: 'greetings' };
+/** Kinds with many items (each its own document), as opposed to the single documents above. */
+export const LISTS = ['branch', 'post', 'promotion', 'job', 'testimonial'] as const;
+export type ListKind = (typeof LISTS)[number];
 
 // ------------------------------------------------------------------ building blocks
 
@@ -67,7 +73,22 @@ const bookRef = z.strictObject({ bookId: id, note: str(300) });
 
 // ------------------------------------------------------------------ site settings (one document)
 
+const email = z.union([z.literal(''), z.email().max(120)]).default('');
+const phone = z.union([z.literal(''), z.string().trim().regex(/^\+?[0-9 ]{8,16}$/, 'must be a phone number')]).default('');
+
 export const settingsDraft = z.strictObject({
+  /** Contact details used across the website (Contact, Franchise, Careers, the footer). */
+  contact: z
+    .strictObject({
+      phone,
+      whatsapp: phone,
+      email,
+      franchiseEmail: email,
+      careersEmail: email,
+    })
+    .prefault({}),
+  /** The home page's top banner (empty keeps the built-in words). */
+  banner: z.strictObject({ heading: str(60), highlight: str(40), intro: str(300) }).prefault({}),
   /** The About page: the library's story. */
   about: z
     .strictObject({
@@ -79,10 +100,10 @@ export const settingsDraft = z.strictObject({
       facts: z.array(z.strictObject({ value: req(1, 24), label: req(2, 48) })).max(6).default([]),
     })
     .prefault({}),
+  /** Show the people below on the About page. */
+  showTeam: z.boolean().default(true),
   /** Head office people shown on About (founders, curators…). */
   team: z.array(z.strictObject({ name: req(2, 80), role: str(80), photo: image.nullable().default(null), bio: str(600) })).max(12).default([]),
-  /** Questions answered on How it works (after the built-in ones). */
-  faqs: z.array(z.strictObject({ q: req(5, 160), a: req(5, 1200) })).max(30).default([]),
   /** Footer social links. */
   social: z
     .strictObject({
@@ -94,6 +115,28 @@ export const settingsDraft = z.strictObject({
     .prefault({}),
 });
 export type SettingsDraft = z.infer<typeof settingsDraft>;
+
+// ------------------------------------------------------------------ page sections (one document)
+
+const tile = z.strictObject({ title: req(2, 70), text: str(400) });
+/** Lists that appear on the website's pages. Empty: the page keeps its built-in list. */
+export const sectionsDraft = z.strictObject({
+  /** Home: the promise tiles under the banner (No due dates, No late fines…). */
+  promises: z.array(tile).max(6).default([]),
+  /** Home: the three steps of "How it works". */
+  homeSteps: z.array(tile).max(4).default([]),
+  /** Home: "Something for every reader" (little readers, teens, grown-ups). */
+  readers: z.array(tile).max(4).default([]),
+  /** How it works page: the steps. */
+  howSteps: z.array(tile).max(6).default([]),
+  /** How it works page: questions, after the built-in ones. */
+  faqs: z.array(z.strictObject({ q: req(5, 160), a: req(5, 1200) })).max(30).default([]),
+  /** Franchise page: what a franchise gets. */
+  franchisePerks: z.array(tile).max(6).default([]),
+  /** Careers page: why work with us. */
+  careerPerks: z.array(tile).max(8).default([]),
+});
+export type SectionsDraft = z.infer<typeof sectionsDraft>;
 
 // ------------------------------------------------------------------ festive cards (one document)
 
@@ -222,8 +265,36 @@ export const promotionDraft = z
   .refine((p) => p.startOn <= p.endOn, { message: 'must end on or after the day it starts', path: ['endOn'] });
 export type PromotionDraft = z.infer<typeof promotionDraft>;
 
+// ------------------------------------------------------------------ jobs and testimonials
+
+export const jobDraft = z.strictObject({
+  title: req(3, 80),
+  /** Where: a branch, head office, "Bengaluru". */
+  location: str(80),
+  type: z.enum(['FULL_TIME', 'PART_TIME', 'INTERNSHIP', 'VOLUNTEER']).default('FULL_TIME'),
+  overview: str(800),
+  qualification: str(400),
+  experience: str(120),
+  timings: str(160),
+  responsibilities: z.array(req(3, 240)).max(12).default([]),
+  hidden: z.boolean().default(false),
+});
+export type JobDraft = z.infer<typeof jobDraft>;
+
+export const testimonialDraft = z.strictObject({
+  quote: req(10, 500),
+  name: req(2, 80),
+  /** "Member since 2026, Whitefield", "Parent of a little reader". */
+  detail: str(100),
+  hidden: z.boolean().default(false),
+});
+export type TestimonialDraft = z.infer<typeof testimonialDraft>;
+
 export const draftSchema: Record<Kind, z.ZodType> = {
   settings: settingsDraft,
+  sections: sectionsDraft,
+  job: jobDraft,
+  testimonial: testimonialDraft,
   greetings: greetingsDraft,
   branch: branchDraft,
   post: postDraft,
@@ -233,9 +304,11 @@ export const draftSchema: Record<Kind, z.ZodType> = {
 /** What the lists show as an item's name. */
 export function titleOf(kind: Kind, draft: Record<string, unknown> | null | undefined): string {
   if (kind === 'settings') return 'Site settings';
-  if (kind === 'greetings') return 'Festive cards';
+  if (kind === 'sections') return 'Page sections';
+  if (kind === 'greetings') return 'Festival greetings';
   if (!draft) return '';
   if (kind === 'branch') return String(draft.slug ?? '');
+  if (kind === 'testimonial') return String(draft.name ?? '');
   return String(draft.title ?? '');
 }
 

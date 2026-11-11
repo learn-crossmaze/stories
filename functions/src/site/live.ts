@@ -1,7 +1,7 @@
 // Reading what is published (the `live` copies) for the public website.
 import { db } from '../core/firebase.js';
-import type { BranchDraft, GreetingsDraft, PostDraft, PromotionDraft, SettingsDraft, SiteImage } from './content.js';
-import { promotionWindow, todayInIndia } from './content.js';
+import type { BranchDraft, GreetingsDraft, PostDraft, PromotionDraft, SectionsDraft, SettingsDraft, SiteImage, TestimonialDraft } from './content.js';
+import { promotionWindow, sectionsDraft, settingsDraft, todayInIndia } from './content.js';
 import type { SiteDoc } from './admin.js';
 import { type BookInfo, type PostCard } from './render.js';
 
@@ -29,8 +29,17 @@ export interface PublicGreetings {
 }
 
 export interface PublicSite {
+  contact: SettingsDraft['contact'];
+  /** The home page's banner words (empty: the built-in ones). */
+  banner: SettingsDraft['banner'];
   social: SettingsDraft['social'];
-  faqs: SettingsDraft['faqs'];
+  /** Lists for the pages (empty lists keep the built-in ones). */
+  sections: SectionsDraft;
+  faqs: SectionsDraft['faqs'];
+  /** Readers' words for the home page. */
+  testimonials: { quote: string; name: string; detail: string }[];
+  /** How many jobs are open (the Careers link shows when there are any). */
+  openJobs: number;
   greetings: PublicGreetings | null;
   /** Promotions running today. */
   promotions: PublicPromotion[];
@@ -66,14 +75,18 @@ export async function livePosts(limit = 60): Promise<SiteDoc[]> {
 export async function readLiveSite(now = new Date()): Promise<PublicSite> {
   const today = todayInIndia(now);
   const year = Number(today.slice(0, 4));
-  const [settings, greetings, promotions, branches, posts] = await Promise.all([
+  const [settings, sectionsDoc, testimonials, jobs, greetings, promotions, branches, posts] = await Promise.all([
     db.doc('siteContent/settings').get(),
+    db.doc('siteContent/sections').get(),
+    db.collection('siteTestimonials').where('isLive', '==', true).get(),
+    db.collection('siteJobs').where('isLive', '==', true).get(),
     db.doc('siteContent/greetings').get(),
     db.collection('sitePromotions').where('isLive', '==', true).get(),
     db.collection('siteBranches').where('isLive', '==', true).get(),
     livePosts(6),
   ]);
-  const s = (settings.get('live') as SettingsDraft | null | undefined) ?? null;
+  const s = (settings.get('live') as SettingsDraft | null | undefined) ?? settingsDraft.parse({});
+  const sections = (sectionsDoc.get('live') as SectionsDraft | null | undefined) ?? sectionsDraft.parse({});
   const g = (greetings.get('live') as GreetingsDraft | null | undefined) ?? null;
 
   let publicGreetings: PublicGreetings | null = null;
@@ -90,8 +103,16 @@ export async function readLiveSite(now = new Date()): Promise<PublicSite> {
   }
 
   return {
-    social: s?.social ?? { instagram: '', facebook: '', youtube: '', x: '' },
-    faqs: s?.faqs ?? [],
+    contact: { ...settingsDraft.parse({}).contact, ...s.contact },
+    banner: { ...settingsDraft.parse({}).banner, ...s.banner },
+    social: { ...settingsDraft.parse({}).social, ...s.social },
+    sections,
+    faqs: sections.faqs ?? [],
+    testimonials: testimonials.docs
+      .map((d) => d.get('live') as TestimonialDraft)
+      .filter((t) => t && !t.hidden)
+      .map((t) => ({ quote: t.quote, name: t.name, detail: t.detail })),
+    openJobs: jobs.docs.filter((d) => !(d.get('live') as { hidden?: boolean } | null)?.hidden).length,
     greetings: publicGreetings,
     promotions: promotions.docs
       .map((d) => ({ id: d.id, p: d.get('live') as PromotionDraft }))

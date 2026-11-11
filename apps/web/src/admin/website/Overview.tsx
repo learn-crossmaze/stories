@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 
+import { useAuth } from '../../auth/AuthContext';
 import { errorText } from '../../data/api';
 import { publishAll, SITE_URL, siteOverview, type Kind, type Pending } from '../../data/site';
 import { paths } from '../../paths';
@@ -12,48 +13,82 @@ import { savedLine, SiteStatusBadge } from './kit';
 /** Where each kind of item is edited. */
 export function editPath(kind: Kind, id: string, orgId?: string | null) {
   if (kind === 'post') return paths.adminWebsitePost(id);
+  if (kind === 'job') return paths.adminWebsiteJob(id);
+  if (kind === 'testimonial') return paths.adminWebsiteTestimonial(id);
+  if (kind === 'sections') return paths.adminWebsiteSections;
   if (kind === 'promotion') return paths.adminWebsitePromotion(id);
   if (kind === 'branch') return orgId ? paths.adminWebsiteBranch(orgId, id) : paths.adminWebsiteBranches;
   if (kind === 'greetings') return paths.adminWebsiteCards;
   return paths.adminWebsiteSettings;
 }
 
-/**
- * The Website section's front page: what the website team can change, what waits to be published or reviewed,
- * and what was published lately. "Publish all" puts every saved change on the website at once.
- */
-export function WebsiteOverviewPage() {
-  const data = useAsync(siteOverview, []);
+/** Publishes every saved change the person may publish: the Dashboard's card and the top bar's button. */
+export function usePublishAll(onDone?: () => void) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const o = data.data;
-  const sections = [
-    { to: paths.adminWebsiteBlog, icon: 'folder' as const, label: st.navBlog, text: st.blogIntro, show: !!o?.rights.canWrite },
-    { to: paths.adminWebsiteBranches, icon: 'store' as const, label: st.navBranches, text: st.branchesIntro, show: !!o && (o.rights.manager || o.rights.branches.length > 0) },
-    { to: paths.adminWebsitePromotions, icon: 'card' as const, label: st.navPromotions, text: st.promotionsIntro, show: !!o?.rights.manager },
-    { to: paths.adminWebsiteCards, icon: 'palette' as const, label: st.navCards, text: st.cardsIntro, show: !!o?.rights.manager },
-    { to: paths.adminWebsiteSettings, icon: 'tune' as const, label: st.navSettings, text: st.settingsIntro, show: !!o?.rights.manager },
-  ];
-  const mine = (o?.pending ?? []).filter((p) => p.canPublish);
-  const doPublishAll = async () => {
+  const run = async () => {
     setBusy(true);
     setMessage(null);
     try {
       const r = await publishAll();
       setMessage({ tone: r.blocked.length ? 'error' : 'ok', text: [st.publishedCount(r.published.length), ...r.blocked.map((b) => `${b.title}: ${b.reason}`)].join(' ') });
-      data.reload();
+      onDone?.();
     } catch (e) {
       setMessage({ tone: 'error', text: errorText(e) });
     } finally {
       setBusy(false);
     }
   };
+  return { busy, message, run };
+}
+
+/** The top bar's Publish button (as on crossmaze.in): how many saved changes wait, and publishing them all. */
+export function PublishButton() {
+  const { pathname } = useLocation();
+  const data = useAsync(siteOverview, [pathname]);
+  const waiting = (data.data?.pending ?? []).filter((p) => p.canPublish).length;
+  const { busy, message, run } = usePublishAll(data.reload);
+  if (!data.data) return null;
+  return (
+    <div className="publish-top">
+      <button type="button" className={`btn ${waiting ? 'btn-filled' : 'btn-outlined'}`} disabled={busy || !waiting} title={waiting ? st.waitingTitle(waiting) : st.nothingWaiting} onClick={() => void run()}>
+        {busy ? st.publishingNow : waiting ? st.publishAll(waiting) : st.allPublished}
+      </button>
+      {message && <span className={`publish-top-message ${message.tone}`} role="status">{message.text}</span>}
+    </div>
+  );
+}
+
+/**
+ * The Website view's Dashboard (as on crossmaze.in): publishing, new enquiries and taps on call buttons, links to
+ * every page, then what waits to be published or reviewed and what was published lately.
+ */
+export function WebsiteOverviewPage() {
+  const { user } = useAuth();
+  const data = useAsync(siteOverview, []);
+  const publish = usePublishAll(() => data.reload());
+  const o = data.data;
+  const m = !!o?.rights.manager;
+  const branchy = !!o && (m || o.rights.branches.length > 0);
+  const links = [
+    { to: paths.adminWebsiteSettings, icon: 'tune' as const, label: st.navSettings, text: st.settingsIntro, show: m },
+    { to: paths.adminWebsiteSections, icon: 'folder' as const, label: st.navSections, text: st.sectionsIntro, show: m },
+    { to: paths.adminWebsiteBranches, icon: 'store' as const, label: st.navBranches, text: st.branchesIntro, show: branchy },
+    { to: paths.adminWebsitePromotions, icon: 'bell' as const, label: st.navPromotions, text: st.promotionsIntro, show: m },
+    { to: paths.adminWebsiteJobs, icon: 'badge' as const, label: st.navJobs, text: st.jobsIntro, show: m },
+    { to: paths.adminWebsiteBlog, icon: 'book' as const, label: st.navBlog, text: st.blogIntro, show: !!o?.rights.canWrite },
+    { to: paths.adminWebsiteCards, icon: 'palette' as const, label: st.navCards, text: st.cardsIntro, show: m },
+    { to: paths.adminWebsiteTestimonials, icon: 'chat' as const, label: st.navTestimonials, text: st.testimonialsIntro, show: m },
+    { to: paths.adminWebsiteSubmissions, icon: 'folder' as const, label: st.navSubmissions, text: st.submissionsIntro, show: branchy },
+    { to: paths.adminWebsiteCalls, icon: 'insights' as const, label: st.navCalls, text: st.callsIntro, show: m },
+  ];
+  const mine = (o?.pending ?? []).filter((p) => p.canPublish);
   return (
     <>
       <header className="page-header page-header-row">
         <div>
-          <h1>{st.title}</h1>
-          <p className="muted">{st.intro}</p>
+          <h1>{st.navDashboard}</h1>
+          <p className="muted">{st.signedInAs(user?.email ?? '')}</p>
         </div>
         <a className="btn btn-outlined" href={SITE_URL} target="_blank" rel="noopener">
           <Icon name="explore" /> {st.openWebsite}
@@ -65,8 +100,46 @@ export function WebsiteOverviewPage() {
         <ErrorState message={data.error ?? ''} onRetry={data.reload} />
       ) : (
         <>
+          <ul className="site-sections stat-row">
+            <li className="card stat publish-card">
+              <strong>{mine.length}</strong>
+              <span>{mine.length ? st.changesWaiting : st.nothingWaiting}</span>
+              {mine.length > 0 && (
+                <button type="button" className="btn btn-filled align-start" disabled={publish.busy} onClick={() => void publish.run()}>
+                  {publish.busy ? st.publishingNow : st.publishAll(mine.length)}
+                </button>
+              )}
+            </li>
+            {o.counts.newSubmissions !== null && (
+              <li>
+                <Link className="card stat" to={paths.adminWebsiteSubmissions}>
+                  <strong className={o.counts.newSubmissions ? 'warn' : ''}>{o.counts.newSubmissions}</strong>
+                  <span>{st.newSubmissionsStat}</span>
+                </Link>
+              </li>
+            )}
+            {o.counts.callsThisWeek !== null && (
+              <li>
+                <Link className="card stat" to={paths.adminWebsiteCalls}>
+                  <strong>{o.counts.callsThisWeek}</strong>
+                  <span>{st.callsStat}</span>
+                </Link>
+              </li>
+            )}
+            {o.reviews.length > 0 && (
+              <li>
+                <Link className="card stat" to={paths.adminWebsiteBlog}>
+                  <strong className="warn">{o.reviews.length}</strong>
+                  <span>{st.reviewsStat}</span>
+                </Link>
+              </li>
+            )}
+          </ul>
+          {publish.message && <p className={`notice notice-${publish.message.tone === 'ok' ? 'ok' : 'error'}`} role="status">{publish.message.text}</p>}
+
+          <h2>{st.editWebsite}</h2>
           <ul className="site-sections">
-            {sections
+            {links
               .filter((s) => s.show)
               .map((s) => (
                 <li key={s.to}>
@@ -80,16 +153,8 @@ export function WebsiteOverviewPage() {
           </ul>
 
           <section className="section" aria-labelledby="h-pending">
-            <div className="page-header-row">
-              <h2 id="h-pending">{st.waiting}</h2>
-              {mine.length > 0 && (
-                <button type="button" className="btn btn-filled" disabled={busy} onClick={() => void doPublishAll()}>
-                  {busy ? st.publishingNow : st.publishAll(mine.length)}
-                </button>
-              )}
-            </div>
+            <h2 id="h-pending">{st.waiting}</h2>
             <p className="muted small">{st.waitingHint}</p>
-            {message && <p className={`notice notice-${message.tone === 'ok' ? 'ok' : 'error'}`} role="status">{message.text}</p>}
             {!o.pending.length ? <EmptyState icon="check" title={st.nothingWaiting} message="" /> : <PendingTable rows={o.pending} />}
           </section>
 
@@ -122,6 +187,7 @@ export function WebsiteOverviewPage() {
               </ul>
             </section>
           )}
+          <p className="muted small">{st.howItWorks}</p>
         </>
       )}
     </>
