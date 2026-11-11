@@ -25,7 +25,7 @@
     "dev:member": "npm run dev:member -w apps/web"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.2",
+    "@firebase/rules-unit-testing": "^6.0.0",
     "firebase": "^12.19.0",
     "firebase-tools": "^15.31.0",
     "vitest": "^5.0.2"
