@@ -71,9 +71,10 @@ Editor role on Admin → Roles & access; they land in the Website view when they
 
 ## Deploying
 
-`npm run publish:all` (docs/DEPLOYMENT.md §2): it deploys the backend (the `site-*` actions, the `sitePages`
-function and the blog's Firestore index) before the website, whose new addresses (`/blog`, `/branches/<address>`,
-`/about`, `/sitemap.xml`) are rewrites to that function.
+As for crossmaze.in: the website and staff app deploy from GitHub after each merge (with `DEPLOY_SITE` = `true`);
+the backend (the `site-*` actions, `sitePublic`, `sitePages`, Firestore indexes) with `npm run publish:all` on your
+computer (docs/DEPLOYMENT.md §2). The website's new addresses (`/blog`, `/branches/<address>`, `/about`,
+`/careers`, `/api/submit`, `/sitemap.xml`) rely on those functions, so deploy the backend the first time.
 
 ## Ideas for later
 

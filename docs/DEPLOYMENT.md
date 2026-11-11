@@ -37,24 +37,30 @@ The job deploys without `--force`: if a change removes a function, the deploy st
 `npm run deploy:backend` once by hand and answer **yes**, then re-run the workflow. Unchanged functions are skipped,
 so a deploy that touches only the web app adds about a minute.
 
-## 2. Publishing from your computer: `npm run publish:all`
+## 2. Publishing: GitHub for the sites, `npm run publish:all` for the backend
 
-One command publishes everything, in the safe order: it checks Firebase sign-in and that this copy has no local
-edits, gets the latest code (`git pull`), installs (`npm ci` for the apps and the functions), runs the quick checks
-and tests, builds the staff app, website and member area, deploys the **backend first** (functions, Firestore rules
-and indexes, Storage rules), then **both Hosting sites**, and checks that the live sites answer.
+The same routine as the crossmaze-website project:
+
+- **The staff app and the website deploy from GitHub by themselves** after every merge to `main` (Actions →
+  *Deploy*): GitHub runs all the tests, builds, and publishes. Nothing to do on your computer. For the website,
+  set the repository variable `DEPLOY_SITE` = `true` once (GitHub → Settings → Secrets and variables → Actions →
+  Variables); the staff app already deploys this way.
+- **The backend deploys from your computer**, when a change touches the functions or the Firestore/Storage rules
+  (the change's notes say so). One command:
 
 ```bash
 npm run publish:all
 ```
 
-Options (after `--`): `--dry-run` (show the steps only), `--skip-tests`, `--no-pull`, `--no-install`,
-`--only=backend,app,site`. Example: `npm run publish:all -- --only=site --skip-tests`. The script is
-`tools/publish.mjs`; it works the same in PowerShell, cmd, macOS and Linux, and sets `FUNCTIONS_DISCOVERY_TIMEOUT`
-itself. If a deploy would delete a function, Firebase asks first: answer **yes** when the function was removed on
-purpose.
+It gets the latest code (refusing a copy with local edits), installs (`npm ci` for the apps and the functions),
+signs you in to Firebase if needed, and deploys `firestore,functions,storage` (with `FUNCTIONS_DISCOVERY_TIMEOUT`
+set for Windows). No tests and no site builds run on your computer: GitHub has done them. Options:
+`--dry-run`, `--no-pull`, `--no-install`. The script is `tools/publish.mjs`.
 
-The sections below are the single steps it runs, for when you need only one.
+If a deploy would delete a function, Firebase asks first: answer **yes** when the function was removed on purpose.
+
+To publish a site from your computer instead (if GitHub is unavailable): `npm run build && npx firebase deploy
+--only hosting:app --project stories-for-all`, and `npm run deploy:site` for the website.
 
 ## 3. Deploying the backend by hand
 
