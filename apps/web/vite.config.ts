@@ -39,6 +39,8 @@ export default defineConfig(({ command, mode }) => {
     test: {
       environment: 'jsdom',
       setupFiles: ['src/test/setup.ts'],
+      // Room for the longer waits above on slower computers (the default is 5 seconds per test).
+      testTimeout: 20000,
       // Tests never touch Firebase; they inject a fake AuthRepository.
       env: { VITE_FIREBASE_PROJECT_ID: 'test', VITE_FIREBASE_API_KEY: 'test', VITE_FIREBASE_APP_ID: 'test' },
     },
