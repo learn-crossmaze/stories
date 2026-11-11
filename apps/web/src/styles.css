@@ -799,3 +799,12 @@ main h1[tabindex='-1']:focus { outline: none; }
 /* What waits for you, beside a menu page or on a closed group (as in LITMUS). */
 .nav-count { margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; display: inline-grid; place-items: center; background: var(--primary); color: var(--on-primary); font-size: 12px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 .nav-group-toggle .nav-count { margin-right: 6px; }
+
+/* Master control → Roles: the role editor's permissions, area by area. */
+.h-section { font-size: 18px; margin: 24px 0 10px; }
+.dialog .h-section { margin: 16px 0 4px; }
+.role-areas { display: grid; gap: 4px; }
+.role-area .check { align-items: flex-start; }
+.role-area .check .icon { width: 18px; height: 18px; color: var(--success); flex: none; margin-top: 2px; }
+.role-all { font-weight: 600; }
+.check.is-disabled { opacity: 0.6; }

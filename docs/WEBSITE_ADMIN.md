@@ -25,8 +25,8 @@ button sits in the top bar.
 
 | Role | Website pages |
 | --- | --- |
-| Head Office Admin, **Website Editor** (corporate) | Everything, every branch; publish (Plans: head office only) |
-| Franchise Owner, Branch Manager | Their branches' pages and enquiries; posts about their branches (write, review, publish) |
+| **Website Editor**, a Branch Owner with all branches (corporate) | Everything, every branch; publish (Plans: head office only) |
+| Branch Owner, Senior Librarian | Their branches' pages and enquiries; posts about their branches (write, review, publish) |
 | Librarian | Write posts (their own) and **send them for review** |
 
 The server decides (functions/src/site/admin.ts, inbox.ts); the menu only hides pages. Give someone the Website

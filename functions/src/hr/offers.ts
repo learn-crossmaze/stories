@@ -112,7 +112,7 @@ async function letterContext(tx: Transaction, actor: Actor, orgId: string, emplo
     : ['Head office'];
   const workLocation = branch?.exists ? [branch.get('name'), address?.city].filter(Boolean).join(', ') : 'Head office';
   const me = signer.docs[0];
-  const role = (membership?.roles ?? []).find((r: Role) => ['HR_ADMIN', 'FRANCHISE_OWNER', 'BRANCH_MANAGER'].includes(r));
+  const role = (membership?.roles ?? []).find((r: Role) => ['BRANCH_OWNER', 'HR_ADMIN', 'SENIOR_LIBRARIAN'].includes(r));
   return {
     orgName,
     branchLines,

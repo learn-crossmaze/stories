@@ -15,87 +15,62 @@ Authentication ≠ authorization. App Check ≠ authorization. The Flutter UI hi
 
 ## 2. Roles
 
+Ready-made roles (`firebase/rules-src/permissions.json`). The main ladder is Super Admin → Branch Owner → Senior
+Librarian → Librarian; the helper roles cover jobs a library also has.
+
 | Role | Scope | Summary |
 |---|---|---|
-| SUPER_ADMIN | platform | Everything, incl. platform config. Break-glass; MFA required. |
-| HEAD_OFFICE_ADMIN | corporate org + consolidated read of franchise orgs | Branches, catalogue, plans, reports, franchise oversight |
-| FINANCE_ADMIN | org | Payments, refunds, deposits (approve), payroll approval, settlements |
-| HR_ADMIN | org | Employees, documents, attendance/leave config, payroll preparation |
-| CATALOGUE_MANAGER | corporate org | The shared catalogue: add and edit titles (archived ones too), archive, restore and permanently delete archived titles never stocked or reserved, reference data, covers |
-| WEBSITE_EDITOR | corporate org | The website (console → Website, docs/WEBSITE_ADMIN.md): blog, branch pages, offers, festive cards, site settings; publish. Can look up branches and the catalogue |
-| BRANCH_MANAGER | branch(es) | Operations, approvals (leave, corrections, task skips), branch reports |
-| LIBRARIAN | branch(es) | Circulation, inventory, members at counter, reservations, transfers |
-| DELIVERY_PERSON | branch(es) | Assigned delivery orders only |
-| FRANCHISE_OWNER | own franchise org | Branch-manager-plus powers within their org; franchise reports; no other org |
-| EMPLOYEE | self | Self-service: profile, attendance, leave, payslips, tasks, documents |
-| MEMBER | self + guarded children | Own member profiles, subscriptions, loans, orders, deposits |
+| SUPER_ADMIN (SA) | platform | Everything in every organization: organizations, the shared catalogue, Master control; makes roles for every organization. MFA required. |
+| BRANCH_OWNER (OWN) | chosen branches, or all | Runs their branches: the counter, members and money, staff and their roles, approvals, branch settings (delivery, WhatsApp, branch pages), and roles of their own. With **all branches** also the organization-wide settings, HR, payroll, plans and Library rules (a franchise's owner is a Branch Owner with all branches; in the corporate organization also the website and the shared catalogue). |
+| SENIOR_LIBRARIAN (SLIB) | chosen branches | A Librarian who also approves: leave and attendance corrections, task skips, write-offs, deposit adjustments; gives Librarian, Delivery Person and Employee; branch delivery, WhatsApp and website pages; branch reports and audit. |
+| LIBRARIAN (LIB) | chosen branches | Circulation, reservations, members and payments at the counter, shelving and transfers, blog posts. |
+| DELIVERY_PERSON (DEL) | chosen branches | Their assigned deliveries only. |
+| WEBSITE_EDITOR (WEB) | corporate organization | The website (docs/WEBSITE_ADMIN.md): blog, branch pages, offers, festive cards, settings; publish. |
+| HR_ADMIN (HR) | organization | Employees, documents, attendance and leave, HR settings, preparing payroll. |
+| FINANCE_ADMIN (FIN) | organization | Payments, refunds, deposit approvals, payroll approval, bank details. |
+| EMPLOYEE (EMP) | chosen branches | Self-service only: profile, attendance, leave, payslips, tasks. |
+| MEMBER | self + guarded children | Own member profiles, subscriptions, loans, orders, deposits (not a staff role). |
 
-A staff person holds `EMPLOYEE` plus their operational role(s). A person can be both staff and a member (separate
-member record; staff discounts are a future plan type).
+A staff person can hold several roles in an organization (one branch scope for all of them). A person can be both
+staff and a member.
+
+### 2.1 Roles of one's own (Master control → Roles)
+
+Besides the ready-made roles, **Super Admins and Branch Owners make roles**, permission by permission
+(`functions/src/organization/roles.ts`, stored in `roles/{id}`), or copy a ready-made role and change it:
+
+- A role belongs to one organization; a Super Admin may also make one for **every** organization.
+- It says where it may be given (all branches, or chosen ones) and may be a **whole-organization** role (holders must
+  have all branches, like HR Admin).
+- **A Branch Owner's roles give only what they hold themselves, at their own branches**; they change or delete a role
+  only if they could have made it as it is and as it will be. A Super Admin makes anything except Super Admin-only
+  permissions (`superAdminOnly`: organizations).
+- **Giving one** (Staff access, or an employee's Access tab) needs `staff.manageRoles` and every permission in it, so no
+  one hands out more than they can do; a Senior Librarian may give a Branch Owner's "Shelver" role.
+- A role's permissions are copied onto each holder's membership (`customRoles`, `customPerms`, `customRoleNames`) and
+  into their token; changing a role updates every holder straight away (claims re-synced), and a role can be deleted
+  only when no one holds it. Names are unique, ready-made ones included.
 
 ## 3. Permissions
 
-Roles map to permissions in one file — `firebase/rules-src/permissions.json` — the single source consumed by
-(a) Cloud Functions (`Actor.require()` in `functions/src/core/rbac.ts`), (b) the generated `perms()` map in
-`firebase/firestore.rules`, and (c) the web app's `can()` (UI only). `npm run gen:rbac` regenerates all three; CI runs
-`tools/rbac/generate.mjs --check` and fails if any is stale. Super Admin is not in the map: the `sa` claim (rules)
-and `platformRoles` (functions) grant everything.
+Each permission, its wording in the role editor (`areas`) and which ready-made roles hold it are in
+`firebase/rules-src/permissions.json` — the single source consumed by (a) Cloud Functions (`Actor.require()` and
+`permissionsOf()` in `functions/src/core/rbac.ts`), (b) the generated `perms()` map in `firebase/firestore.rules`, and
+(c) the web app's `can()` (UI only). `npm run gen:rbac` regenerates all of them; CI runs
+`tools/rbac/generate.mjs --check` and fails if any is stale. Master control → Roles shows the same list, area by area.
 
-Initial catalogue (excerpt):
+Two rules apply whatever role gives a permission:
 
-| Permission | SA | HO | FIN | HR | BM | LIB | DEL | FO | EMP | MEM |
-|---|---|---|---|---|---|---|---|---|---|---|
-| books.view | ✓ | ✓ | ✓ | | ✓ | ✓ | ✓ | ✓ | | ✓ |
-| books.create (add titles, authors, publishers, categories; a missing cover) | ✓ | ✓ | | | ✓ | ✓ | | | | |
-| books.edit (change/archive/restore titles and reference data, covers, book numbering) | ✓ | ✓ | | | | | | | | |
-| books.delete (permanently delete an archived title no library ever stocked or reserved) | ✓ | ✓ | | | | | | | | |
-
-The Catalogue Manager (CM, corporate orgs only) holds books.view, books.create, books.edit and books.delete and
-nothing else.
-| copies.manage (acquire, locate, condition) | ✓ | ✓ | | | ✓ | ✓ | | ✓ | | |
-| books.transfer | ✓ | ✓ | | | ✓ | ✓ | | ✓ | | |
-| copies.writeOff (lost/retire) | ✓ | ✓ | ✓ | | ✓ | | | ✓ | | |
-| members.view / members.manage | ✓ | ✓ | ✓ | | ✓ | ✓ | | ✓ | | self |
-| loans.issue / loans.return / exchanges.process | ✓ | | | | ✓ | ✓ | (via delivery handover) | ✓ | | |
-| reservations.manage | ✓ | | | | ✓ | ✓ | | ✓ | | self |
-| subscriptions.manage | ✓ | ✓ | ✓ | | ✓ | ✓ | | ✓ | | self (purchase/renew) |
-| plans.manage | ✓ | ✓ | | | | | | | | |
-| deposits.view | ✓ | ✓ | ✓ | | ✓ | ✓ | | ✓ | | self |
-| deposits.adjust (propose) | ✓ | | ✓ | | ✓ | | | ✓ | | |
-| deposits.approve / deposits.refund | ✓ | | ✓ | | | | | | | |
-| payments.view / payments.recordOffline | ✓ | ✓ | ✓ | | ✓ | ✓ | | ✓ | | self (view) |
-| payments.refund (at their branches) | ✓ | | ✓ | | ✓ | ✓ | | ✓ | | |
-| messaging.manage (WhatsApp connection, templates, log — at their branches) | ✓ | ✓ | | | ✓ | | | ✓ | | |
-| delivery.manage / delivery.assign | ✓ | | | | ✓ | ✓ | | ✓ | | |
-| delivery.execute (assigned only) | | | | | | | ✓ | | | |
-| delivery.configure (branch delivery settings, courier keys) | ✓ | ✓ | | | ✓ | | | ✓ | | |
-| employees.add (add employee records; branch managers at their own branches) | ✓ | ✓ | | ✓ | branch | | | ✓ | | |
-| employees.view / employees.edit | ✓ | ✓ | | ✓ | view (branch) | | | ✓ (own org) | self | |
-| employees.privateData | ✓ | | ✓ (bank) | ✓ | | | | | self | |
-| employees.lifecycle (onboarding, resignation, offboarding checklists) | ✓ | ✓ | | ✓ | | | | ✓ | | |
-| employees.bank (set / reveal salary account; reveals audited) | ✓ | | ✓ | ✓ | | | | | | |
-| hr.config (designations, checklist templates) | ✓ | ✓ | | ✓ | | | | ✓ | | |
-| documents.verify (verify employee documents; see docs/HRMS.md §7) | ✓ | | | ✓ | | | | ✓ | | |
-| offers.release (release and withdraw offer letters; never your own; see docs/HRMS.md §12) | ✓ | | | ✓ | branch | | | ✓ | | |
-| letters.issue (issue and withdraw appointment and custom letters; never your own; see docs/HRMS.md §13) | ✓ | | | ✓ | branch | | | ✓ | | |
-| attendance.view (day board, months, corrections) | ✓ | ✓ | ✓ | ✓ | branch | | | ✓ | self | |
-| attendance.finalize (lock a month, reopen) | ✓ | | | ✓ | | | | ✓ | | |
-| leave.adjust (opening balances, corrections, credit leave, cancel others' leave) | ✓ | | | ✓ | | | | ✓ | | |
-| salary.view (salaries, inputs, runs) · payslips.viewAll | ✓ | | ✓ | ✓ | | | | ✓ | self (published payslips) | |
-| salary.edit (salary versions, payroll settings) | ✓ | | | ✓ | | | | ✓ | | |
-| attendance.manage / corrections.approve | ✓ | | | ✓ | ✓ | | | ✓ | self (request) | |
-| leave.approve | ✓ | | | ✓ | ✓ | | | ✓ | self (apply) | |
-| payroll.run | ✓ | | | ✓ | | | | ✓ (own org) | | |
-| payroll.approve | ✓ | | ✓ | | | | | ✓ (own org, if configured) | | |
-| tasks.assign / tasks.approve / tasks.skip | ✓ | ✓ | | | ✓ | | | ✓ | | |
-| tasks.execute | | | | | | | | | self | |
-| sops.edit / sops.publish | ✓ | ✓ | | | edit | | | edit (own org) | | |
-| reports.view (scope-limited) | ✓ | ✓ | ✓ | ✓ | branch | | | own org | | |
-| config.manage | ✓ | ✓ | | | | | | | | |
-| audit.view | ✓ | ✓ | ✓ | ✓ (HR entities) | branch | | | own org | | |
+- **Organization-wide permissions** (`orgWide`: branches.manage, departments, plans, HR records and settings,
+  attendance finalizing, leave adjustments, salaries and payroll, deposit approval and refunds, the catalogue's edits,
+  the website, Library rules, publishing procedures) count only for someone whose access covers **all branches**. So a
+  Branch Owner of one corporate branch runs that branch, and the head office (Super Admin, or a Branch Owner with all
+  branches) runs the organization.
+- **Head office permissions** (`corporateOnly`: books.edit, books.delete, website.manage) count only in the corporate
+  organization: the shared catalogue and the website belong to it.
 
 Maker-checker: `deposits.adjust` creates a *pending* adjustment; `deposits.approve` must be held by a **different**
-user above a configurable threshold. Same pattern for refunds and payroll approval.
+user above a configurable threshold (Master control → Library rules). Same pattern for refunds and payroll approval.
 
 ## 4. Where authorization data lives
 
@@ -105,9 +80,13 @@ user above a configurable threshold. Same pattern for refunds and payroll approv
   role-changing callables call right after their transaction commits:
 
 ```json
-{ "v": 7, "sa": false, "hq": false,
-  "o": { "<orgId>": { "r": ["BM","LIB","EMP"], "b": ["<branchId>"] } } }
+{ "v": 7, "sa": false,
+  "o": { "<orgId>": { "r": ["SLIB","EMP"], "b": ["<branchId>"], "p": "0a0b0c…" } } }
 ```
+
+  `p` is every permission the person holds there — from ready-made roles and roles of their own, after the two rules
+  in §3 — as 2-character codes run together (`firebase/rules-src/permission-codes.json`, append-only so a token issued
+  before a deploy keeps its meaning). Rules check `p` (`holds()` in the rules); `r` is kept for display.
 
   Short role codes keep claims under the 1000-byte limit. `v` is a claims version; on change the sync also writes
   `users/{uid}.claimsVersion`, which the app watches to force an ID-token refresh (so revocation applies within
@@ -115,21 +94,21 @@ user above a configurable threshold. Same pattern for refunds and payroll approv
 - **Members need no claims.** Member access is ownership-based: `members/{id}.accountHolderUid == auth.uid`, or an
   active guardianship for a child member.
 
-### 4.1 Who may grant which roles (`grantable` in permissions.json)
+### 4.1 Who may give which roles (`grantable` in permissions.json)
 
-| Grantor | May grant | Branch limit |
+| Giver | May give | Branch limit |
 |---|---|---|
-| Super Admin | every org role (respecting org type) | none |
-| Head Office Admin | HO, Finance, HR, Catalogue Manager, Branch Manager, Librarian, Delivery, Employee | org-wide |
-| Franchise Owner | Finance, HR, Branch Manager, Librarian, Delivery, Employee (own org) | org-wide |
+| Super Admin | every role (respecting org type), and any role of one's own where it may be given | none |
+| Branch Owner | Senior Librarian, Librarian, Delivery Person, Employee; HR Admin, Finance Admin, Website Editor (organization-wide: only a Branch Owner with all branches) | own branches only |
+| Senior Librarian | Librarian, Delivery Person, Employee | own branches only |
 | HR Admin | Employee | org-wide |
-| Branch Manager | Librarian, Delivery, Employee | own branches only |
+| Anyone with staff.manageRoles | roles of the organization's own that give nothing they can't do themselves | own branches, and where the role may be given |
 
-Also enforced: nobody but a Super Admin edits their own roles; a grantor cannot edit or remove someone holding a role
-they cannot grant; org-wide roles (HO/FIN/HR/CM/FO) always cover all branches; Head Office Admin and Catalogue
-Manager only in corporate orgs,
-Franchise Owner only in franchise orgs; the person must already have signed in once. The first Super Admin is claimed
-once via `/setup` by the email in `functions/.env` (`BOOTSTRAP_SUPER_ADMIN_EMAIL`), which must be verified.
+Also enforced: nobody but a Super Admin edits their own roles; a giver cannot edit or remove someone holding a role
+they cannot give (ready-made or their own); organization-wide roles (HR/FIN/WEB, whole-organization roles of one's
+own) always cover all branches; Website Editor only in the corporate organization; the person must already have
+signed in once. The first Super Admin is claimed once via `/setup` by the email in `functions/.env`
+(`BOOTSTRAP_SUPER_ADMIN_EMAIL`), which must be verified.
 
 ## 5. Isolation model
 

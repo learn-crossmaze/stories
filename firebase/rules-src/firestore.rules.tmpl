@@ -6,7 +6,9 @@ rules_version = '2';
 // Cloud Functions (the Admin SDK bypasses rules), so these rules are almost all
 // read rules. Authorization comes from custom claims synced from
 // users/{uid}/memberships/{orgId}:
-//   { v, sa: bool, o: { <orgId>: { r: [roleCodes], b: [branchIds] | ['*'] } } }
+//   { v, sa: bool, o: { <orgId>: { r: [roleCodes], b: [branchIds] | ['*'], p: 'permission codes' } } }
+// `p` holds the person's permissions there (from ready-made roles and roles of their own), two characters each
+// (perms() below; docs/RBAC.md §4).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -42,9 +44,19 @@ service cloud.firestore {
       return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).b.hasAny(['*', b]));
     }
 
-    // RBAC: one of the caller's roles in org o grants permission perm.
+    // Whether claims c (one organization's) hold the permission with code `code` (codes are 2 characters).
+    function holds(c, code) {
+      return c.get('p', '').matches('(..)*' + code + '.*');
+    }
+
+    // Either of two permission codes.
+    function holdsEither(c, code1, code2) {
+      return c.get('p', '').matches('(..)*(' + code1 + '|' + code2 + ').*');
+    }
+
+    // RBAC: the caller holds permission perm in org o.
     function can(o, perm) {
-      return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).r.hasAny(perms()[perm]));
+      return isSA() || (signedIn() && orgClaims(o) != null && holds(orgClaims(o), perms()[perm]));
     }
 
     // Employee documents: the employee (uid), or HR (verifiers and employee
@@ -56,7 +68,7 @@ service cloud.firestore {
       let c = orgClaims(o);
       return (signedIn() && uid != null && uid == request.auth.uid) || isSA()
         || (c != null
-          && c.r.hasAny(p['documents.verify'].concat(p['employees.edit']))
+          && holdsEither(c, p['documents.verify'], p['employees.edit'])
           && ('*' in c.b || b in c.b));
     }
 
@@ -71,7 +83,7 @@ service cloud.firestore {
     // query must fit every rule it touches in one 1000-expression budget.
     function canAtEither(o, b1, b2, perm) {
       let c = orgClaims(o);
-      return isSA() || (signedIn() && c != null && c.r.hasAny(perms()[perm])
+      return isSA() || (signedIn() && c != null && holds(c, perms()[perm])
         && ('*' in c.b || b1 in c.b || b2 in c.b));
     }
 
@@ -79,7 +91,7 @@ service cloud.firestore {
     function canAtAny(o, b, perm1, perm2) {
       let p = perms();
       let c = orgClaims(o);
-      return isSA() || (signedIn() && c != null && c.r.hasAny(p[perm1].concat(p[perm2]))
+      return isSA() || (signedIn() && c != null && holdsEither(c, p[perm1], p[perm2])
         && ('*' in c.b || b in c.b));
     }
 

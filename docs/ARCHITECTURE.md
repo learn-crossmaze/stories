@@ -199,8 +199,9 @@ stories/
 - **One menu (as in LITMUS):** the staff console has a single sidebar, the same for everyone, showing only what
   each person's roles allow (no view switcher). In order: **Dashboard**; **Circulation**, **Collection** and
   **Members** (a branch's daily work); **Website** and **Enquiries** (storiesforall.in); **Staff** (employees,
-  documents, letters, attendance, leave, payroll); **Organization** (organizations, branches, departments, roles &
-  access, website admins, audit log); **Settings**; and **My employment** for every staff member (my profile,
+  documents, letters, attendance, leave, payroll); **Organization** (organizations, branches, departments, staff
+  access, website admins, audit log); **Master control** (Roles — the ready-made roles and roles of one's own,
+  docs/RBAC.md §2.1 —, Library rules, then the HR, payroll, WhatsApp, delivery and website-connection settings); and **My employment** for every staff member (my profile,
   attendance, leave, payslips, deliveries, completing the profile). Members (no staff role) never see the console:
   they are sent to the member area on the website. Staff who are also members open it from the account menu.
 

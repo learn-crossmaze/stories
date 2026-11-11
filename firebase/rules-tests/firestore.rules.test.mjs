@@ -18,11 +18,23 @@ import {
   where,
 } from 'firebase/firestore';
 
-// Claims shape: { v, sa, o: { orgId: { r: [roleCodes], b: [branchIds] | ['*'] } } } — docs/RBAC.md §4.
+// Claims shape: { v, sa, o: { orgId: { r: [roleCodes], b: [branchIds] | ['*'], p: 'permission codes' } } } — docs/RBAC.md §4.
+// Tests give role codes (and optionally extra permissions `x`, as from a role of one's own); `p` is worked out as the
+// claims sync does it (organization-wide permissions only with all branches).
 const CORP = 'org-corp';
 const FRAN = 'org-fran';
 const FRAN2 = 'org-fran2';
-const claims = (o = {}, sa = false) => ({ v: 1, sa, o });
+const RBAC = JSON.parse(readFileSync('firebase/rules-src/permissions.json', 'utf8'));
+const CODES = JSON.parse(readFileSync('firebase/rules-src/permission-codes.json', 'utf8'));
+const permsFor = ({ r = [], b = [], x = [] }) => {
+  const held = Object.entries(RBAC.permissions).filter(([, roles]) => roles.some((c) => r.includes(c))).map(([p]) => p);
+  return [...new Set([...held, ...x])].filter((p) => b.includes('*') || !RBAC.orgWide.list.includes(p)).map((p) => CODES[p]).sort().join('');
+};
+const claims = (o = {}, sa = false) => ({
+  v: 1,
+  sa,
+  o: Object.fromEntries(Object.entries(o).map(([id, c]) => [id, { r: c.r ?? [], b: c.b ?? [], p: permsFor(c) }])),
+});
 
 let env;
 const as = (uid, token) => env.authenticatedContext(uid, token).firestore();
@@ -44,7 +56,7 @@ beforeEach(async () => {
     await put('users/alice', { displayName: 'Alice' });
     await put(`users/alice/memberships/${CORP}`, { orgId: CORP, roles: ['LIBRARIAN'], branchIds: ['cen'], status: 'ACTIVE' });
     await put(`users/bob/memberships/${CORP}`, { orgId: CORP, roles: ['EMPLOYEE'], branchIds: ['nth'], status: 'ACTIVE' });
-    await put(`users/fred/memberships/${FRAN}`, { orgId: FRAN, roles: ['FRANCHISE_OWNER'], branchIds: ['*'], status: 'ACTIVE' });
+    await put(`users/fred/memberships/${FRAN}`, { orgId: FRAN, roles: ['BRANCH_OWNER'], branchIds: ['*'], status: 'ACTIVE' });
     for (const o of [CORP, FRAN, FRAN2]) await put(`orgs/${o}`, { name: o });
     await put(`orgs/${CORP}/branches/cen`, { name: 'Central', status: 'ACTIVE' });
     await put(`orgs/${CORP}/branches/nth`, { name: 'North', status: 'ACTIVE' });
@@ -141,7 +153,7 @@ describe('users', () => {
   it('clients cannot write profiles or grant themselves roles', async () => {
     const db = as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
     await assertFails(setDoc(doc(db, 'users/alice'), { displayName: 'X', platformRoles: ['SUPER_ADMIN'] }));
-    await assertFails(setDoc(doc(db, `users/alice/memberships/${CORP}`), { roles: ['HEAD_OFFICE_ADMIN'] }));
+    await assertFails(setDoc(doc(db, `users/alice/memberships/${CORP}`), { roles: ['BRANCH_OWNER'] }));
   });
 });
 
@@ -160,7 +172,7 @@ describe('organization isolation', () => {
   });
 
   it('Franchise A cannot read Franchise B', async () => {
-    const fo = as('fred', claims({ [FRAN]: { r: ['FO'], b: ['*'] } }));
+    const fo = as('fred', claims({ [FRAN]: { r: ['OWN'], b: ['*'] } }));
     await assertSucceeds(getDocs(collection(fo, `orgs/${FRAN}/branches`)));
     await assertFails(getDoc(doc(fo, `orgs/${FRAN2}`)));
     await assertFails(getDoc(doc(fo, `orgs/${FRAN2}/branches/fr2`)));
@@ -188,7 +200,7 @@ describe('organization isolation', () => {
   });
 
   it('clients cannot write org data even with roles', async () => {
-    const ho = as('hana', claims({ [CORP]: { r: ['HO'], b: ['*'] } }));
+    const ho = as('hana', claims({ [CORP]: { r: ['OWN'], b: ['*'] } }));
     await assertFails(setDoc(doc(ho, `orgs/${CORP}/branches/new`), { name: 'x' }));
     await assertFails(setDoc(doc(ho, `orgs/${CORP}`), { name: 'x' }));
   });
@@ -202,7 +214,7 @@ describe('audit log', () => {
   });
 
   it('branch managers read only their branch entries (branch isolation)', async () => {
-    const bm = as('bea', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+    const bm = as('bea', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
     await assertSucceeds(getDocs(query(collection(bm, `orgs/${CORP}/auditLogs`), where('branchId', 'in', ['cen']))));
     await assertSucceeds(getDoc(doc(bm, `orgs/${CORP}/auditLogs/a-cen`)));
     await assertFails(getDoc(doc(bm, `orgs/${CORP}/auditLogs/a-nth`)));
@@ -210,8 +222,16 @@ describe('audit log', () => {
     await assertFails(getDocs(collection(bm, `orgs/${CORP}/auditLogs`)));
   });
 
+  it('a role of the organization’s own gives exactly its permissions, in the holder’s branches', async () => {
+    const auditor = as('aud', claims({ [CORP]: { b: ['cen'], x: ['audit.view'] } }));
+    await assertSucceeds(getDoc(doc(auditor, `orgs/${CORP}/auditLogs/a-cen`)));
+    await assertFails(getDoc(doc(auditor, `orgs/${CORP}/auditLogs/a-nth`)));
+    const other = as('oth', claims({ [CORP]: { b: ['cen'], x: ['books.view'] } }));
+    await assertFails(getDoc(doc(other, `orgs/${CORP}/auditLogs/a-cen`)));
+  });
+
   it("a member's audit trail and payments load for branch staff with the branch filter", async () => {
-    const bm = as('bea', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+    const bm = as('bea', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
     const trail = (field) => query(collection(bm, `orgs/${CORP}/auditLogs`), where(field, '==', 'm-cen'), where('branchId', 'in', ['cen']));
     await assertSucceeds(getDocs(trail('memberId')));
     await assertSucceeds(getDocs(trail('entityId')));
@@ -236,7 +256,7 @@ describe('staff directory (memberships collection group)', () => {
   });
 
   it('branch managers list only staff overlapping their branches', async () => {
-    const bm = as('bea', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+    const bm = as('bea', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
     await assertSucceeds(
       getDocs(query(collectionGroup(bm, 'memberships'), where('orgId', '==', CORP), where('branchIds', 'array-contains-any', ['cen']))),
     );
@@ -288,13 +308,13 @@ describe('library (Phase 1)', () => {
     await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/depositAccounts/nobody`)));
     await assertSucceeds(getDoc(doc(lib(), `orgs/${CORP}/members/nobody`)));
     await assertFails(getDoc(doc(emp(), `orgs/${CORP}/members/nobody`)));
-    await assertFails(getDoc(doc(as('x', claims({ [FRAN]: { r: ['FO'], b: ['*'] } })), `orgs/${CORP}/members/nobody`)));
+    await assertFails(getDoc(doc(as('x', claims({ [FRAN]: { r: ['OWN'], b: ['*'] } })), `orgs/${CORP}/members/nobody`)));
   });
 
   it('Franchise A cannot read Franchise B members; corporate staff cannot read franchise members', async () => {
-    const fo2 = as('fred2', claims({ [FRAN2]: { r: ['FO'], b: ['*'] } }));
+    const fo2 = as('fred2', claims({ [FRAN2]: { r: ['OWN'], b: ['*'] } }));
     await assertFails(getDoc(doc(fo2, `orgs/${FRAN}/members/m-fr`)));
-    const ho = as('hana', claims({ [CORP]: { r: ['HO'], b: ['*'] } }));
+    const ho = as('hana', claims({ [CORP]: { r: ['OWN'], b: ['*'] } }));
     await assertFails(getDoc(doc(ho, `orgs/${FRAN}/members/m-fr`)));
   });
 
@@ -305,7 +325,7 @@ describe('library (Phase 1)', () => {
   });
 
   it('clients can never write library data, whatever their role', async () => {
-    const ho = as('hana', claims({ [CORP]: { r: ['HO'], b: ['*'] } }));
+    const ho = as('hana', claims({ [CORP]: { r: ['OWN'], b: ['*'] } }));
     await assertFails(setDoc(doc(ho, `orgs/${CORP}/copies/c-cen`), { status: 'RETIRED' }));
     await assertFails(setDoc(doc(ho, `orgs/${CORP}/depositAccounts/m-cen`), { balanceMinor: 0 }));
     await assertFails(setDoc(doc(lib(), `orgs/${CORP}/loans/l-new`), { status: 'ACTIVE' }));
@@ -314,7 +334,7 @@ describe('library (Phase 1)', () => {
 
 describe('HRMS employee records', () => {
   const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
-  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
   const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
 
   it('HR sees every record, including head-office staff without a branch', async () => {
@@ -351,7 +371,7 @@ describe('HRMS employee records', () => {
     await assertFails(getDoc(doc(as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } })), `orgs/${CORP}/members/m-cen/private/aadhaar`)));
     await assertFails(getDoc(doc(hrAdmin(), `orgs/${CORP}/aadhaarIndex/abc`)));
     // WhatsApp: the access token, templates and message queue are for functions only (pages use callables).
-    const bm = as('bm', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+    const bm = as('bm', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
     await assertFails(getDoc(doc(bm, `orgs/${CORP}/branches/cen/private/whatsapp`)));
     await assertFails(getDoc(doc(as('root', claims({}, true)), `orgs/${CORP}/branches/cen/private/whatsapp`)));
     await assertFails(getDoc(doc(bm, `orgs/${CORP}/branches/cen/whatsappTemplates/member_welcome`)));
@@ -380,13 +400,13 @@ describe('HRMS employee records', () => {
 
   it('designations are readable in the org only', async () => {
     await assertSucceeds(getDoc(doc(alice(), `orgs/${CORP}/designations/d1`)));
-    await assertFails(getDoc(doc(as('fred', claims({ [FRAN]: { r: ['FO'], b: ['*'] } })), `orgs/${CORP}/designations/d1`)));
+    await assertFails(getDoc(doc(as('fred', claims({ [FRAN]: { r: ['OWN'], b: ['*'] } })), `orgs/${CORP}/designations/d1`)));
   });
 });
 
 describe('HRMS attendance', () => {
   const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
-  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
   const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
 
   it('viewers see their branches; employees see only their own days', async () => {
@@ -410,7 +430,7 @@ describe('HRMS attendance', () => {
 
 describe('HRMS leave', () => {
   const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
-  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
   const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
 
   it('approvers see their branches; employees see their own requests and balances', async () => {
@@ -436,7 +456,7 @@ describe('HRMS leave', () => {
 describe('HRMS payroll', () => {
   const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
   const finance = () => as('fina', claims({ [CORP]: { r: ['FIN'], b: ['*'] } }));
-  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
   const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
 
   it('salary viewers see salaries, inputs and runs; branch managers do not', async () => {
@@ -463,7 +483,7 @@ describe('HRMS payroll', () => {
 describe('HRMS offer letters', () => {
   const hrAdmin = () => as('hira', claims({ [CORP]: { r: ['HR'], b: ['*'] } }));
   const finance = () => as('fina', claims({ [CORP]: { r: ['FIN'], b: ['*'] } }));
-  const bmCen = () => as('bina', claims({ [CORP]: { r: ['BM'], b: ['cen'] } }));
+  const bmCen = () => as('bina', claims({ [CORP]: { r: ['SLIB'], b: ['cen'] } }));
   const alice = () => as('alice', claims({ [CORP]: { r: ['LIB'], b: ['cen'] } }));
 
   it('those who release offers at the branch and the employee read them; nobody writes', async () => {

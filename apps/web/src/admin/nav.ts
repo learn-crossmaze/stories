@@ -2,6 +2,7 @@ import { can, isStaff, type StoriesClaims } from '../auth/claims';
 import type { Permission } from '../generated/rbac';
 import { paths } from '../paths';
 import { t } from '../strings';
+import { ct } from '../strings/control';
 import { ht } from '../strings/hr';
 import { lt } from '../strings/library';
 import { wt } from '../strings/messaging';
@@ -133,11 +134,14 @@ export const MENU: NavEntry[] = [
       { to: paths.adminAudit, label: t.navAudit, icon: 'history', requires: 'audit.view' },
     ],
   },
+  // Master control (as in LITMUS): what each role allows, the organization's rules, and every other setting.
   {
     id: 'settings',
-    label: t.groupSettings,
+    label: ct.group,
     icon: 'tune',
     items: [
+      { to: paths.adminRoles, label: ct.navRoles, icon: 'key', requires: 'roles.manage' },
+      { to: paths.adminLibraryRules, label: ct.navRules, icon: 'book', requires: 'config.manage' },
       { to: paths.adminHrSettings, label: ht.navJobSettings, icon: 'badge', requires: 'hr.config' },
       { to: paths.adminSettingsSchedule, label: ht.navScheduleSettings, icon: 'clock', requires: 'hr.config' },
       { to: paths.adminSettingsLeave, label: ht.navLeaveTypes, icon: 'calendar', requires: 'hr.config' },

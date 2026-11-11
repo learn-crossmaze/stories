@@ -3,33 +3,32 @@ export const ROLES = {
   "SUPER_ADMIN": {
     "code": "SA",
     "scope": "platform",
-    "label": "Super Admin"
+    "label": "Super Admin",
+    "summary": "Everything in every organization: organizations, the shared catalogue, Master control. Can make roles for every organization."
   },
-  "HEAD_OFFICE_ADMIN": {
-    "code": "HO",
-    "scope": "org",
-    "orgTypes": [
-      "CORPORATE"
-    ],
-    "label": "Head Office Admin"
+  "BRANCH_OWNER": {
+    "code": "OWN",
+    "scope": "branch",
+    "label": "Branch Owner",
+    "summary": "Runs their branches: the counter, members and money, staff and their roles, approvals, branch settings, and their own roles. With all branches: the organization's settings, HR and payroll too."
   },
-  "FINANCE_ADMIN": {
-    "code": "FIN",
-    "scope": "org",
-    "label": "Finance Admin"
+  "SENIOR_LIBRARIAN": {
+    "code": "SLIB",
+    "scope": "branch",
+    "label": "Senior Librarian",
+    "summary": "A Librarian who also approves: leave and attendance corrections, write-offs, deposit adjustments; gives Librarian and Delivery roles; branch delivery, WhatsApp and website pages."
   },
-  "HR_ADMIN": {
-    "code": "HR",
-    "scope": "org",
-    "label": "HR Admin"
+  "LIBRARIAN": {
+    "code": "LIB",
+    "scope": "branch",
+    "label": "Librarian",
+    "summary": "The counter: issue, return and exchange, reservations, members and payments, shelving and transfers, blog posts."
   },
-  "CATALOGUE_MANAGER": {
-    "code": "CM",
-    "scope": "org",
-    "orgTypes": [
-      "CORPORATE"
-    ],
-    "label": "Catalogue Manager"
+  "DELIVERY_PERSON": {
+    "code": "DEL",
+    "scope": "branch",
+    "label": "Delivery Person",
+    "summary": "Their own delivery runs: pick-ups and drop-offs assigned to them."
   },
   "WEBSITE_EDITOR": {
     "code": "WEB",
@@ -37,35 +36,26 @@ export const ROLES = {
     "orgTypes": [
       "CORPORATE"
     ],
-    "label": "Website Editor"
+    "label": "Website Editor",
+    "summary": "The website: blog, branch pages, offers, festive cards, settings; publishing."
   },
-  "FRANCHISE_OWNER": {
-    "code": "FO",
+  "HR_ADMIN": {
+    "code": "HR",
     "scope": "org",
-    "orgTypes": [
-      "FRANCHISE"
-    ],
-    "label": "Franchise Owner"
+    "label": "HR Admin",
+    "summary": "Employees and their documents, attendance and leave, HR settings, preparing payroll."
   },
-  "BRANCH_MANAGER": {
-    "code": "BM",
-    "scope": "branch",
-    "label": "Branch Manager"
-  },
-  "LIBRARIAN": {
-    "code": "LIB",
-    "scope": "branch",
-    "label": "Librarian"
-  },
-  "DELIVERY_PERSON": {
-    "code": "DEL",
-    "scope": "branch",
-    "label": "Delivery Person"
+  "FINANCE_ADMIN": {
+    "code": "FIN",
+    "scope": "org",
+    "label": "Finance Admin",
+    "summary": "Payments, refunds, deposit approvals, payroll approval, bank details."
   },
   "EMPLOYEE": {
     "code": "EMP",
     "scope": "branch",
-    "label": "Employee"
+    "label": "Employee",
+    "summary": "Self-service only: their profile, attendance, leave, payslips and tasks."
   }
 } as const;
 
@@ -73,378 +63,544 @@ export type Role = keyof typeof ROLES;
 export type RoleCode = (typeof ROLES)[Role]['code'];
 
 export const PERMISSIONS = {
-  "org.manage": [],
-  "branches.view": [
-    "HO",
-    "FIN",
-    "HR",
-    "FO",
-    "BM",
-    "LIB",
-    "DEL",
-    "EMP",
-    "WEB"
-  ],
-  "branches.manage": [
-    "HO",
-    "FO"
-  ],
-  "messaging.manage": [
-    "HO",
-    "FO",
-    "BM"
-  ],
-  "departments.manage": [
-    "HO",
-    "HR",
-    "FO"
-  ],
-  "staff.view": [
-    "HO",
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "staff.manageRoles": [
-    "HO",
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "audit.view": [
-    "HO",
-    "FIN",
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "config.manage": [
-    "HO"
-  ],
-  "books.view": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB",
-    "DEL",
-    "CM",
-    "WEB"
-  ],
-  "books.create": [
-    "HO",
-    "BM",
-    "LIB",
-    "CM"
-  ],
-  "books.edit": [
-    "HO",
-    "CM"
-  ],
-  "books.delete": [
-    "HO",
-    "CM"
-  ],
-  "copies.manage": [
-    "HO",
-    "FO",
-    "BM",
-    "LIB"
-  ],
-  "books.transfer": [
-    "HO",
-    "FO",
-    "BM",
-    "LIB"
-  ],
-  "copies.writeOff": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM"
-  ],
-  "members.view": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
-  ],
-  "members.manage": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
-  ],
   "loans.issue": [
-    "FO",
-    "BM",
+    "OWN",
+    "SLIB",
     "LIB"
   ],
   "loans.return": [
-    "FO",
-    "BM",
+    "OWN",
+    "SLIB",
     "LIB"
   ],
   "exchanges.process": [
-    "FO",
-    "BM",
+    "OWN",
+    "SLIB",
     "LIB"
   ],
   "reservations.manage": [
-    "FO",
-    "BM",
+    "OWN",
+    "SLIB",
     "LIB"
+  ],
+  "books.transfer": [
+    "OWN",
+    "SLIB",
+    "LIB"
+  ],
+  "books.view": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "DEL",
+    "WEB",
+    "FIN"
+  ],
+  "books.create": [
+    "OWN",
+    "SLIB",
+    "LIB"
+  ],
+  "books.edit": [
+    "OWN"
+  ],
+  "books.delete": [
+    "OWN"
+  ],
+  "copies.manage": [
+    "OWN",
+    "SLIB",
+    "LIB"
+  ],
+  "copies.writeOff": [
+    "OWN",
+    "SLIB",
+    "FIN"
+  ],
+  "members.view": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
+  ],
+  "members.manage": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
   ],
   "subscriptions.manage": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
   ],
   "plans.manage": [
-    "HO"
+    "OWN"
+  ],
+  "payments.view": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
+  ],
+  "payments.recordOffline": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
+  ],
+  "payments.refund": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
   ],
   "deposits.view": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
+    "OWN",
+    "SLIB",
+    "LIB",
+    "FIN"
   ],
   "deposits.adjust": [
-    "FIN",
-    "FO",
-    "BM"
+    "OWN",
+    "SLIB",
+    "FIN"
   ],
   "deposits.approve": [
+    "OWN",
     "FIN"
   ],
   "deposits.refund": [
+    "OWN",
     "FIN"
   ],
-  "payments.view": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
-  ],
-  "payments.recordOffline": [
-    "HO",
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
-  ],
-  "payments.refund": [
-    "FIN",
-    "FO",
-    "BM",
-    "LIB"
-  ],
   "delivery.manage": [
-    "FO",
-    "BM",
+    "OWN",
+    "SLIB",
     "LIB"
   ],
   "delivery.assign": [
-    "FO",
-    "BM",
+    "OWN",
+    "SLIB",
     "LIB"
   ],
   "delivery.execute": [
     "DEL"
   ],
   "delivery.configure": [
-    "HO",
-    "FO",
-    "BM"
-  ],
-  "employees.view": [
-    "HO",
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "employees.edit": [
-    "HO",
-    "HR",
-    "FO"
-  ],
-  "employees.add": [
-    "HO",
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "employees.privateData": [
-    "FIN",
-    "HR"
-  ],
-  "employees.lifecycle": [
-    "HO",
-    "HR",
-    "FO"
-  ],
-  "employees.bank": [
-    "FIN",
-    "HR"
-  ],
-  "hr.config": [
-    "HO",
-    "HR",
-    "FO"
-  ],
-  "documents.verify": [
-    "HR",
-    "FO"
-  ],
-  "offers.release": [
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "letters.issue": [
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "attendance.view": [
-    "HO",
-    "HR",
-    "FO",
-    "BM",
-    "FIN"
-  ],
-  "attendance.finalize": [
-    "HR",
-    "FO"
-  ],
-  "leave.adjust": [
-    "HR",
-    "FO"
-  ],
-  "salary.view": [
-    "HR",
-    "FIN",
-    "FO"
-  ],
-  "salary.edit": [
-    "HR",
-    "FO"
-  ],
-  "payslips.viewAll": [
-    "HR",
-    "FIN",
-    "FO"
-  ],
-  "attendance.manage": [
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "corrections.approve": [
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "leave.approve": [
-    "HR",
-    "FO",
-    "BM"
-  ],
-  "payroll.run": [
-    "HR",
-    "FO"
-  ],
-  "payroll.approve": [
-    "FIN",
-    "FO"
-  ],
-  "tasks.assign": [
-    "HO",
-    "FO",
-    "BM"
-  ],
-  "tasks.approve": [
-    "HO",
-    "FO",
-    "BM"
-  ],
-  "tasks.skip": [
-    "HO",
-    "FO",
-    "BM"
-  ],
-  "tasks.execute": [
-    "EMP",
-    "BM",
-    "LIB",
-    "DEL"
+    "OWN",
+    "SLIB"
   ],
   "website.manage": [
-    "HO",
+    "OWN",
     "WEB"
   ],
   "website.branch": [
-    "FO",
-    "BM"
+    "OWN",
+    "SLIB"
   ],
   "blog.write": [
-    "HO",
-    "WEB",
-    "FO",
-    "BM",
-    "LIB"
+    "OWN",
+    "SLIB",
+    "LIB",
+    "WEB"
+  ],
+  "employees.view": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "employees.add": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "employees.edit": [
+    "OWN",
+    "HR"
+  ],
+  "employees.privateData": [
+    "HR",
+    "FIN"
+  ],
+  "employees.lifecycle": [
+    "OWN",
+    "HR"
+  ],
+  "employees.bank": [
+    "HR",
+    "FIN"
+  ],
+  "documents.verify": [
+    "OWN",
+    "HR"
+  ],
+  "offers.release": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "letters.issue": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "attendance.view": [
+    "OWN",
+    "SLIB",
+    "HR",
+    "FIN"
+  ],
+  "attendance.manage": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "corrections.approve": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "attendance.finalize": [
+    "OWN",
+    "HR"
+  ],
+  "leave.approve": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "leave.adjust": [
+    "OWN",
+    "HR"
+  ],
+  "hr.config": [
+    "OWN",
+    "HR"
+  ],
+  "salary.view": [
+    "OWN",
+    "HR",
+    "FIN"
+  ],
+  "salary.edit": [
+    "OWN",
+    "HR"
+  ],
+  "payslips.viewAll": [
+    "OWN",
+    "HR",
+    "FIN"
+  ],
+  "payroll.run": [
+    "OWN",
+    "HR"
+  ],
+  "payroll.approve": [
+    "OWN",
+    "FIN"
+  ],
+  "tasks.assign": [
+    "OWN",
+    "SLIB"
+  ],
+  "tasks.approve": [
+    "OWN",
+    "SLIB"
+  ],
+  "tasks.skip": [
+    "OWN",
+    "SLIB"
+  ],
+  "tasks.execute": [
+    "SLIB",
+    "LIB",
+    "DEL",
+    "EMP"
   ],
   "sops.edit": [
-    "HO",
-    "FO",
-    "BM"
+    "OWN",
+    "SLIB"
   ],
   "sops.publish": [
-    "HO"
+    "OWN"
+  ],
+  "branches.view": [
+    "OWN",
+    "SLIB",
+    "LIB",
+    "DEL",
+    "EMP",
+    "WEB",
+    "HR",
+    "FIN"
+  ],
+  "branches.manage": [
+    "OWN"
+  ],
+  "departments.manage": [
+    "OWN",
+    "HR"
+  ],
+  "staff.view": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "staff.manageRoles": [
+    "OWN",
+    "SLIB",
+    "HR"
+  ],
+  "roles.manage": [
+    "OWN"
+  ],
+  "messaging.manage": [
+    "OWN",
+    "SLIB"
+  ],
+  "audit.view": [
+    "OWN",
+    "SLIB",
+    "HR",
+    "FIN"
   ],
   "reports.view": [
-    "HO",
-    "FIN",
+    "OWN",
+    "SLIB",
     "HR",
-    "FO",
-    "BM"
-  ]
+    "FIN"
+  ],
+  "config.manage": [
+    "OWN"
+  ],
+  "org.manage": []
 } as const satisfies Record<string, readonly string[]>;
 
 export type Permission = keyof typeof PERMISSIONS;
 
+/** Each permission's code in sign-in tokens (claims `p`, two characters each). */
+export const PERMISSION_CODES: Record<Permission, string> = {
+  "loans.issue": "00",
+  "loans.return": "01",
+  "exchanges.process": "02",
+  "reservations.manage": "03",
+  "books.transfer": "04",
+  "books.view": "05",
+  "books.create": "06",
+  "books.edit": "07",
+  "books.delete": "08",
+  "copies.manage": "09",
+  "copies.writeOff": "0a",
+  "members.view": "0b",
+  "members.manage": "0c",
+  "subscriptions.manage": "0d",
+  "plans.manage": "0e",
+  "payments.view": "0f",
+  "payments.recordOffline": "0g",
+  "payments.refund": "0h",
+  "deposits.view": "0i",
+  "deposits.adjust": "0j",
+  "deposits.approve": "0k",
+  "deposits.refund": "0l",
+  "delivery.manage": "0m",
+  "delivery.assign": "0n",
+  "delivery.execute": "0o",
+  "delivery.configure": "0p",
+  "website.manage": "0q",
+  "website.branch": "0r",
+  "blog.write": "0s",
+  "employees.view": "0t",
+  "employees.add": "0u",
+  "employees.edit": "0v",
+  "employees.privateData": "0w",
+  "employees.lifecycle": "0x",
+  "employees.bank": "0y",
+  "documents.verify": "0z",
+  "offers.release": "0A",
+  "letters.issue": "0B",
+  "attendance.view": "0C",
+  "attendance.manage": "0D",
+  "corrections.approve": "0E",
+  "attendance.finalize": "0F",
+  "leave.approve": "0G",
+  "leave.adjust": "0H",
+  "hr.config": "0I",
+  "salary.view": "0J",
+  "salary.edit": "0K",
+  "payslips.viewAll": "0L",
+  "payroll.run": "0M",
+  "payroll.approve": "0N",
+  "tasks.assign": "0O",
+  "tasks.approve": "0P",
+  "tasks.skip": "0Q",
+  "tasks.execute": "0R",
+  "sops.edit": "0S",
+  "sops.publish": "0T",
+  "branches.view": "0U",
+  "branches.manage": "0V",
+  "departments.manage": "0W",
+  "staff.view": "0X",
+  "staff.manageRoles": "0Y",
+  "roles.manage": "0Z",
+  "messaging.manage": "10",
+  "audit.view": "11",
+  "reports.view": "12",
+  "config.manage": "13",
+  "org.manage": "14"
+};
+
+/** Count only for someone whose access covers all branches. */
+export const ORG_WIDE: readonly Permission[] = ["books.edit","books.delete","plans.manage","deposits.approve","deposits.refund","website.manage","employees.edit","employees.privateData","employees.lifecycle","employees.bank","documents.verify","attendance.finalize","leave.adjust","hr.config","salary.view","salary.edit","payslips.viewAll","payroll.run","payroll.approve","sops.publish","branches.manage","departments.manage","config.manage"];
+
+/** Count only in the corporate organization (head office: the shared catalogue, the website). */
+export const CORPORATE_ONLY: readonly Permission[] = ["books.edit","books.delete","website.manage"];
+
+/** Never in a role of one's own. */
+export const SUPER_ADMIN_ONLY: readonly Permission[] = ["org.manage"];
+
+/** The permissions grouped as the role editor shows them. */
+export const AREAS: readonly { key: string; name: string; permissions: Partial<Record<Permission, string>> }[] = [
+  {
+    "key": "circulation",
+    "name": "Circulation",
+    "permissions": {
+      "loans.issue": "Issue books at the counter",
+      "loans.return": "Take books back",
+      "exchanges.process": "Exchange books",
+      "reservations.manage": "Manage reservations and the waiting list",
+      "books.transfer": "Send and receive books between branches"
+    }
+  },
+  {
+    "key": "collection",
+    "name": "Collection",
+    "permissions": {
+      "books.view": "Look up the catalogue and copies",
+      "books.create": "Add titles, authors, publishers, categories; a missing cover",
+      "books.edit": "Change and archive titles and reference data in the shared catalogue",
+      "books.delete": "Delete archived titles no library ever stocked",
+      "copies.manage": "Add copies, shelve them, record their condition",
+      "copies.writeOff": "Write copies off (lost, retired)"
+    }
+  },
+  {
+    "key": "members",
+    "name": "Members and money",
+    "permissions": {
+      "members.view": "See members",
+      "members.manage": "Add and change members",
+      "subscriptions.manage": "Sell and renew memberships",
+      "plans.manage": "Set up membership plans and prices",
+      "payments.view": "See payments",
+      "payments.recordOffline": "Record cash and UPI payments",
+      "payments.refund": "Refund payments",
+      "deposits.view": "See deposits",
+      "deposits.adjust": "Propose deposit deductions and adjustments",
+      "deposits.approve": "Approve deposit adjustments (never your own)",
+      "deposits.refund": "Refund deposits"
+    }
+  },
+  {
+    "key": "delivery",
+    "name": "Delivery",
+    "permissions": {
+      "delivery.manage": "Manage delivery orders",
+      "delivery.assign": "Assign deliveries to riders",
+      "delivery.execute": "Do the deliveries assigned to them",
+      "delivery.configure": "Branch delivery settings and courier keys"
+    }
+  },
+  {
+    "key": "website",
+    "name": "Website",
+    "permissions": {
+      "website.manage": "Run the website: settings, sections, offers, cards, jobs; publish",
+      "website.branch": "Their branches' pages and enquiries",
+      "blog.write": "Write blog posts and send them for review"
+    }
+  },
+  {
+    "key": "staff",
+    "name": "Staff",
+    "permissions": {
+      "employees.view": "See employees",
+      "employees.add": "Add employee records",
+      "employees.edit": "Change employee records",
+      "employees.privateData": "See private employee details",
+      "employees.lifecycle": "Onboarding, resignation and offboarding",
+      "employees.bank": "Set and reveal salary bank accounts",
+      "documents.verify": "Verify employee documents",
+      "offers.release": "Release offer letters (never their own)",
+      "letters.issue": "Issue appointment and other letters (never their own)",
+      "attendance.view": "See attendance",
+      "attendance.manage": "Mark and correct attendance",
+      "corrections.approve": "Approve attendance corrections",
+      "attendance.finalize": "Lock and reopen a month's attendance",
+      "leave.approve": "Approve leave",
+      "leave.adjust": "Adjust leave balances; cancel others' leave",
+      "hr.config": "HR settings: job titles, schedules, leave and document types, letter templates"
+    }
+  },
+  {
+    "key": "payroll",
+    "name": "Payroll",
+    "permissions": {
+      "salary.view": "See salaries and payroll runs",
+      "salary.edit": "Change salaries and payroll settings",
+      "payslips.viewAll": "See everyone's payslips",
+      "payroll.run": "Prepare payroll",
+      "payroll.approve": "Approve payroll (never their own run)"
+    }
+  },
+  {
+    "key": "work",
+    "name": "Tasks and procedures",
+    "permissions": {
+      "tasks.assign": "Assign tasks",
+      "tasks.approve": "Approve finished tasks",
+      "tasks.skip": "Skip tasks",
+      "tasks.execute": "Do the tasks given to them",
+      "sops.edit": "Write procedures",
+      "sops.publish": "Publish procedures"
+    }
+  },
+  {
+    "key": "organization",
+    "name": "Organization and Master control",
+    "permissions": {
+      "branches.view": "Look branches and departments up",
+      "branches.manage": "Add and change branches",
+      "departments.manage": "Set up departments",
+      "staff.view": "See who has which role",
+      "staff.manageRoles": "Give and remove roles",
+      "roles.manage": "Make roles of their own (from permissions they hold)",
+      "messaging.manage": "WhatsApp connection, templates and log",
+      "audit.view": "See the audit log",
+      "reports.view": "See reports",
+      "config.manage": "Master control: library rules",
+      "org.manage": "Organizations"
+    }
+  }
+];
+
 export const GRANTABLE: Partial<Record<Role, readonly Role[]>> = {
-  "HEAD_OFFICE_ADMIN": [
-    "HEAD_OFFICE_ADMIN",
-    "FINANCE_ADMIN",
-    "HR_ADMIN",
-    "CATALOGUE_MANAGER",
-    "WEBSITE_EDITOR",
-    "BRANCH_MANAGER",
+  "BRANCH_OWNER": [
+    "SENIOR_LIBRARIAN",
     "LIBRARIAN",
     "DELIVERY_PERSON",
-    "EMPLOYEE"
-  ],
-  "FRANCHISE_OWNER": [
-    "FINANCE_ADMIN",
+    "EMPLOYEE",
     "HR_ADMIN",
-    "BRANCH_MANAGER",
+    "FINANCE_ADMIN",
+    "WEBSITE_EDITOR"
+  ],
+  "SENIOR_LIBRARIAN": [
     "LIBRARIAN",
     "DELIVERY_PERSON",
     "EMPLOYEE"
   ],
   "HR_ADMIN": [
-    "EMPLOYEE"
-  ],
-  "BRANCH_MANAGER": [
-    "LIBRARIAN",
-    "DELIVERY_PERSON",
     "EMPLOYEE"
   ]
 };

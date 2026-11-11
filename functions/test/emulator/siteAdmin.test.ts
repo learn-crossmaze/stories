@@ -29,8 +29,8 @@ beforeEach(async () => {
   central = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'CEN', name: 'Central', address, contact: { phone: '7259921508' }, operatingHours: [{ day: 'MON', open: '10:00', close: '19:00' }] })).branchId;
   north = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'NTH', name: 'North', address, contact })).branchId;
   await call(staff.setRoles, sa, { orgId: org, email: editor.email, roles: ['WEBSITE_EDITOR'], branchIds: ['*'] });
-  await call(staff.setRoles, sa, { orgId: org, email: bm.email, roles: ['BRANCH_MANAGER'], branchIds: [central] });
-  await call(staff.setRoles, sa, { orgId: org, email: otherBm.email, roles: ['BRANCH_MANAGER'], branchIds: [north] });
+  await call(staff.setRoles, sa, { orgId: org, email: bm.email, roles: ['SENIOR_LIBRARIAN'], branchIds: [central] });
+  await call(staff.setRoles, sa, { orgId: org, email: otherBm.email, roles: ['SENIOR_LIBRARIAN'], branchIds: [north] });
   await call(staff.setRoles, sa, { orgId: org, email: lib.email, roles: ['LIBRARIAN'], branchIds: [central] });
 });
 

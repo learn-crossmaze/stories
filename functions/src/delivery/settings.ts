@@ -5,6 +5,7 @@ import { recordAudit } from '../core/audit.js';
 import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { holds, type Membership } from '../core/rbac.js';
 import { id } from '../core/schemas.js';
 import { COURIER_KEYS, COURIERS, type CourierKey } from './couriers.js';
 import { DEFAULT_SETTINGS, type DeliverySettings, newWebhookToken, privateRef, settingsOf, settingsSchema } from './model.js';
@@ -13,16 +14,13 @@ import { DEFAULT_SETTINGS, type DeliverySettings, newWebhookToken, privateRef, s
 // slots, the branch's map location, and the ways it delivers — its own staff,
 // other couriers updated by hand, and courier apps booked by API (Porter).
 
-const RIDER_ROLES = ['DELIVERY_PERSON', 'BRANCH_MANAGER', 'LIBRARIAN', 'FRANCHISE_OWNER'];
-
 /** Where couriers send status updates for this branch. */
 const webhookPath = (orgId: string, branchId: string, token: string) =>
   `deliveryWebhook?o=${encodeURIComponent(orgId)}&b=${encodeURIComponent(branchId)}&t=${token}`;
 
 /**
  * The branch's delivery settings (no secrets), the couriers Stories supports,
- * and who can deliver (staff at the branch with a delivery, librarian, manager
- * or owner role). The webhook URL is shown to those who configure delivery.
+ * and who can deliver (staff at the branch who do or manage deliveries). The webhook URL is shown to those who configure delivery.
  */
 export const settings = query('deliveries-settings', z.strictObject({ orgId: id, branchId: id }), async ({ actor, input }) => {
   const configure = await actor.can('delivery.configure', input.orgId, input.branchId);
@@ -36,12 +34,12 @@ export const settings = query('deliveries-settings', z.strictObject({ orgId: id,
   const riders = staff.docs
     .filter((m) => {
       const branches = (m.get('branchIds') as string[]) ?? [];
-      return (branches.includes('*') || branches.includes(input.branchId)) && ((m.get('roles') as string[]) ?? []).some((r) => RIDER_ROLES.includes(r));
+      return (branches.includes('*') || branches.includes(input.branchId)) && (holds(m.data() as Membership, 'delivery.execute') || holds(m.data() as Membership, 'delivery.manage'));
     })
     .map((m) => ({
       uid: m.ref.parent.parent!.id,
       name: (m.get('displayName') as string | null) || (m.get('email') as string),
-      delivery: ((m.get('roles') as string[]) ?? []).includes('DELIVERY_PERSON'),
+      delivery: holds(m.data() as Membership, 'delivery.execute'),
     }))
     .sort((a, b) => Number(b.delivery) - Number(a.delivery) || a.name.localeCompare(b.name));
   const token = secret.get('webhookToken') as string | undefined;

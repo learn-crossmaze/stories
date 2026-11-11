@@ -18,6 +18,7 @@ import * as shelving from '../../src/inventory/shelve.js';
 import * as me from '../../src/members/me.js';
 import * as members from '../../src/members/members.js';
 import * as orgs from '../../src/organization/orgs.js';
+import * as roles from '../../src/organization/roles.js';
 import * as staff from '../../src/organization/staff.js';
 import * as deposits from '../../src/billing/deposits.js';
 import * as plans from '../../src/billing/plans.js';
@@ -65,7 +66,7 @@ beforeEach(async () => {
   north = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'NTH', name: 'North', address, contact })).branchId;
   await grant(lib, ['LIBRARIAN'], [central, north]);
   await grant(lib2, ['LIBRARIAN'], [central]);
-  await grant(bm, ['BRANCH_MANAGER'], [central]);
+  await grant(bm, ['SENIOR_LIBRARIAN'], [central]);
   await grant(fin, ['FINANCE_ADMIN'], ['*']);
   await grant(fin2, ['FINANCE_ADMIN'], ['*']);
   authorId = (await call<{ id: string }>(catalog.authors.create, sa, { name: 'Robert Louis Stevenson' })).id;
@@ -86,18 +87,21 @@ describe('M1.1 catalogue', () => {
 
   it('only head office can edit the shared catalogue', async () => {
     const ho = await createUser('ho@stories.test');
-    await grant(ho, ['HEAD_OFFICE_ADMIN'], ['*']);
+    await grant(ho, ['BRANCH_OWNER'], ['*']);
     await call(catalog.authors.create, ho, { name: 'Jules Verne' });
     expect(await failure(call(catalog.authors.create, fin, { name: 'Someone' }))).toBe('FORBIDDEN');
     const fran = (await call<{ orgId: string }>(orgs.create, sa, { name: 'Franchise', type: 'FRANCHISE' })).orgId;
     const fo = await createUser('fo@stories.test');
-    await call(staff.setRoles, sa, { orgId: fran, email: fo.email, roles: ['FRANCHISE_OWNER'], branchIds: ['*'] });
+    await call(staff.setRoles, sa, { orgId: fran, email: fo.email, roles: ['BRANCH_OWNER'], branchIds: ['*'] });
     expect(await failure(call(catalog.authors.create, fo, { name: 'Someone' }))).toBe('FORBIDDEN');
   });
 
-  it('catalogue managers edit, restore and delete archived titles; titles with history stay', async () => {
+  it('catalogue editors (a role of the organization’s own) edit, restore and delete archived titles; titles with history stay', async () => {
     const cm = await createUser('cm@stories.test');
-    await grant(cm, ['CATALOGUE_MANAGER'], ['*']);
+    const { roleId } = await call<{ roleId: string }>(roles.save, sa, {
+      orgId: org, name: 'Catalogue Editor', permissions: ['books.view', 'books.create', 'books.edit', 'books.delete'], branchIds: ['*'], wholeOrg: true,
+    });
+    await call(staff.setRoles, sa, { orgId: org, email: cm.email, roles: [], customRoles: [roleId], branchIds: ['*'] });
     const spare = await newBook('Kidnapped', '9780141441900');
     await call(catalog.archive, cm, { bookId: spare, reason: 'Duplicate entry' });
 
@@ -128,10 +132,10 @@ describe('M1.1 catalogue', () => {
     expect((await call<{ summary: string | null }>(catalog.usage, cm, { bookId: (await newBook('Unused')) }, null)).summary).toBeNull();
     expect(await failure(call(catalog.usage, lib, { bookId }, null))).toBe('FORBIDDEN');
 
-    // Branch managers may add titles but not delete them; the role exists only in corporate organizations.
+    // Senior librarians may add titles but not delete them; the role belongs to its organization.
     expect(await failure(call(catalog.remove, bm, { bookId, reason: 'Out of print' }))).toBe('FORBIDDEN');
     const fran = (await call<{ orgId: string }>(orgs.create, sa, { name: 'Franchise', type: 'FRANCHISE' })).orgId;
-    expect(await failure(call(staff.setRoles, sa, { orgId: fran, email: cm.email, roles: ['CATALOGUE_MANAGER'], branchIds: ['*'] }))).not.toBe('OK');
+    expect(await failure(call(staff.setRoles, sa, { orgId: fran, email: cm.email, roles: [], customRoles: [roleId], branchIds: ['*'] }))).toBe('FORBIDDEN');
   });
 
   it('keeps denormalized author names and search tokens fresh after a rename', async () => {

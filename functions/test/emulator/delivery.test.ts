@@ -85,7 +85,7 @@ beforeEach(async () => {
   [bm, lib, rider, rider2] = await Promise.all(['bm', 'lib', 'rider', 'rider2'].map((n) => createUser(`${n}@stories.test`)));
   org = (await call<{ orgId: string }>(orgs.create, sa, { name: 'Stories Corporate', type: 'CORPORATE' })).orgId;
   central = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'CEN', name: 'Central', address, contact })).branchId;
-  await grant(bm, ['BRANCH_MANAGER'], [central]);
+  await grant(bm, ['SENIOR_LIBRARIAN'], [central]);
   await grant(lib, ['LIBRARIAN'], [central]);
   await grant(rider, ['DELIVERY_PERSON'], [central]);
   await grant(rider2, ['DELIVERY_PERSON'], [central]);

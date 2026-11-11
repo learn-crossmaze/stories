@@ -61,7 +61,7 @@ describe('claims', () => {
     const lib = await createUser('lib@stories.test');
     await call(staff.setRoles, sa, { orgId: org, email: lib.email, roles: ['LIBRARIAN'], branchIds: [central] });
     expect((await db.doc(`users/${lib.uid}`).get()).get('claimsStale')).toBe(false);
-    expect((await auth.getUser(lib.uid)).customClaims?.o?.[org]).toEqual({ r: ['LIB'], b: [central] });
+    expect((await auth.getUser(lib.uid)).customClaims?.o?.[org]).toMatchObject({ r: ['LIB'], b: [central], p: expect.stringMatching(/^([0-9a-zA-Z]{2})+$/) });
 
     // A revoke whose token update never happened (e.g. the function was cut off after the commit).
     await db.doc(`users/${lib.uid}/memberships/${org}`).update({ status: 'REVOKED', roles: [] });

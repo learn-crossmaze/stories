@@ -213,7 +213,7 @@ shown masked with an audited *Show*, and a *Send WhatsApp updates* switch). Memb
     (comfortable/compact), corners, more contrast, reduce motion; saved in `localStorage`
     (`stories.appearance`), applied as `data-*` on `<html>` before first paint by an inline script in `index.html`.
 
-12. **WhatsApp** (Admin → Settings → WhatsApp, `messaging.manage`, per branch; docs/WHATSAPP.md): connect the
+12. **WhatsApp** (Master control → WhatsApp, `messaging.manage`, per branch; docs/WHATSAPP.md): connect the
     branch's WhatsApp Business number with three values from Meta (Phone number ID, WABA ID, permanent System User
     token; optional app secret) — saving checks the number and that it belongs to the WABA. **Notifications** list
     (compact rows: name, Meta status, On/Off; full editor on click) with **Add notification** grouped by

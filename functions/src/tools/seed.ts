@@ -59,11 +59,15 @@ async function branch(orgId: string, id: string, code: string, name: string, typ
   );
 }
 
-async function grant(uid: string, email: string, displayName: string, orgId: string, orgName: string, orgType: string, roles: Role[], branchIds: string[]) {
+async function grant(uid: string, email: string, displayName: string, orgId: string, orgName: string, orgType: string, roles: Role[], branchIds: string[], custom?: { id: string; name: string; permissions: string[] }) {
   await db.doc(`users/${uid}/memberships/${orgId}`).set({
     orgId, orgName, orgType, uid, email, displayName, roles, branchIds, status: 'ACTIVE', grantedBy: 'seed', seed: true, updatedAt: now,
+    customRoles: custom ? [custom.id] : [], customPerms: custom ? [...custom.permissions].sort() : [], customRoleNames: custom ? [custom.name] : [],
   });
 }
+
+// A role of the organization's own (Master control → Roles), as a Super Admin would make it.
+const CATALOGUE_EDITOR = { id: 'seed-role-catalogue', name: 'Catalogue Editor', permissions: ['books.view', 'books.create', 'books.edit', 'books.delete'] };
 
 await org(CORP, 'Stories Corporate', 'CORPORATE');
 await org(FRAN, 'Stories Franchise Demo', 'FRANCHISE');
@@ -72,21 +76,25 @@ await branch(FRAN, DEMO_FRANCHISE, 'DFR', 'Stories Demo Franchise', 'FRANCHISE',
 for (const [id, name] of [['seed-dept-circulation', 'Circulation'], ['seed-dept-delivery', 'Delivery'], ['seed-dept-admin', 'Administration']]) {
   await db.doc(`orgs/${CORP}/departments/${id}`).set({ orgId: CORP, name, branchId: null, status: 'ACTIVE', seed: true, createdAt: now, updatedAt: now });
 }
+await db.doc(`roles/${CATALOGUE_EDITOR.id}`).set({
+  name: CATALOGUE_EDITOR.name, description: 'Keeps the shared catalogue: adds, changes and archives titles.', permissions: CATALOGUE_EDITOR.permissions,
+  orgId: CORP, branchIds: ['*'], wholeOrg: true, status: 'ACTIVE', version: 1, createdBy: 'seed', seed: true, createdAt: now, updatedAt: now,
+});
 await db.doc('platform/state').set({ superAdminBootstrapped: true, bootstrappedBy: 'seed' }, { merge: true });
 
-// One persona per role (docs/RBAC.md §2). Member has no staff role.
+// One persona per role (docs/RBAC.md §2), and one with a role of the organization's own. Member has no staff role.
 const personas: [string, string, string | null, Role[], string[], string[]?][] = [
   ['super@stories.test', 'Sara Super', null, [], [], ['SUPER_ADMIN']],
-  ['ho@stories.test', 'Hari Head Office', CORP, ['HEAD_OFFICE_ADMIN'], ['*']],
+  ['owner@stories.test', 'Omkar Owner', CORP, ['BRANCH_OWNER'], [CENTRAL]],
   ['finance@stories.test', 'Farah Finance', CORP, ['FINANCE_ADMIN'], ['*']],
   ['hr@stories.test', 'Hema HR', CORP, ['HR_ADMIN'], ['*']],
-  ['catalogue@stories.test', 'Chitra Catalogue', CORP, ['CATALOGUE_MANAGER'], ['*']],
+  ['catalogue@stories.test', 'Chitra Catalogue', CORP, [], ['*']],
   ['website@stories.test', 'Wendy Website', CORP, ['WEBSITE_EDITOR'], ['*']],
-  ['manager@stories.test', 'Manoj Manager', CORP, ['BRANCH_MANAGER', 'EMPLOYEE'], [CENTRAL]],
+  ['senior@stories.test', 'Sunita Senior', CORP, ['SENIOR_LIBRARIAN', 'EMPLOYEE'], [CENTRAL]],
   ['librarian@stories.test', 'Lata Librarian', CORP, ['LIBRARIAN', 'EMPLOYEE'], [CENTRAL]],
   ['delivery@stories.test', 'Dev Delivery', CORP, ['DELIVERY_PERSON', 'EMPLOYEE'], [CENTRAL]],
   ['employee@stories.test', 'Esha Employee', CORP, ['EMPLOYEE'], [CENTRAL]],
-  ['franchise@stories.test', 'Farhan Franchise Owner', FRAN, ['FRANCHISE_OWNER'], ['*']],
+  ['franchise@stories.test', 'Farhan Franchise Owner', FRAN, ['BRANCH_OWNER'], ['*']],
   ['member@stories.test', 'Meera Member', null, [], []],
 ];
 
@@ -94,10 +102,11 @@ for (const [email, name, orgId, roles, branchIds, platformRoles] of personas) {
   const uid = await user(email, name, platformRoles ?? []);
   if (orgId) {
     const orgName = orgId === CORP ? 'Stories Corporate' : 'Stories Franchise Demo';
-    await grant(uid, email, name, orgId, orgName, orgId === CORP ? 'CORPORATE' : 'FRANCHISE', roles, branchIds);
+    const custom = email === 'catalogue@stories.test' ? CATALOGUE_EDITOR : undefined;
+    await grant(uid, email, name, orgId, orgName, orgId === CORP ? 'CORPORATE' : 'FRANCHISE', roles, branchIds, custom);
   }
   await syncClaims(uid);
-  console.log(`  ${email.padEnd(26)} ${[...(platformRoles ?? []), ...roles].join(', ') || 'member'}`);
+  console.log(`  ${email.padEnd(26)} ${[...(platformRoles ?? []), ...roles, ...(email === 'catalogue@stories.test' ? [CATALOGUE_EDITOR.name] : [])].join(', ') || 'member'}`);
 }
 
 console.log(`\nSeeded 2 organizations, 2 branches, 3 departments, ${personas.length} users. Password for all: ${PASSWORD}`);
@@ -297,16 +306,16 @@ async function seedHr() {
   }
   const byEmail = async (email: string) => (await db.collection(`orgs/${CORP}/employees`).where('emailLower', '==', email).limit(1).get()).docs[0];
   const place: [string, string, string | null, string][] = [
-    ['ho@stories.test', 'Head of Operations', null, 'seed-dept-admin'],
+    ['owner@stories.test', 'Branch Owner', CENTRAL, 'seed-dept-admin'],
     ['finance@stories.test', 'Finance Manager', null, 'seed-dept-admin'],
     ['hr@stories.test', 'HR Manager', null, 'seed-dept-admin'],
     ['catalogue@stories.test', 'Catalogue Manager', null, 'seed-dept-admin'],
-    ['manager@stories.test', 'Branch Manager', CENTRAL, 'seed-dept-circulation'],
+    ['senior@stories.test', 'Senior Librarian', CENTRAL, 'seed-dept-circulation'],
     ['librarian@stories.test', 'Librarian', CENTRAL, 'seed-dept-circulation'],
     ['delivery@stories.test', 'Delivery Executive', CENTRAL, 'seed-dept-delivery'],
     ['employee@stories.test', 'Library Assistant', CENTRAL, 'seed-dept-circulation'],
   ];
-  const managerId = (await byEmail('manager@stories.test'))?.id ?? null;
+  const managerId = (await byEmail('senior@stories.test'))?.id ?? null;
   for (const [email, title, branchId, departmentId] of place) {
     const rec = await byEmail(email);
     if (!rec) continue;
@@ -317,7 +326,9 @@ async function seedHr() {
   }
   const { employeeId } = await call<{ employeeId: string }>(emp.create, {
     orgId: CORP, fullName: 'Nikhil Joshi', email: 'nikhil@stories.test', phone: '9876500010', branchId: CENTRAL, departmentId: 'seed-dept-circulation',
-    designationId: titles['Library Assistant'], managerId, employmentType: 'FULL_TIME', joiningDate: '2026-10-15',
+    designationId: titles['Library Assistant'], managerId, employmentType: 'FULL_TIME',
+    // Joined this month: onboarding still open, and not in last month's payroll (which the demo prepares).
+    joiningDate: `${new Date().toISOString().slice(0, 8)}01`,
   });
   await call(emp.transition, { orgId: CORP, employeeId, transition: 'START_ONBOARDING' });
   await call(emp.checkItem, { orgId: CORP, employeeId, list: 'onboarding', key: 'offer-letter', done: true });
@@ -326,7 +337,7 @@ async function seedHr() {
   const docs = await import('../hr/documents.js');
   const pdf = Buffer.from('%PDF-1.4\n% Stories demo document\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n').toString('base64');
   const inDays = (n: number) => new Date(Date.now() + 330 * 60_000 + n * 86_400_000).toISOString().slice(0, 10);
-  const manager = await byEmail('manager@stories.test');
+  const manager = await byEmail('senior@stories.test');
   if (manager) {
     for (const [typeId, extra] of [['pan-card', { number: 'ABCPM1234K' }], ['aadhaar', {}], ['driving-licence', { expiresOn: inDays(12), number: 'KA01 20200012345' }]] as const) {
       await call(docs.upload, { orgId: CORP, employeeId: manager.id, typeId, fileName: `${typeId}.pdf`, content: pdf, ...extra });
@@ -359,7 +370,7 @@ async function seedHr() {
   const [ty, tm] = today.slice(0, 7).split('-').map(Number);
   const lastMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, '0')}`;
   const workdays = rules.datesOfMonth(lastMonth).filter((d) => rules.weekdayOf(d) !== 'MON');
-  for (const email of ['manager@stories.test', 'librarian@stories.test', 'delivery@stories.test', 'employee@stories.test']) {
+  for (const email of ['senior@stories.test', 'librarian@stories.test', 'delivery@stories.test', 'employee@stories.test']) {
     const e = await byEmail(email);
     if (!e) continue;
     await call(schedule.assignShift, { orgId: CORP, employeeId: e.id, shiftId: morning, weeklyOffs: null });
@@ -432,7 +443,7 @@ async function seedLeave() {
   };
   await tryApply('employee@stories.test', { orgId: CORP, typeId: 'casual', reason: 'Sister’s wedding' }, 7, 2);
   const away = await tryApply('delivery@stories.test', { orgId: CORP, typeId: 'sick', reason: 'Fever' }, 0, 1);
-  if (away) await as('manager@stories.test', leave.decide, { orgId: CORP, leaveId: away.leaveId, decision: 'APPROVE' });
+  if (away) await as('senior@stories.test', leave.decide, { orgId: CORP, leaveId: away.leaveId, decision: 'APPROVE' });
 
   await db.doc('seed/leave').set({ at: FieldValue.serverTimestamp() });
   console.log('Seeded leave credits for the year, an opening balance, a leave request to decide and approved sick leave.');
@@ -472,11 +483,11 @@ async function seedPayroll() {
     { code: 'SPECIAL', name: 'Special allowance', amount: special },
   ];
   const salaries: [string, number, number, number][] = [
-    ['ho@stories.test', 60000, 24000, 16000],
+    ['owner@stories.test', 60000, 24000, 16000],
     ['finance@stories.test', 45000, 18000, 12000],
     ['hr@stories.test', 40000, 16000, 9000],
     ['catalogue@stories.test', 30000, 12000, 8000],
-    ['manager@stories.test', 22000, 8800, 6200],
+    ['senior@stories.test', 22000, 8800, 6200],
     ['librarian@stories.test', 11000, 4400, 2600],
     ['delivery@stories.test', 9000, 3600, 2400],
     ['employee@stories.test', 10000, 4000, 2000],
@@ -489,17 +500,17 @@ async function seedPayroll() {
   const today = rules.businessDate(Date.now());
   const [ty, tm] = today.slice(0, 7).split('-').map(Number);
   const lastMonth = `${tm === 1 ? ty - 1 : ty}-${String(tm === 1 ? 12 : tm - 1).padStart(2, '0')}`;
-  const manager = await byEmail('manager@stories.test');
+  const manager = await byEmail('senior@stories.test');
   if (manager) await as('hr@stories.test', pay.setInputs, { orgId: CORP, employeeId: manager.id, month: lastMonth, tds: 1200, otherEarnings: [{ name: 'Festival bonus', amount: 3000 }], otherDeductions: [] });
 
   const waiting = await db.collection(`orgs/${CORP}/attendanceCorrections`).where('month', '==', lastMonth).where('status', '==', 'PENDING').get();
-  for (const c of waiting.docs) await as('manager@stories.test', att.decideCorrection, { orgId: CORP, correctionId: c.id, decision: 'APPROVE', note: '' });
+  for (const c of waiting.docs) await as('senior@stories.test', att.decideCorrection, { orgId: CORP, correctionId: c.id, decision: 'APPROVE', note: '' });
   await as('hr@stories.test', att.finalize, { orgId: CORP, month: lastMonth, branchId: CENTRAL }, false);
   await as('hr@stories.test', pay.prepare, { orgId: CORP, month: lastMonth, branchId: CENTRAL }, false);
   await as('hr@stories.test', pay.submit, { orgId: CORP, month: lastMonth, branchId: CENTRAL });
 
   await db.doc('seed/payroll').set({ at: FieldValue.serverTimestamp() });
-  console.log(`Seeded salaries, TDS for the branch manager, and ${lastMonth} payroll for Central waiting for Finance to approve.`);
+  console.log(`Seeded salaries, TDS for the senior librarian, and ${lastMonth} payroll for Central waiting for Finance to approve.`);
 }
 
 

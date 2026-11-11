@@ -62,7 +62,7 @@ describe('callable pipeline', () => {
 describe('organizations', () => {
   it('only super admins create organizations', async () => {
     const ho = await createUser('ho@stories.test');
-    await grant(sa, corp, ho, ['HEAD_OFFICE_ADMIN'], ['*']);
+    await grant(sa, corp, ho, ['BRANCH_OWNER'], ['*']);
     expect(await failure(call(orgs.create, ho, { name: 'Rogue Org', type: 'FRANCHISE' }))).toBe('FORBIDDEN');
   });
 });
@@ -97,7 +97,7 @@ describe('branches', () => {
 
   it('isolates organizations: a franchise owner cannot touch another org', async () => {
     const fo = await createUser('fo@stories.test');
-    await grant(sa, fran, fo, ['FRANCHISE_OWNER'], ['*']);
+    await grant(sa, fran, fo, ['BRANCH_OWNER'], ['*']);
     await newBranch(fo, fran, 'FR1');
     expect(await failure(newBranch(fo, corp, 'HACK'))).toBe('FORBIDDEN');
   });
@@ -130,12 +130,12 @@ describe('staff roles', () => {
     central = await newBranch(sa, corp, 'CEN');
     north = await newBranch(sa, corp, 'NTH');
     bm = await createUser('bm@stories.test');
-    await grant(sa, corp, bm, ['BRANCH_MANAGER', 'EMPLOYEE'], [central]);
+    await grant(sa, corp, bm, ['SENIOR_LIBRARIAN', 'EMPLOYEE'], [central]);
   });
 
   it('syncs custom claims when roles change', async () => {
     const claims = (await auth.getUser(bm.uid)).customClaims;
-    expect(claims?.o).toEqual({ [corp]: { r: ['BM', 'EMP'], b: [central] } });
+    expect(claims?.o).toEqual({ [corp]: { r: ['SLIB', 'EMP'], b: [central], p: expect.any(String) } });
     expect((await db.doc(`users/${bm.uid}`).get()).get('claimsVersion')).toBe(claims?.v);
   });
 
@@ -144,21 +144,20 @@ describe('staff roles', () => {
     await grant(bm, corp, lib, ['LIBRARIAN'], [central]);
     expect(await failure(grant(bm, corp, lib, ['LIBRARIAN'], [north]))).toBe('FORBIDDEN');
     expect(await failure(grant(bm, corp, lib, ['LIBRARIAN'], ['*']))).toBe('FORBIDDEN');
-    expect(await failure(grant(bm, corp, lib, ['BRANCH_MANAGER'], [central]))).toBe('FORBIDDEN');
+    expect(await failure(grant(bm, corp, lib, ['SENIOR_LIBRARIAN'], [central]))).toBe('FORBIDDEN');
   });
 
   it('blocks self-escalation and touching more senior staff', async () => {
-    expect(await failure(grant(bm, corp, bm, ['BRANCH_MANAGER', 'LIBRARIAN'], [central]))).toBe('FORBIDDEN');
+    expect(await failure(grant(bm, corp, bm, ['SENIOR_LIBRARIAN', 'LIBRARIAN'], [central]))).toBe('FORBIDDEN');
     const ho = await createUser('ho@stories.test');
-    await grant(sa, corp, ho, ['HEAD_OFFICE_ADMIN'], ['*']);
+    await grant(sa, corp, ho, ['BRANCH_OWNER'], ['*']);
     expect(await failure(call(staff.revoke, bm, { orgId: corp, uid: ho.uid, reason: 'testing' }))).toBe('FORBIDDEN');
   });
 
   it('validates role scope and org type', async () => {
     const x = await createUser('x@stories.test');
     expect(await failure(grant(sa, corp, x, ['HR_ADMIN'], [central]))).toBe('INVALID_INPUT');
-    expect(await failure(grant(sa, corp, x, ['FRANCHISE_OWNER'], ['*']))).toBe('INVALID_INPUT');
-    expect(await failure(grant(sa, fran, x, ['HEAD_OFFICE_ADMIN'], ['*']))).toBe('INVALID_INPUT');
+    expect(await failure(grant(sa, fran, x, ['WEBSITE_EDITOR'], ['*']))).toBe('INVALID_INPUT');
     expect(await failure(grant(sa, corp, x, ['LIBRARIAN'], ['no-such-branch']))).toBe('NOT_FOUND');
   });
 

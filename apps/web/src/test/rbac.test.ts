@@ -4,6 +4,7 @@ import { canManageMember, grantableRoles } from '../admin/grants';
 import { isGroup, visibleMenu, visibleNav } from '../admin/nav';
 import { can, isStaff, parseClaims, staffHome, type StoriesClaims } from '../auth/claims';
 import type { StaffMembership } from '../data/org';
+import { type Permission, PERMISSION_CODES } from '../generated/rbac';
 
 const claims = (o: StoriesClaims['o'], sa = false): StoriesClaims => ({ v: 1, sa, o });
 const member = (uid: string, roles: StaffMembership['roles'], branchIds: string[]): StaffMembership => ({
@@ -41,7 +42,7 @@ describe('navigation', () => {
   const hr = claims({ corp: { r: ['HR'], b: ['*'] } });
   const lib = claims({ corp: { r: ['LIB'], b: ['cen'] } });
   const fin = claims({ corp: { r: ['FIN'], b: ['*'] } });
-  const bm = claims({ corp: { r: ['BM'], b: ['cen'] } });
+  const bm = claims({ corp: { r: ['SLIB'], b: ['cen'] } });
   const emp = claims({ corp: { r: ['EMP'], b: ['cen'] } });
   const del = claims({ corp: { r: ['DEL'], b: ['cen'] } });
   const web = claims({ corp: { r: ['WEB'], b: ['*'] } });
@@ -54,7 +55,7 @@ describe('navigation', () => {
   });
 
   it('shows each role only what it may use, in one menu', () => {
-    expect(labels(claims({}, true))).toHaveLength(52);
+    expect(labels(claims({}, true))).toHaveLength(54);
     expect(menu(emp)).toEqual(['Dashboard', MY]);
     expect(menu(lib)).toEqual([
       'Dashboard',
@@ -70,14 +71,14 @@ describe('navigation', () => {
       'Website: Website overview, Site settings, Page sections, Branch pages, Offers, Jobs, Blog, Festival greetings, Testimonials',
       'Enquiries: Submissions, Calls',
       'Organization: Website admins',
-      'Settings: Connections',
+      'Master control: Connections',
       MY,
     ]);
     expect(menu(hr)).toEqual([
       'Dashboard',
       'Staff: Overview, Employees, Documents, Letters, Attendance, Leave, Payroll',
-      'Organization: Branches, Departments, Roles & access, Audit log',
-      'Settings: Job titles & checklists, Shifts & holidays, Leave types, Document types, Letter templates, Payroll settings',
+      'Organization: Branches, Departments, Staff access, Audit log',
+      'Master control: Job titles & checklists, Shifts & holidays, Leave types, Document types, Letter templates, Payroll settings',
       MY,
     ]);
     expect(menu(fin)).toEqual(['Dashboard', 'Collection: Catalogue, Inventory', 'Members: Members, Payments & refunds, Deposit approvals', 'Staff: Payroll', 'Organization: Audit log', MY]);
@@ -87,16 +88,35 @@ describe('navigation', () => {
         'Website: Website overview, Branch pages, Blog',
         'Enquiries: Submissions',
         'Staff: Overview, Employees, Letters, Attendance, Leave',
-        'Settings: WhatsApp, Delivery',
+        'Master control: WhatsApp, Delivery',
       ]),
     );
     expect(labels(bm)).not.toContain('Job titles & checklists');
     // Riders see their deliveries among their own pages.
     expect(labels(del)).toContain('My deliveries');
     // Roles in another organization don't show here (the menu follows the chosen organization).
-    expect(menu(claims({ fran: { r: ['FO'], b: ['*'] } }))).toEqual(['Dashboard', MY]);
+    expect(menu(claims({ fran: { r: ['OWN'], b: ['*'] } }))).toEqual(['Dashboard', MY]);
     // Members (no staff role) get no console menu at all: they use the member area.
     expect(visibleMenu(claims({}), 'corp')).toEqual([]);
+  });
+
+  it('gives a Branch Owner their branch, Master control → Roles, and the organization’s settings only with all branches', () => {
+    const owner = claims({ corp: { r: ['OWN'], b: ['cen'] } });
+    const allOwner = claims({ corp: { r: ['OWN'], b: ['*'] } });
+    expect(menu(owner)).toEqual(expect.arrayContaining(['Master control: Roles, WhatsApp, Delivery']));
+    expect(labels(owner)).not.toContain('Payroll');
+    expect(labels(owner)).not.toContain('Library rules');
+    expect(labels(allOwner)).toEqual(expect.arrayContaining(['Payroll', 'Library rules', 'Roles', 'Job titles & checklists', 'Deposit approvals']));
+  });
+
+  it('follows a role of the organization’s own exactly (permissions in the token, no ready-made role)', () => {
+    const p = (perms: Permission[]) => perms.map((x) => PERMISSION_CODES[x]).join('');
+    const shelver = claims({ corp: { r: [], b: ['cen'], p: p(['books.view', 'copies.manage']) } });
+    expect(menu(shelver)).toEqual(['Dashboard', 'Collection: Catalogue, Receive books, Inventory, Shelve books', MY]);
+    expect(staffHome(shelver)).toBe('/admin');
+    expect(can(shelver, 'copies.manage', 'corp', 'cen')).toBe(true);
+    expect(can(shelver, 'loans.issue', 'corp')).toBe(false);
+    expect(staffHome(claims({ corp: { r: [], b: ['cen'], p: p(['tasks.execute']) } }))).toBe('/me');
   });
 
   it('drops a group when nothing in it is visible', () => {
@@ -105,17 +125,17 @@ describe('navigation', () => {
 });
 
 describe('grants (UI mirror of server rules)', () => {
-  const bm = claims({ corp: { r: ['BM', 'EMP'], b: ['cen'] } });
+  const bm = claims({ corp: { r: ['SLIB', 'EMP'], b: ['cen'] } });
 
   it('offers only grantable roles that fit the org type', () => {
     expect(grantableRoles(bm, 'corp', 'CORPORATE')).toEqual(['LIBRARIAN', 'DELIVERY_PERSON', 'EMPLOYEE']);
-    expect(grantableRoles(claims({}, true), 'fran', 'FRANCHISE')).not.toContain('HEAD_OFFICE_ADMIN');
-    expect(grantableRoles(claims({}, true), 'corp', 'CORPORATE')).not.toContain('FRANCHISE_OWNER');
+    expect(grantableRoles(claims({}, true), 'fran', 'FRANCHISE')).not.toContain('WEBSITE_EDITOR');
+    expect(grantableRoles(claims({}, true), 'corp', 'CORPORATE')).toContain('BRANCH_OWNER');
   });
 
   it('hides actions on self, senior staff and other branches', () => {
-    expect(canManageMember(bm, 'me', 'corp', 'CORPORATE', member('me', ['BRANCH_MANAGER'], ['cen']))).toBe(false);
-    expect(canManageMember(bm, 'me', 'corp', 'CORPORATE', member('ho', ['HEAD_OFFICE_ADMIN'], ['*']))).toBe(false);
+    expect(canManageMember(bm, 'me', 'corp', 'CORPORATE', member('me', ['SENIOR_LIBRARIAN'], ['cen']))).toBe(false);
+    expect(canManageMember(bm, 'me', 'corp', 'CORPORATE', member('ho', ['BRANCH_OWNER'], ['*']))).toBe(false);
     expect(canManageMember(bm, 'me', 'corp', 'CORPORATE', member('l2', ['LIBRARIAN'], ['nth']))).toBe(false);
     expect(canManageMember(bm, 'me', 'corp', 'CORPORATE', member('l1', ['LIBRARIAN'], ['cen']))).toBe(true);
   });

@@ -48,6 +48,8 @@ export const paths = {
   adminSettingsPayroll: '/admin/settings/payroll',
   adminSettingsWhatsApp: '/admin/settings/whatsapp',
   adminSettingsDelivery: '/admin/settings/delivery',
+  adminRoles: '/admin/settings/roles',
+  adminLibraryRules: '/admin/settings/library',
   adminDocuments: '/admin/documents',
   adminOffers: '/admin/offer-letters',
   adminAttendance: '/admin/attendance',

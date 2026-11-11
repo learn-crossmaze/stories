@@ -31,6 +31,8 @@ const TransfersPage = lazyPage(() => import('./circulation/Transfers'), 'Transfe
 const DeliveriesPage = lazyPage(() => import('./circulation/Deliveries'), 'DeliveriesPage');
 const MyDeliveriesPage = lazyPage(() => import('./circulation/Deliveries'), 'MyDeliveriesPage');
 const DeliverySettingsPage = lazyPage(() => import('./organization/DeliverySettings'), 'DeliverySettingsPage');
+const RolesPage = lazyPage(() => import('./control/Roles'), 'RolesPage');
+const LibraryRulesPage = lazyPage(() => import('./control/LibraryRules'), 'LibraryRulesPage');
 const BranchesPage = lazyPage(() => import('./organization/Branches'), 'BranchesPage');
 const DashboardPage = lazyPage(() => import('./dashboard/Dashboard'), 'DashboardPage');
 const DepartmentsPage = lazyPage(() => import('./organization/Departments'), 'DepartmentsPage');
@@ -141,6 +143,8 @@ function allRoutes(): [string, ReactNode][] {
         [paths.adminSettingsPayroll, guard(paths.adminSettingsPayroll, <PayrollSettingsPage />)],
         [paths.adminSettingsWhatsApp, guard(paths.adminSettingsWhatsApp, <WhatsAppPage />)],
         [paths.adminSettingsDelivery, guard(paths.adminSettingsDelivery, <DeliverySettingsPage />)],
+        [paths.adminRoles, guard(paths.adminRoles, <RolesPage />)],
+        [paths.adminLibraryRules, guard(paths.adminLibraryRules, <LibraryRulesPage />)],
         [paths.adminAudit, guard(paths.adminAudit, <AuditPage />)],
     ] as [string, ReactNode][]),
     ...([

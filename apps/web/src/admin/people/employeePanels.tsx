@@ -184,9 +184,9 @@ export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: 
           <h3>{ht.rolesHere}</h3>
           {membership.loading ? (
             <SkeletonRows rows={1} />
-          ) : m && m.status === 'ACTIVE' && m.roles.length ? (
+          ) : m && m.status === 'ACTIVE' && (m.roles.length || m.customRoleNames?.length) ? (
             <p>
-              {m.roles.map((r) => ROLES[r]?.label ?? r).join(', ')} · {m.branchIds.includes('*') ? t.allBranches : m.branchIds.map(branchName).join(', ')}
+              {[...m.roles.map((r) => ROLES[r]?.label ?? r), ...(m.customRoleNames ?? [])].join(', ')} · {m.branchIds.includes('*') ? t.allBranches : m.branchIds.map(branchName).join(', ')}
             </p>
           ) : (
             <p className="muted">{employee.status === 'OFFBOARDED' ? ht.rolesOffboarded : ht.noRoles}</p>

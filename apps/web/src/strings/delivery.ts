@@ -65,7 +65,7 @@ export const dt = {
   outList: (n: number) => `${n} book${n === 1 ? '' : 's'} going out`,
   how: 'How it goes',
   rider: 'Who is delivering',
-  noRiders: 'No staff with a delivery role at this branch. Grant the Delivery person role under Roles & access.',
+  noRiders: 'No staff with a delivery role at this branch. Give the Delivery Person role (or a role of your own that delivers) under Staff access.',
   courierName: 'Courier',
   courierRef: 'Reference / AWB',
   courierUrl: 'Tracking link (optional)',

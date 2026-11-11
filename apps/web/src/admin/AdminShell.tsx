@@ -4,9 +4,11 @@ import { Link, Outlet, useLocation } from 'react-router';
 
 import { useAuth } from '../auth/AuthContext';
 import { rolesIn, staffHome } from '../auth/claims';
+import { myOwnRoleNames } from '../data/org';
 import { ROLES } from '../generated/rbac';
 import { paths } from '../paths';
 import { Icon, SkeletonRows } from '../shared/ui';
+import { useAsync } from '../shared/useAsync';
 import { setWaitingInTitle, useRouteFocus } from '../shared/useRouteFocus';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
@@ -76,7 +78,8 @@ function AccountMenu() {
   const menuId = useId();
   const ref = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const roles = claims.sa ? [ROLES.SUPER_ADMIN.label] : org ? rolesIn(claims, org.id).map((r) => ROLES[r].label) : [];
+  const own = useAsync(() => (org && user && !claims.sa ? myOwnRoleNames(user.uid, org.id).catch(() => []) : Promise.resolve([])), [org?.id, user?.uid, claims.v]);
+  const roles = claims.sa ? [ROLES.SUPER_ADMIN.label] : org ? [...rolesIn(claims, org.id).map((r) => ROLES[r].label), ...(own.data ?? [])] : [];
   const name = user?.displayName || user?.email || '';
   const initials = name
     .split(/[\s@.]+/)

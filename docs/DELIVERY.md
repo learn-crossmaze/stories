@@ -11,7 +11,7 @@ Branches take books to members' homes and collect them back. A visit goes out in
 Code: `functions/src/delivery` (orders, settings, couriers, webhook, member actions) and
 `apps/web/src/admin/circulation/Deliveries.tsx`, `admin/organization/DeliverySettings.tsx`, `member/HomeDelivery.tsx`.
 
-## 1. Branch settings (Admin → Settings → Delivery)
+## 1. Branch settings (Master control → Delivery)
 
 Who: `delivery.configure` (head office, franchise owner, branch manager). Stored on the branch (`delivery`); the
 courier API keys and the webhook token are in `branches/{b}/private/delivery`, which no client can read.
@@ -79,7 +79,7 @@ The Operations dashboard lists visits to dispatch and bags to receive.
 Porter's business API books two-wheelers within its cities. Ask Porter for API access on
 [porter.in/api-integrations](https://porter.in/api-integrations); they send an API key and the API contract.
 
-1. Admin → Settings → Delivery: set the **branch map location**, tick **Book Porter from the dispatch screen**, paste
+1. Master control → Delivery: set the **branch map location**, tick **Book Porter from the dispatch screen**, paste
    the **API key**, choose **Live** (or **Test** for Porter's UAT environment), Save.
 2. Open **Status updates (webhook)** and send the URL to Porter's API team so rider updates reach Stories instantly.
    Without it, Stories asks Porter when the Deliveries board is opened (at most once a minute per order, Porter's limit)

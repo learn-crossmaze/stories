@@ -42,9 +42,9 @@ beforeEach(async () => {
   north = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'NTH', name: 'North', address, contact })).branchId;
   for (const [u, roles, b] of [
     [hr, ['HR_ADMIN'], ['*']],
-    [bm, ['BRANCH_MANAGER'], [central]],
-    [bm2, ['BRANCH_MANAGER'], [central]],
-    [northBm, ['BRANCH_MANAGER'], [north]],
+    [bm, ['SENIOR_LIBRARIAN'], [central]],
+    [bm2, ['SENIOR_LIBRARIAN'], [central]],
+    [northBm, ['SENIOR_LIBRARIAN'], [north]],
     [lib, ['LIBRARIAN'], [central]],
     [worker, ['EMPLOYEE'], [central]],
   ] as const) {

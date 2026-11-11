@@ -1,9 +1,11 @@
-// Organization: orgs, branches, departments, staff roles (admin router).
+// Organization: orgs, branches, departments, staff roles, roles of one's own (admin router).
 import * as online from '../billing/online.js';
 import * as branches from './branches.js';
 import * as departments from './departments.js';
+import * as libraryRules from './libraryRules.js';
 import * as numbering from './numbering.js';
 import * as orgs from './orgs.js';
+import * as roles from './roles.js';
 import * as staff from './staff.js';
 
 export const routes = {
@@ -22,4 +24,9 @@ export const routes = {
   'departments-archive': departments.archive,
   'staff-setRoles': staff.setRoles,
   'staff-revoke': staff.revoke,
+  'roles-list': roles.list,
+  'roles-save': roles.save,
+  'roles-delete': roles.remove,
+  'config-libraryRules': libraryRules.get,
+  'config-setLibraryRules': libraryRules.set,
 };

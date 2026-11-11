@@ -38,7 +38,7 @@ beforeEach(async () => {
   north = (await call<{ branchId: string }>(branches.create, sa, { orgId: org, code: 'NTH', name: 'North', address, contact })).branchId;
   await grant(hr, ['HR_ADMIN'], ['*']);
   await grant(fin, ['FINANCE_ADMIN'], ['*']);
-  await grant(bm, ['BRANCH_MANAGER'], [central]);
+  await grant(bm, ['SENIOR_LIBRARIAN'], [central]);
 });
 
 describe('employee records', () => {
@@ -50,7 +50,7 @@ describe('employee records', () => {
     expect(bmRec.get('branchId')).toBe(central);
     expect(bmRec.get('source')).toBe('ROLES');
     // Changing roles keeps the same record and ID.
-    await grant(bm, ['BRANCH_MANAGER', 'LIBRARIAN'], [central, north]);
+    await grant(bm, ['SENIOR_LIBRARIAN', 'LIBRARIAN'], [central, north]);
     expect(await employees()).toHaveLength(3);
     const membership = (await db.doc(`users/${bm.uid}/memberships/${org}`).get()).data()!;
     expect(membership.employeeId).toBe(bmRec.get('code'));

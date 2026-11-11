@@ -1,4 +1,4 @@
-import { rolesIn, type StoriesClaims } from '../auth/claims';
+import { permsIn, rolesIn, type StoriesClaims } from '../auth/claims';
 import type { OrgType, StaffMembership } from '../data/org';
 import { GRANTABLE, ROLES, type Role } from '../generated/rbac';
 
@@ -23,8 +23,11 @@ export function canManageMember(claims: StoriesClaims, uid: string, orgId: strin
   if (uid === m.uid) return false;
   const grantable = new Set(grantableRoles(claims, orgId, orgType));
   if (m.status === 'ACTIVE' && m.roles.some((r) => !grantable.has(r))) return false;
-  const mine = claims.o[orgId]?.b ?? [];
-  return mine.includes('*') || (!m.branchIds.includes('*') && m.branchIds.every((b) => mine.includes(b)));
+  // Roles of the organization's own: only someone who holds everything they give.
+  const mine = permsIn(claims, orgId);
+  if (m.status === 'ACTIVE' && (m.customPerms ?? []).some((p) => !mine.has(p))) return false;
+  const myBranches = claims.o[orgId]?.b ?? [];
+  return myBranches.includes('*') || (!m.branchIds.includes('*') && m.branchIds.every((b) => myBranches.includes(b)));
 }
 
 export const isOrgWide = (r: Role) => ROLES[r].scope === 'org';

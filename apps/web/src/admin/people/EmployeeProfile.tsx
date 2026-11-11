@@ -46,7 +46,7 @@ export function EmployeeProfilePage() {
     [orgId, e?.id, canPrivate, canBank],
   );
   const history = useAsync(() => (e ? listHistory(orgId, e.id) : Promise.resolve([])), [orgId, e?.id, employee.data]);
-  // ?tab=access (from Roles & access) opens a tab directly.
+  // ?tab=access (from Staff access) opens a tab directly.
   const [search] = useSearchParams();
   const [tab, setTab] = useState<Tab>((search.get('tab') as Tab | null) ?? 'overview');
   const [dialog, setDialog] = useState<'edit' | 'personal' | Transition | null>(null);

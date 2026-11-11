@@ -440,7 +440,7 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 | `orgs/{o}/offerLetters/{id}` | `number` (`OL/{employee ID}/{year}/{n}`), the terms (`designation`, `department`, `employmentType`, `joiningDate`, `annualCtc` in whole rupees, `probationMonths`, `noticeDays`, `acceptBy`, `reportingTo`, `terms`), `workLocation`, `signatoryName/Title`, `status` (RELEASED, SUPERSEDED, WITHDRAWN), `documentId`, who released or withdrew it, and copies of the employee's name, code, uid and branch | `offers.release` at the employee's branch (head-office staff: all branches); the employee |
 | the employee's `documents/{id}` | the released PDF, type **Offer letter** (`offer-letter-issued`), status VERIFIED, `offerId` | as any employee document (§7) |
 
-**Who:** `offers.release` is held by HR Admin, Franchise Owner and Branch Manager (at their own branches; a head-office
+**Who:** `offers.release` is held by HR Admin, Branch Owner and Senior Librarian (at their own branches; a head-office
 employee needs all branches). **Nobody releases, previews or withdraws their own offer letter**, whatever their role:
 a branch manager's own letter comes from HR or another manager at the branch. The check is on the server, by account
 (or by email for a record not yet linked to an account).

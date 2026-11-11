@@ -255,7 +255,7 @@ export const t = {
   navOrganizations: 'Organizations',
   navBranches: 'Branches',
   navDepartments: 'Departments',
-  navStaff: 'Roles & access',
+  navStaff: 'Staff access',
   navAudit: 'Audit log',
   sectionLibrary: 'Library',
   sectionMembers: 'Members',
@@ -367,7 +367,7 @@ export const t = {
   departmentArchiveTitle: (name: string) => `Archive ${name}?`,
   rename: 'Rename',
 
-  staffTitle: 'Roles & access',
+  staffTitle: 'Staff access',
   staffAdd: 'Add staff member',
   staffIntro: 'Everyone who can sign in to this organization, with their roles and branches. Manage opens the person’s Access tab.',
   staffAddVia: 'To add someone, go to People → Employees.',

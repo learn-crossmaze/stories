@@ -18,7 +18,7 @@ npm run seed        # terminal 2 — 10 demo personas, password stories-demo
 npm run dev         # terminal 3 — http://localhost:8081
 ```
 
-Sign in as e.g. `manager@stories.test`, `franchise@stories.test`, `librarian@stories.test` and confirm each sees only
+Sign in as e.g. `owner@stories.test` (Branch Owner of Central), `senior@stories.test`, `franchise@stories.test` (Branch Owner, all branches), `catalogue@stories.test` (a role of the organization's own), `librarian@stories.test` and confirm each sees only
 their organization, branches and pages. Phase 0 was verified this way in Chromium (desktop and 390px width).
 
 Phase 1 browser walkthrough (17 checks, all passing on seeded data): librarian dashboard counts; catalogue search

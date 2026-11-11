@@ -34,7 +34,7 @@ beforeEach(async () => {
   for (const [u, roles, b] of [
     [hr, ['HR_ADMIN'], ['*']],
     [hr2, ['HR_ADMIN'], ['*']],
-    [bm, ['BRANCH_MANAGER'], [central]],
+    [bm, ['SENIOR_LIBRARIAN'], [central]],
     [fin, ['FINANCE_ADMIN'], ['*']],
     [worker, ['EMPLOYEE'], [central]],
   ] as const) {

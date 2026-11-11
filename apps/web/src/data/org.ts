@@ -13,7 +13,7 @@ import {
   where,
 } from 'firebase/firestore';
 
-import type { Role } from '../generated/rbac';
+import type { Permission, Role } from '../generated/rbac';
 import { toDate } from './common';
 import { services } from './services';
 
@@ -71,6 +71,10 @@ export interface StaffMembership {
   email: string | null;
   displayName: string | null;
   roles: Role[];
+  /** Roles of the organization's own (Master control → Roles), their names and what they give. */
+  customRoles?: string[];
+  customRoleNames?: string[];
+  customPerms?: Permission[];
   branchIds: string[];
   status: 'ACTIVE' | 'REVOKED';
   employeeId?: string | null;
@@ -167,4 +171,10 @@ export async function memberAudit(orgId: string, memberId: string, scope: string
     byId.set(d.id, { ...data, id: d.id, at: toDate(data.at) } as AuditEntry);
   }
   return [...byId.values()].sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0)).slice(0, 100);
+}
+
+/** The names of the roles of the organization's own that you hold there (your membership; the token holds only codes). */
+export async function myOwnRoleNames(uid: string, orgId: string): Promise<string[]> {
+  const snap = await getDoc(doc(services().db, `users/${uid}/memberships/${orgId}`));
+  return snap.get('status') === 'ACTIVE' ? ((snap.get('customRoleNames') as string[] | undefined) ?? []) : [];
 }

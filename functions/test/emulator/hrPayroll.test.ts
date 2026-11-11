@@ -43,7 +43,7 @@ beforeEach(async () => {
   for (const [u, roles, b] of [
     [hr, ['HR_ADMIN'], ['*']],
     [fin, ['FINANCE_ADMIN'], ['*']],
-    [bm, ['BRANCH_MANAGER'], [central]],
+    [bm, ['SENIOR_LIBRARIAN'], [central]],
     [lib, ['LIBRARIAN'], [central]],
     [worker, ['EMPLOYEE'], [central]],
   ] as const) {
@@ -224,8 +224,8 @@ describe('who sees what, and who approves (franchise)', () => {
     const [fo, fo2, staffer] = await Promise.all(['fo', 'fo2', 'staffer'].map((n) => createUser(`${n}@stories.test`)));
     for (const [u, roles, b] of [
       [hr, ['HR_ADMIN'], ['*']],
-      [fo, ['FRANCHISE_OWNER'], ['*']],
-      [fo2, ['FRANCHISE_OWNER'], ['*']],
+      [fo, ['BRANCH_OWNER'], ['*']],
+      [fo2, ['BRANCH_OWNER'], ['*']],
       [staffer, ['EMPLOYEE'], [fb]],
     ] as const) {
       await call(staff.setRoles, sa, { orgId: fran, email: u.email, roles, branchIds: b });

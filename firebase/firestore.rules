@@ -7,79 +7,82 @@ rules_version = '2';
 // Cloud Functions (the Admin SDK bypasses rules), so these rules are almost all
 // read rules. Authorization comes from custom claims synced from
 // users/{uid}/memberships/{orgId}:
-//   { v, sa: bool, o: { <orgId>: { r: [roleCodes], b: [branchIds] | ['*'] } } }
+//   { v, sa: bool, o: { <orgId>: { r: [roleCodes], b: [branchIds] | ['*'], p: 'permission codes' } } }
+// `p` holds the person's permissions there (from ready-made roles and roles of their own), two characters each
+// (perms() below; docs/RBAC.md §4).
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // GENERATED permission → role-code map (tools/rbac/generate.mjs). Do not edit here.
+    // GENERATED permission → code map (tools/rbac/generate.mjs). Do not edit here.
     function perms() {
       return {
-        'org.manage': [],
-        'branches.view': ['HO', 'FIN', 'HR', 'FO', 'BM', 'LIB', 'DEL', 'EMP', 'WEB'],
-        'branches.manage': ['HO', 'FO'],
-        'messaging.manage': ['HO', 'FO', 'BM'],
-        'departments.manage': ['HO', 'HR', 'FO'],
-        'staff.view': ['HO', 'HR', 'FO', 'BM'],
-        'staff.manageRoles': ['HO', 'HR', 'FO', 'BM'],
-        'audit.view': ['HO', 'FIN', 'HR', 'FO', 'BM'],
-        'config.manage': ['HO'],
-        'books.view': ['HO', 'FIN', 'FO', 'BM', 'LIB', 'DEL', 'CM', 'WEB'],
-        'books.create': ['HO', 'BM', 'LIB', 'CM'],
-        'books.edit': ['HO', 'CM'],
-        'books.delete': ['HO', 'CM'],
-        'copies.manage': ['HO', 'FO', 'BM', 'LIB'],
-        'books.transfer': ['HO', 'FO', 'BM', 'LIB'],
-        'copies.writeOff': ['HO', 'FIN', 'FO', 'BM'],
-        'members.view': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'members.manage': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'loans.issue': ['FO', 'BM', 'LIB'],
-        'loans.return': ['FO', 'BM', 'LIB'],
-        'exchanges.process': ['FO', 'BM', 'LIB'],
-        'reservations.manage': ['FO', 'BM', 'LIB'],
-        'subscriptions.manage': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'plans.manage': ['HO'],
-        'deposits.view': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'deposits.adjust': ['FIN', 'FO', 'BM'],
-        'deposits.approve': ['FIN'],
-        'deposits.refund': ['FIN'],
-        'payments.view': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'payments.recordOffline': ['HO', 'FIN', 'FO', 'BM', 'LIB'],
-        'payments.refund': ['FIN', 'FO', 'BM', 'LIB'],
-        'delivery.manage': ['FO', 'BM', 'LIB'],
-        'delivery.assign': ['FO', 'BM', 'LIB'],
-        'delivery.execute': ['DEL'],
-        'delivery.configure': ['HO', 'FO', 'BM'],
-        'employees.view': ['HO', 'HR', 'FO', 'BM'],
-        'employees.edit': ['HO', 'HR', 'FO'],
-        'employees.add': ['HO', 'HR', 'FO', 'BM'],
-        'employees.privateData': ['FIN', 'HR'],
-        'employees.lifecycle': ['HO', 'HR', 'FO'],
-        'employees.bank': ['FIN', 'HR'],
-        'hr.config': ['HO', 'HR', 'FO'],
-        'documents.verify': ['HR', 'FO'],
-        'offers.release': ['HR', 'FO', 'BM'],
-        'letters.issue': ['HR', 'FO', 'BM'],
-        'attendance.view': ['HO', 'HR', 'FO', 'BM', 'FIN'],
-        'attendance.finalize': ['HR', 'FO'],
-        'leave.adjust': ['HR', 'FO'],
-        'salary.view': ['HR', 'FIN', 'FO'],
-        'salary.edit': ['HR', 'FO'],
-        'payslips.viewAll': ['HR', 'FIN', 'FO'],
-        'attendance.manage': ['HR', 'FO', 'BM'],
-        'corrections.approve': ['HR', 'FO', 'BM'],
-        'leave.approve': ['HR', 'FO', 'BM'],
-        'payroll.run': ['HR', 'FO'],
-        'payroll.approve': ['FIN', 'FO'],
-        'tasks.assign': ['HO', 'FO', 'BM'],
-        'tasks.approve': ['HO', 'FO', 'BM'],
-        'tasks.skip': ['HO', 'FO', 'BM'],
-        'tasks.execute': ['EMP', 'BM', 'LIB', 'DEL'],
-        'website.manage': ['HO', 'WEB'],
-        'website.branch': ['FO', 'BM'],
-        'blog.write': ['HO', 'WEB', 'FO', 'BM', 'LIB'],
-        'sops.edit': ['HO', 'FO', 'BM'],
-        'sops.publish': ['HO'],
-        'reports.view': ['HO', 'FIN', 'HR', 'FO', 'BM']
+        'loans.issue': '00',
+        'loans.return': '01',
+        'exchanges.process': '02',
+        'reservations.manage': '03',
+        'books.transfer': '04',
+        'books.view': '05',
+        'books.create': '06',
+        'books.edit': '07',
+        'books.delete': '08',
+        'copies.manage': '09',
+        'copies.writeOff': '0a',
+        'members.view': '0b',
+        'members.manage': '0c',
+        'subscriptions.manage': '0d',
+        'plans.manage': '0e',
+        'payments.view': '0f',
+        'payments.recordOffline': '0g',
+        'payments.refund': '0h',
+        'deposits.view': '0i',
+        'deposits.adjust': '0j',
+        'deposits.approve': '0k',
+        'deposits.refund': '0l',
+        'delivery.manage': '0m',
+        'delivery.assign': '0n',
+        'delivery.execute': '0o',
+        'delivery.configure': '0p',
+        'website.manage': '0q',
+        'website.branch': '0r',
+        'blog.write': '0s',
+        'employees.view': '0t',
+        'employees.add': '0u',
+        'employees.edit': '0v',
+        'employees.privateData': '0w',
+        'employees.lifecycle': '0x',
+        'employees.bank': '0y',
+        'documents.verify': '0z',
+        'offers.release': '0A',
+        'letters.issue': '0B',
+        'attendance.view': '0C',
+        'attendance.manage': '0D',
+        'corrections.approve': '0E',
+        'attendance.finalize': '0F',
+        'leave.approve': '0G',
+        'leave.adjust': '0H',
+        'hr.config': '0I',
+        'salary.view': '0J',
+        'salary.edit': '0K',
+        'payslips.viewAll': '0L',
+        'payroll.run': '0M',
+        'payroll.approve': '0N',
+        'tasks.assign': '0O',
+        'tasks.approve': '0P',
+        'tasks.skip': '0Q',
+        'tasks.execute': '0R',
+        'sops.edit': '0S',
+        'sops.publish': '0T',
+        'branches.view': '0U',
+        'branches.manage': '0V',
+        'departments.manage': '0W',
+        'staff.view': '0X',
+        'staff.manageRoles': '0Y',
+        'roles.manage': '0Z',
+        'messaging.manage': '10',
+        'audit.view': '11',
+        'reports.view': '12',
+        'config.manage': '13',
+        'org.manage': '14'
       };
     }
 
@@ -113,9 +116,19 @@ service cloud.firestore {
       return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).b.hasAny(['*', b]));
     }
 
-    // RBAC: one of the caller's roles in org o grants permission perm.
+    // Whether claims c (one organization's) hold the permission with code `code` (codes are 2 characters).
+    function holds(c, code) {
+      return c.get('p', '').matches('(..)*' + code + '.*');
+    }
+
+    // Either of two permission codes.
+    function holdsEither(c, code1, code2) {
+      return c.get('p', '').matches('(..)*(' + code1 + '|' + code2 + ').*');
+    }
+
+    // RBAC: the caller holds permission perm in org o.
     function can(o, perm) {
-      return isSA() || (signedIn() && orgClaims(o) != null && orgClaims(o).r.hasAny(perms()[perm]));
+      return isSA() || (signedIn() && orgClaims(o) != null && holds(orgClaims(o), perms()[perm]));
     }
 
     // Employee documents: the employee (uid), or HR (verifiers and employee
@@ -127,7 +140,7 @@ service cloud.firestore {
       let c = orgClaims(o);
       return (signedIn() && uid != null && uid == request.auth.uid) || isSA()
         || (c != null
-          && c.r.hasAny(p['documents.verify'].concat(p['employees.edit']))
+          && holdsEither(c, p['documents.verify'], p['employees.edit'])
           && ('*' in c.b || b in c.b));
     }
 
@@ -142,7 +155,7 @@ service cloud.firestore {
     // query must fit every rule it touches in one 1000-expression budget.
     function canAtEither(o, b1, b2, perm) {
       let c = orgClaims(o);
-      return isSA() || (signedIn() && c != null && c.r.hasAny(perms()[perm])
+      return isSA() || (signedIn() && c != null && holds(c, perms()[perm])
         && ('*' in c.b || b1 in c.b || b2 in c.b));
     }
 
@@ -150,7 +163,7 @@ service cloud.firestore {
     function canAtAny(o, b, perm1, perm2) {
       let p = perms();
       let c = orgClaims(o);
-      return isSA() || (signedIn() && c != null && c.r.hasAny(p[perm1].concat(p[perm2]))
+      return isSA() || (signedIn() && c != null && holdsEither(c, p[perm1], p[perm2])
         && ('*' in c.b || b in c.b));
     }
 

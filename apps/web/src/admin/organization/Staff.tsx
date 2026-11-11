@@ -6,6 +6,7 @@ import { branchScope, can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { listEmployees } from '../../data/hr';
 import { listStaff, type Org, type StaffMembership } from '../../data/org';
+import { listRoles } from '../../data/roles';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { ROLES, type Role } from '../../generated/rbac';
@@ -13,6 +14,7 @@ import { t } from '../../strings';
 import { EmptyState, ErrorState, NoOrgState, SkeletonRows, StatusBadge, TableWrap } from '../../shared/ui';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { canManageMember, grantableRoles, isOrgWide } from '../grants';
+import { ct } from '../../strings/control';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 
@@ -50,15 +52,19 @@ export function RolesDialog({
 
   const [email, setEmail] = useState(member?.email ?? presetEmail ?? '');
   const [roles, setRoles] = useState<Role[]>(member?.status === 'ACTIVE' ? member.roles : []);
+  const [custom, setCustom] = useState<string[]>(member?.status === 'ACTIVE' ? (member.customRoles ?? []) : []);
+  // Roles of the organization's own this person may give (and any the member already holds, shown ticked).
+  const own = useAsync(() => listRoles(org.id).then((r) => r.custom).catch(() => []), [org.id]);
+  const ownOffered = (own.data ?? []).filter((r) => r.canGive || custom.includes(r.id));
   const [allBranches, setAllBranches] = useState(member ? member.branchIds.includes('*') : presetBranches?.length === 0 && scope === 'ALL');
   const [picked, setPicked] = useState<string[]>(member?.branchIds.filter((b) => b !== '*') ?? presetBranches ?? []);
   const [touched, setTouched] = useState(false);
 
-  const orgWide = roles.some(isOrgWide);
+  const orgWide = roles.some(isOrgWide) || (own.data ?? []).some((r) => r.wholeOrg && custom.includes(r.id));
   const all = orgWide || allBranches;
   const errors = {
     email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) ? undefined : 'Enter a valid email address.',
-    roles: roles.length ? undefined : 'Choose at least one role.',
+    roles: roles.length || custom.length ? undefined : 'Choose at least one role.',
     branches: all || picked.length ? undefined : 'Choose at least one branch.',
   };
   const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
@@ -66,7 +72,7 @@ export function RolesDialog({
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
     if (errors.email || errors.roles || errors.branches) return;
-    await command('staff-setRoles', { orgId: org.id, email: email.trim(), roles, branchIds: all ? ['*'] : picked });
+    await command('staff-setRoles', { orgId: org.id, email: email.trim(), roles, customRoles: custom, branchIds: all ? ['*'] : picked });
     onSaved();
     onClose();
   });
@@ -87,6 +93,19 @@ export function RolesDialog({
           ))}
           {touched && errors.roles && <span className="field-error">{errors.roles}</span>}
         </fieldset>
+        {ownOffered.length > 0 && (
+          <fieldset className="choices">
+            <legend>{ct.ownRolesPick}</legend>
+            <span className="field-hint">{ct.ownRolesPickHint}</span>
+            {ownOffered.map((r) => (
+              <label key={r.id} className="check">
+                <input type="checkbox" checked={custom.includes(r.id)} disabled={!r.canGive} onChange={() => setCustom(toggle(custom, r.id))} />
+                {r.name}
+                {r.wholeOrg && <span className="muted"> · {t.allBranches.toLowerCase()}</span>}
+              </label>
+            ))}
+          </fieldset>
+        )}
         <fieldset className="choices">
           <legend>{t.staffBranches}</legend>
           {scope === 'ALL' && (
@@ -135,7 +154,7 @@ export function StaffPage() {
   const [editing, setEditing] = useState<StaffMembership | null>(null);
   const [revoking, setRevoking] = useState<StaffMembership | null>(null);
   if (!org) return <NoOrgState />;
-  const manage = can(claims, 'staff.manageRoles', org.id) && grantableRoles(claims, org.id, org.type).length > 0;
+  const manage = can(claims, 'staff.manageRoles', org.id);
 
   return (
     <>
@@ -182,7 +201,7 @@ export function StaffPage() {
                       </div>
                     </td>
                     <td className="mono nowrap">{m.employeeId ?? '—'}</td>
-                    <td>{m.roles.map((r) => ROLES[r]?.label ?? r).join(', ') || '—'}</td>
+                    <td>{[...m.roles.map((r) => ROLES[r]?.label ?? r), ...(m.customRoleNames ?? [])].join(', ') || '—'}</td>
                     <td>{m.branchIds.includes('*') ? t.allBranches : m.branchIds.map(branchName).join(', ')}</td>
                     <td>
                       <StatusBadge status={m.status} />

@@ -13,7 +13,7 @@ import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { auth, db } from '../core/firebase.js';
 import { notify } from '../core/notify.js';
-import { coversBranch, rolesGrant } from '../core/rbac.js';
+import { coversBranch, holds, type Membership } from '../core/rbac.js';
 import { id } from '../core/schemas.js';
 import { bucket } from '../catalogue/covers.js';
 import { ROLES } from '../generated/rbac.js';
@@ -151,8 +151,8 @@ async function alert(submissionId: string, s: { form: Form; name: string; branch
   if (s.branchId && s.orgId && conn.get('alertBranchManagers') !== false) {
     const managers = await db.collectionGroup('memberships').where('orgId', '==', s.orgId).where('status', '==', 'ACTIVE').get();
     for (const m of managers.docs) {
-      const roles = (m.get('roles') as string[] | undefined) ?? [];
-      if (roles.some((r) => r === 'BRANCH_MANAGER' || r === 'FRANCHISE_OWNER') && coversBranch((m.get('branchIds') as string[]) ?? [], s.branchId)) recipients.set(m.get('uid') as string, s.orgId);
+      // Those who look after the branch's website page (Branch Owners, Senior Librarians, roles of their own with it).
+      if (holds(m.data() as Membership, 'website.branch') && coversBranch((m.get('branchIds') as string[]) ?? [], s.branchId)) recipients.set(m.get('uid') as string, s.orgId);
     }
   }
   if (!recipients.size) return;
@@ -198,7 +198,7 @@ const iso = (t: Timestamp | null | undefined) => (t ? t.toDate().toISOString() :
 
 async function submissionRights(uid: string, actor: Parameters<typeof rightsOf>[0]) {
   const r = await rightsOf(actor);
-  const branchRoles = r.memberships.filter((m) => rolesGrant(m.roles, 'website.branch'));
+  const branchRoles = r.memberships.filter((m) => holds(m, 'website.branch'));
   if (!r.manager && !branchRoles.length) throw errors.forbidden();
   return { r, sees: (s: { orgId?: string | null; branchId?: string | null }) => !!r.manager || (!!s.orgId && !!s.branchId && canEditBranch(r, s.orgId, s.branchId)), uid };
 }
@@ -318,8 +318,6 @@ export const saveConnections = command(
 
 // ------------------------------------------------------------------ console: admins
 
-const WEBSITE_ROLES = ['HEAD_OFFICE_ADMIN', 'WEBSITE_EDITOR', 'FRANCHISE_OWNER', 'BRANCH_MANAGER', 'LIBRARIAN'] as const;
-
 /** Everyone who can change the website, and what they may do. */
 export const admins = query('site-admins', z.strictObject({}), async ({ actor }) => {
   const r = await rightsOf(actor);
@@ -333,18 +331,17 @@ export const admins = query('site-admins', z.strictObject({}), async ({ actor })
   const branchName = new Map(branches.flatMap((s) => s.docs).map((b) => [b.id, String(b.get('name') ?? '')]));
   const people = members
     .flatMap((s) => s.docs)
-    .map((d) => d.data() as { uid: string; email: string | null; displayName: string | null; orgName: string; orgType: string; roles: string[]; branchIds: string[] })
-    .map((m) => ({ ...m, roles: m.roles.filter((x) => (WEBSITE_ROLES as readonly string[]).includes(x)) }))
-    .filter((m) => m.roles.length)
+    .map((d) => d.data() as Membership)
+    .filter((m) => holds(m, 'website.manage') || holds(m, 'website.branch') || holds(m, 'blog.write'))
     .map((m) => {
-      const can = (p: Parameters<typeof rolesGrant>[1]) => rolesGrant(m.roles as never, p);
+      const can = (p: Parameters<typeof holds>[1]) => holds(m, p);
       const level = m.orgType === 'CORPORATE' && can('website.manage') ? 'MANAGER' : can('website.branch') ? 'BRANCH' : 'WRITER';
       return {
         uid: m.uid,
         name: m.displayName ?? m.email ?? '',
         email: m.email ?? '',
         org: m.orgName,
-        roles: m.roles.map((x) => ROLES[x as keyof typeof ROLES]?.label ?? x),
+        roles: [...m.roles.map((x) => ROLES[x]?.label ?? x), ...(m.customRoleNames ?? [])],
         level,
         branches: level === 'MANAGER' ? [] : m.branchIds.includes('*') ? ['All branches'] : m.branchIds.map((b) => branchName.get(b) ?? b),
       };
@@ -360,7 +357,7 @@ export const admins = query('site-admins', z.strictObject({}), async ({ actor })
 /** For the dashboard and the menu: enquiries waiting (website managers: all; branch managers: their branches'), taps this week. */
 export async function inboxCounts(r: Awaited<ReturnType<typeof rightsOf>>) {
   if (!r.manager) {
-    const branchRoles = r.memberships.filter((m) => rolesGrant(m.roles, 'website.branch'));
+    const branchRoles = r.memberships.filter((m) => holds(m, 'website.branch'));
     if (!branchRoles.length) return { newSubmissions: null, callsThisWeek: null, openJobs: null };
     const open = await db.collection('siteSubmissions').where('handled', '==', false).limit(500).get();
     const mine = open.docs.filter((d) => {

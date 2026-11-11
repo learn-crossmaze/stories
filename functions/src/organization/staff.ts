@@ -11,32 +11,31 @@ import {
   type Actor,
   type BranchScope,
   grantableBy,
+  holds,
   isOrgWideRole,
   isPlatformRole,
   type Membership,
   type OrgType,
-  rolesGrant,
   type UserProfile,
 } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
 import { ROLES, type Role } from '../generated/rbac.js';
 import { assignEmployeeCode } from '../hr/codes.js';
 import { employeeCodeRef, employeesCol, findEmployeeFor, newEmployee } from '../hr/model.js';
+import { type CustomRole, customFields, loadRoles, mayGive, within } from './roles.js';
 
 const orgRole = z.enum(Object.keys(ROLES) as [Role, ...Role[]]).refine((r) => !isPlatformRole(r), 'is not an organization role');
 const branchScope = z.array(z.union([z.literal(ALL_BRANCHES), id])).min(1).max(20);
 
-const within = (inner: BranchScope, outer: BranchScope) =>
-  outer.includes(ALL_BRANCHES) || (!inner.includes(ALL_BRANCHES) && inner.every((b) => outer.includes(b)));
-
 /**
  * Checks that `actor` may change `target`'s membership in `orgId` from
- * `existing` to (`roles`, `branchIds`). Rules (docs/RBAC.md):
+ * `existing` to (`roles` + own roles `custom`, `branchIds`). Rules (docs/RBAC.md §4.1):
  * - Super Admin may do anything.
  * - Otherwise the actor needs `staff.manageRoles` in the org, may only add or
- *   remove roles listed for them in `grantable`, may not touch a member who
- *   holds a role they cannot grant, and — if branch-scoped — may only act
- *   within their own branches.
+ *   remove ready-made roles listed for them in `grantable` and roles of the
+ *   organization's own that give nothing they can't do themselves, may not
+ *   touch a member who holds a role they cannot grant, and — if branch-scoped —
+ *   may only act within their own branches.
  * - Nobody but a Super Admin edits their own roles.
  */
 async function authorize(
@@ -47,14 +46,21 @@ async function authorize(
   existing: Membership | null,
   roles: Role[],
   branchIds: BranchScope,
+  custom: { ids: string[]; defs: Map<string, CustomRole> },
 ) {
+  const current = existing?.status === 'ACTIVE' ? existing : null;
+  for (const i of custom.ids) {
+    if (!(await mayGive(actor, orgId, custom.defs.get(i)!, branchIds, tx))) {
+      throw errors.forbidden(actor.isSuperAdmin ? `${custom.defs.get(i)!.name} can't be given at the chosen branches.` : "You can't give one of the selected roles.");
+    }
+  }
   if (actor.isSuperAdmin) return;
   if (targetUid === actor.uid) throw errors.forbidden("You can't change your own roles. Ask another administrator.");
   const mine = await actor.membership(orgId, tx);
-  if (!mine || !rolesGrant(mine.roles, 'staff.manageRoles')) throw errors.forbidden();
+  if (!mine || !holds(mine, 'staff.manageRoles')) throw errors.forbidden();
   const allowed = grantableBy(mine.roles);
-  const current = existing?.status === 'ACTIVE' ? existing : null;
-  if (current?.roles.some((r) => !allowed.has(r))) {
+  const myPerms = (await actor.permissions(orgId, tx)).perms;
+  if (current?.roles.some((r) => !allowed.has(r)) || (current?.customPerms ?? []).some((p) => !myPerms.has(p))) {
     throw errors.forbidden('This person holds a role you cannot manage. Ask a senior administrator.');
   }
   if (roles.some((r) => !allowed.has(r))) throw errors.forbidden("You can't grant one of the selected roles.");
@@ -73,7 +79,7 @@ function validateScope(orgType: OrgType, roles: Role[], branchIds: BranchScope) 
   const all = branchIds.includes(ALL_BRANCHES);
   if (all && branchIds.length > 1) throw errors.invalid('Choose either all branches or specific branches.');
   if (roles.some(isOrgWideRole) && !all) {
-    throw errors.invalid('Organization-wide roles (admins, franchise owner) must cover all branches.');
+    throw errors.invalid('Organization-wide roles (HR Admin, Finance Admin, Website Editor) must cover all branches.');
   }
 }
 
@@ -97,7 +103,9 @@ export const setRoles = command(
   z.strictObject({
     orgId: id,
     email: z.email().transform((e) => e.toLowerCase()),
-    roles: z.array(orgRole).min(1).max(5).refine((r) => new Set(r).size === r.length, 'contains a role twice'),
+    roles: z.array(orgRole).max(5).refine((r) => new Set(r).size === r.length, 'contains a role twice'),
+    /** Roles of the organization's own (Master control → Roles). */
+    customRoles: z.array(id).max(5).default([]).refine((r) => new Set(r).size === r.length, 'contains a role twice'),
     branchIds: branchScope,
     /** Blank keeps the current ID, or numbers a new one with the first branch's employee pattern. */
     employeeId: z.union([z.literal(''), z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{2,24}$/, 'must be 2–24 letters, digits or dashes')]).default(''),
@@ -107,12 +115,15 @@ export const setRoles = command(
     const orgSnap = await tx.get(db.doc(`orgs/${input.orgId}`));
     if (!orgSnap.exists || orgSnap.get('status') !== 'ACTIVE') throw errors.notFound('Organization');
     const orgType = orgSnap.get('type') as OrgType;
+    if (!input.roles.length && !input.customRoles.length) throw errors.invalid('Choose at least one role.');
     validateScope(orgType, input.roles, input.branchIds);
 
     const ref = db.doc(`users/${target.uid}/memberships/${input.orgId}`);
     const snap = await tx.get(ref);
     const existing = snap.exists ? (snap.data() as Membership) : null;
-    await authorize(tx, actor, input.orgId, target.uid, existing, input.roles, input.branchIds);
+    const defs = await loadRoles(tx, input.customRoles);
+    await authorize(tx, actor, input.orgId, target.uid, existing, input.roles, input.branchIds, { ids: input.customRoles, defs });
+    const custom = customFields(input.customRoles, defs);
 
     const branches = input.branchIds.includes(ALL_BRANCHES)
       ? []
@@ -124,7 +135,7 @@ export const setRoles = command(
     }
     await assertClaimsFit(tx, target.uid, profile.data() as UserProfile, {
       orgId: input.orgId, orgName: orgSnap.get('name'), orgType, uid: target.uid, email: null, displayName: null,
-      roles: input.roles, branchIds: input.branchIds, status: 'ACTIVE',
+      roles: input.roles, ...custom, branchIds: input.branchIds, status: 'ACTIVE',
     });
     // Every staff member has one employee record (People); link or create it, never duplicate it.
     const email = target.email ?? input.email;
@@ -145,6 +156,7 @@ export const setRoles = command(
       email: target.email ?? input.email,
       displayName: target.displayName ?? null,
       roles: input.roles,
+      ...custom,
       branchIds: input.branchIds,
       status: 'ACTIVE',
     };
@@ -170,8 +182,8 @@ export const setRoles = command(
       entityType: 'membership',
       entityId: target.uid,
       branchId: input.branchIds.length === 1 && input.branchIds[0] !== ALL_BRANCHES ? input.branchIds[0] : null,
-      before: existing ? { roles: existing.roles, branchIds: existing.branchIds, status: existing.status } : null,
-      after: { roles: input.roles, branchIds: input.branchIds, status: 'ACTIVE', employeeId: staffId.employeeId, employeeDocId: employeeDoc.id },
+      before: existing ? { roles: existing.roles, customRoles: existing.customRoleNames ?? [], branchIds: existing.branchIds, status: existing.status } : null,
+      after: { roles: input.roles, customRoles: custom.customRoleNames, branchIds: input.branchIds, status: 'ACTIVE', employeeId: staffId.employeeId, employeeDocId: employeeDoc.id },
     });
     return { uid: target.uid };
   },
@@ -189,14 +201,14 @@ export const revoke = command(
     const snap = await tx.get(ref);
     const existing = snap.exists ? (snap.data() as Membership) : null;
     if (!existing || existing.status !== 'ACTIVE') throw errors.notFound('Active staff role');
-    await authorize(tx, actor, input.orgId, input.uid, existing, [], existing.branchIds);
-    tx.update(ref, { status: 'REVOKED', roles: [], revokedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
+    await authorize(tx, actor, input.orgId, input.uid, existing, [], existing.branchIds, { ids: [], defs: new Map() });
+    tx.update(ref, { status: 'REVOKED', roles: [], customRoles: [], customPerms: [], customRoleNames: [], revokedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
     markClaimsStale(tx, input.uid);
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'staff.revoke',
       entityType: 'membership',
       entityId: input.uid,
-      before: { roles: existing.roles, branchIds: existing.branchIds, status: existing.status },
+      before: { roles: existing.roles, customRoles: existing.customRoleNames ?? [], branchIds: existing.branchIds, status: existing.status },
       after: { roles: [], status: 'REVOKED' },
       reason: input.reason,
     });

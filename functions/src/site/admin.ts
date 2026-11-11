@@ -13,7 +13,7 @@ import { command, query, requestIdSchema } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { notify } from '../core/notify.js';
-import { type Actor, coversBranch, type Membership, rolesGrant } from '../core/rbac.js';
+import { type Actor, coversBranch, holds, type Membership } from '../core/rbac.js';
 import { id } from '../core/schemas.js';
 import { bucket, downloadUrl, IMAGE_TYPES } from '../catalogue/covers.js';
 import { inboxCounts } from './inbox.js';
@@ -81,13 +81,13 @@ export async function rightsOf(actor: Actor, tx?: Transaction): Promise<Rights> 
   const q = db.collection(`users/${actor.uid}/memberships`).where('status', '==', 'ACTIVE');
   const memberships = (tx ? await tx.get(q) : await q.get()).docs.map((d) => d.data() as Membership);
   if (actor.isSuperAdmin) return { manager: { orgId: null }, memberships };
-  const m = memberships.find((x) => x.orgType === 'CORPORATE' && rolesGrant(x.roles, 'website.manage'));
+  const m = memberships.find((x) => x.orgType === 'CORPORATE' && holds(x, 'website.manage'));
   return { manager: m ? { orgId: m.orgId } : null, memberships };
 }
 
 export const canEditBranch = (r: Rights, orgId: string, branchId: string) =>
-  !!r.manager || r.memberships.some((m) => m.orgId === orgId && rolesGrant(m.roles, 'website.branch') && coversBranch(m.branchIds, branchId));
-export const canWrite = (r: Rights) => !!r.manager || r.memberships.some((m) => rolesGrant(m.roles, 'blog.write') || rolesGrant(m.roles, 'website.branch'));
+  !!r.manager || r.memberships.some((m) => m.orgId === orgId && holds(m, 'website.branch') && coversBranch(m.branchIds, branchId));
+export const canWrite = (r: Rights) => !!r.manager || r.memberships.some((m) => holds(m, 'blog.write') || holds(m, 'website.branch'));
 
 const postBranch = (d: Draft | null | undefined) => (d?.branch as PostDraft['branch'] | undefined) ?? null;
 /** Editing a post: website managers, its writer, and managers of the branch it is about. */
@@ -115,7 +115,7 @@ function canPublish(r: Rights, kind: Kind, doc: SiteDoc, itemId: string): boolea
 
 /** The organization an action is recorded under: the branch's, else the manager's, else the writer's. */
 function auditOrg(r: Rights, branchOrg: string | null | undefined): string | null {
-  return branchOrg ?? r.manager?.orgId ?? r.memberships.find((m) => rolesGrant(m.roles, 'blog.write'))?.orgId ?? null;
+  return branchOrg ?? r.manager?.orgId ?? r.memberships.find((m) => holds(m, 'blog.write'))?.orgId ?? null;
 }
 
 /** An item's name in lists and the publish log: a branch page goes by its branch's name. */
@@ -222,7 +222,7 @@ const resolveId = (k: Kind, itemId: string | undefined) => {
 /** The Website section's front page: what the caller may do, what waits to be published or reviewed, recent publishes. */
 export const overview = query('site-overview', z.strictObject({}), async ({ actor }) => {
   const r = await rightsOf(actor);
-  if (!r.manager && !canWrite(r) && !r.memberships.some((m) => rolesGrant(m.roles, 'website.branch'))) throw errors.forbidden();
+  if (!r.manager && !canWrite(r) && !r.memberships.some((m) => holds(m, 'website.branch'))) throw errors.forbidden();
   const [changed, reviews, recent] = await Promise.all([
     Promise.all(KINDS.filter((k) => !SINGLETONS[k] || k === 'settings').map((k) => db.collection(collectionOf[k]).where('changed', '==', true).limit(100).get())),
     db.collection('sitePosts').where('review', '!=', null).limit(50).get(),
@@ -248,7 +248,7 @@ export const overview = query('site-overview', z.strictObject({}), async ({ acto
     rights: {
       manager: !!r.manager,
       canWrite: canWrite(r),
-      branches: r.memberships.filter((m) => rolesGrant(m.roles, 'website.branch')).map((m) => ({ orgId: m.orgId, branchIds: m.branchIds })),
+      branches: r.memberships.filter((m) => holds(m, 'website.branch')).map((m) => ({ orgId: m.orgId, branchIds: m.branchIds })),
     },
     pending,
     reviews: reviews.docs
@@ -266,7 +266,7 @@ export const list = query('site-list', z.strictObject({ kind: z.enum(LISTS) }), 
   if (input.kind === 'branch') {
     const orgs = r.manager
       ? (await db.collection('orgs').where('status', '==', 'ACTIVE').get()).docs.map((o) => o.id)
-      : [...new Set(r.memberships.filter((m) => rolesGrant(m.roles, 'website.branch')).map((m) => m.orgId))];
+      : [...new Set(r.memberships.filter((m) => holds(m, 'website.branch')).map((m) => m.orgId))];
     const [branches, pages] = await Promise.all([
       Promise.all(orgs.map((o) => db.collection(`orgs/${o}/branches`).where('status', '==', 'ACTIVE').get())),
       db.collection('siteBranches').get(),

@@ -1,17 +1,19 @@
 import type { Transaction } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
-import { ROLES } from '../generated/rbac.js';
+import { PERMISSION_CODES, ROLES } from '../generated/rbac.js';
 import { errors } from './errors.js';
 import { auth, db } from './firebase.js';
-import type { Membership, UserProfile } from './rbac.js';
+import { type Membership, permissionsOf, type UserProfile } from './rbac.js';
 import { sweep } from './sweep.js';
 
 /** Compact token claims (docs/RBAC.md §4). Short codes keep us under the 1000-byte limit. */
 export interface StoriesClaims {
   v: number;
   sa: boolean;
-  o: Record<string, { r: string[]; b: string[] }>;
+  /** Per organization: ready-made role codes (`r`, for display), branch scope (`b`), and every permission held
+   * there as 2-character codes run together (`p`, what rules and the app check; docs/RBAC.md §4). */
+  o: Record<string, { r: string[]; b: string[]; p: string }>;
 }
 
 export function buildClaims(version: number, profile: Pick<UserProfile, 'platformRoles' | 'status'> | null, memberships: Membership[]): StoriesClaims {
@@ -19,8 +21,9 @@ export function buildClaims(version: number, profile: Pick<UserProfile, 'platfor
   const o: StoriesClaims['o'] = {};
   if (active) {
     for (const m of memberships) {
-      if (m.status !== 'ACTIVE' || m.roles.length === 0) continue;
-      o[m.orgId] = { r: m.roles.map((r) => ROLES[r].code), b: [...m.branchIds] };
+      if (m.status !== 'ACTIVE' || (m.roles.length === 0 && !m.customRoles?.length)) continue;
+      const p = [...permissionsOf(m)].map((x) => PERMISSION_CODES[x]).sort().join('');
+      o[m.orgId] = { r: m.roles.filter((r) => ROLES[r]).map((r) => ROLES[r].code), b: [...m.branchIds], p };
     }
   }
   return { v: version, sa: active && (profile?.platformRoles ?? []).includes('SUPER_ADMIN'), o };

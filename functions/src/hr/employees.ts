@@ -287,7 +287,7 @@ export const transition = command(
 
     tx.update(snap.ref, { ...changes, updatedAt: FieldValue.serverTimestamp() });
     if (membershipRef && membership) {
-      tx.update(membershipRef, { status: 'REVOKED', roles: [], revokedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
+      tx.update(membershipRef, { status: 'REVOKED', roles: [], customRoles: [], customPerms: [], customRoleNames: [], revokedBy: actor.uid, updatedAt: FieldValue.serverTimestamp() });
       markClaimsStale(tx, snap.get('uid'));
       recordAudit(tx, auditCtx(ctx), input.orgId, {
         action: 'staff.revoke',
