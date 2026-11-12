@@ -14,11 +14,21 @@ import { balanceOf, depositRef } from '../billing/ledger.js';
 import { requireActiveTerm, type Term } from '../billing/term.js';
 import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
 
-const barcodes = z
-  .array(z.string().trim().toUpperCase().min(4).max(32))
-  .min(1)
-  .max(10)
-  .refine((b) => new Set(b).size === b.length, 'lists the same copy twice');
+const barcodeList = (max: number) =>
+  z
+    .array(z.string().trim().toUpperCase().min(4).max(32))
+    .min(1)
+    .max(max)
+    .refine((b) => new Set(b).size === b.length, 'lists the same copy twice');
+
+const barcodes = barcodeList(10);
+
+/**
+ * Books in one `circulation-return`: a pile from the drop box is bigger than what one member borrows.
+ * Issue and exchange keep 10. (At 30 books of 30 members the call writes 181 documents; a transaction takes 500.)
+ */
+export const RETURN_MAX = 30;
+const returnBarcodes = barcodeList(RETURN_MAX);
 
 // ------------------------------------------------------------------ shared read/write phases
 //
@@ -122,6 +132,8 @@ export function writeIssue(
     });
     transition(tx, snap, 'ISSUED', {
       activeLoanId: loanRef.id, activeReservationId: null, locationId: null, lifetimeLoans: FieldValue.increment(1),
+      // The shelf it leaves is remembered for putting it back. Never cleared: a copy issued off the trolley keeps its usual shelf.
+      ...(copy.locationId ? { lastLocationId: copy.locationId } : {}),
     }, { type: 'ISSUED', actorUid, ref: { loanId: loanRef.id, memberId } });
     if (reservation) {
       tx.update(reservation.ref, { status: 'FULFILLED', fulfilledLoanId: loanRef.id, updatedAt: FieldValue.serverTimestamp() });
@@ -222,7 +234,7 @@ export const issue = command(
 /** Takes books back. Always allowed — even after the subscription has expired. */
 export const returnCopies = command(
   'circulation-return',
-  z.strictObject({ orgId: id, branchId: id, barcodes }),
+  z.strictObject({ orgId: id, branchId: id, barcodes: returnBarcodes }),
   async ({ actor, input, requestId }, tx) => {
     const [, items] = await inOrder([
       actor.require('loans.return', input.orgId, input.branchId, tx),

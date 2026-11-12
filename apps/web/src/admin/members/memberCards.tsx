@@ -52,6 +52,8 @@ export function SubscriptionCard({
   canCollectOnline,
   onChanged,
   onNotice,
+  autoOpen = false,
+  onAutoOpened,
 }: {
   orgId: string;
   m: Member;
@@ -60,10 +62,24 @@ export function SubscriptionCard({
   canCollectOnline: boolean;
   onChanged: () => void;
   onNotice: (text: string) => void;
+  /** Open the plan chooser by itself once it can be used (a member registered a moment ago). */
+  autoOpen?: boolean;
+  /** The chooser opened by itself: the page stops asking, so closing it leaves it closed. */
+  onAutoOpened?: () => void;
 }) {
   const [dialog, setDialog] = useState<SubscriptionDialog | null>(null);
   const { current, next, pending } = subscriptionState(subs.data ?? [], m);
   const max = current?.planSnapshot.maxSimultaneousBooks ?? 0;
+  // When a plan can be sold or renewed: the same test shows the buttons and lets the chooser open by itself.
+  const canStart = !subs.loading && !subs.error && !pending && m.status === 'ACTIVE' && perm('subscriptions.manage') && !next;
+  useEffect(() => {
+    if (!autoOpen || !canStart || current) return;
+    setDialog('subscribe');
+    onAutoOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpen, canStart, !current]);
+  // The plan to offer first: the one running, or the last one paid for.
+  const previous = current ?? (subs.data ?? []).find((s) => s.status === 'ACTIVE' || s.status === 'EXPIRED');
   return (
     <section className="card">
       <h2>{lt.subscription}</h2>
@@ -114,7 +130,7 @@ export function SubscriptionCard({
           </div>
         </div>
       )}
-      {!subs.loading && !subs.error && !pending && m.status === 'ACTIVE' && perm('subscriptions.manage') && !next && (
+      {canStart && (
         <div className="row">
           <button type="button" className="btn btn-outlined" onClick={() => setDialog(current ? 'renew' : 'subscribe')}>
             {current ? lt.renew : lt.subscribe}
@@ -128,7 +144,19 @@ export function SubscriptionCard({
       )}
 
       {(dialog === 'subscribe' || dialog === 'renew') && (
-        <SubscribeDialog orgId={orgId} member={m} renewing={dialog === 'renew'} onClose={() => setDialog(null)} onCreated={onChanged} />
+        <SubscribeDialog
+          orgId={orgId}
+          member={m}
+          renewing={dialog === 'renew'}
+          previous={previous}
+          canTakePayment={perm('payments.recordOffline') && perm('deposits.view')}
+          onClose={() => setDialog(null)}
+          onCreated={onChanged}
+          onPaid={() => {
+            onNotice(lt.paymentRecorded);
+            onChanged();
+          }}
+        />
       )}
       {dialog === 'upgrade' && <UpgradeDialog orgId={orgId} member={m} onClose={() => setDialog(null)} onCreated={onChanged} />}
       {dialog === 'online' && pending && (
@@ -172,13 +200,19 @@ export function SubscriptionCard({
   );
 }
 
+/** The deposit card shows the latest entries only. */
+const LEDGER_ROWS = 8;
+
 /** Deposit balance and ledger, adjustments and settlement (staff who may see deposits). */
 export function DepositCard({ orgId, memberId, scope, perm, reloadKey, onChanged }: { orgId: string; memberId: string; scope: Scope; perm: Perm; reloadKey: number; onChanged: () => void }) {
   const [dialog, setDialog] = useState<'adjust' | 'settle' | 'refund' | null>(null);
   const deposit = useAsync(async () => {
-    const account = await depositAccount(orgId, memberId);
-    // The ledger lives under the account; members have none until their first deposit.
-    return { account, ledger: account ? await ledger(orgId, memberId) : [], adjustments: await memberAdjustments(orgId, memberId, scope) };
+    const [{ account, rows }, adjustments] = await Promise.all([
+      // The ledger lives under the account (members have none until their first deposit), so it waits for the account.
+      depositAccount(orgId, memberId).then(async (account) => ({ account, rows: account ? await ledger(orgId, memberId, LEDGER_ROWS) : [] })),
+      memberAdjustments(orgId, memberId, scope),
+    ]);
+    return { account, ledger: rows, adjustments };
   }, [orgId, memberId, JSON.stringify(scope)]);
   useReloadOn(reloadKey, deposit.reload);
   const acct = deposit.data?.account;
@@ -222,7 +256,7 @@ export function DepositCard({ orgId, memberId, scope, perm, reloadKey, onChanged
           {!!deposit.data.ledger.length && (
             <table className="table compact">
               <tbody>
-                {deposit.data.ledger.slice(0, 8).map((e) => (
+                {deposit.data.ledger.slice(0, LEDGER_ROWS).map((e) => (
                   <tr key={e.id}>
                     <td className="nowrap small">{day(e.at)}</td>
                     <td className="small">{label(e.type.replace('DEPOSIT_', ''))}</td>
@@ -258,7 +292,7 @@ export function DepositCard({ orgId, memberId, scope, perm, reloadKey, onChanged
 /** Books the member has now, with "declare lost". */
 export function CurrentLoans({ orgId, memberId, scope, reloadKey, onChanged }: { orgId: string; memberId: string; scope: Scope; reloadKey: number; onChanged: () => void }) {
   const { claims } = useAuth();
-  const loans = useAsync(() => memberLoans(orgId, memberId, scope, false), [orgId, memberId, JSON.stringify(scope)]);
+  const loans = useAsync(() => memberLoans(orgId, memberId, scope, true), [orgId, memberId, JSON.stringify(scope)]);
   useReloadOn(reloadKey, loans.reload);
   const [lost, setLost] = useState<Loan | null>(null);
   const active = (loans.data ?? []).filter((l) => l.status === 'ACTIVE');

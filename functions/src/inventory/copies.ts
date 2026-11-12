@@ -10,7 +10,7 @@ import { db } from '../core/firebase.js';
 import { bookNumber } from '../core/numbering.js';
 import { planAcquisition } from './acquisition.js';
 import { id, reason } from '../core/schemas.js';
-import { copyRef, loadCopy, requireStatus, transition } from './copyOps.js';
+import { type Copy, copyRef, loadCopy, requireStatus, transition } from './copyOps.js';
 import { CONDITIONS, IN_STOCK } from './copyState.js';
 
 const barcode = z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{4,32}$/, 'must be 4–32 letters, digits or dashes');
@@ -133,6 +133,59 @@ export const inspect = command(
       });
     }
     return { copyId: input.copyId };
+  },
+);
+
+/** Copies per `copies-inspectMany`: the Inspection list shows 50, and each copy writes at most 8 documents (a transaction takes 500). */
+export const INSPECT_MAX = 50;
+
+/**
+ * Passes the inspection of many returned copies at once (the desk's
+ * Inspection tab). Each goes back on the shelf in the condition on record, or
+ * straight to the member who has waited longest for its title. A copy someone
+ * else has already decided is skipped, so one stale row never holds up the
+ * rest; a copy at another branch stops the batch. Damaged copies are recorded
+ * one at a time with `copies-inspect`.
+ */
+export const inspectMany = command(
+  'copies-inspectMany',
+  z.strictObject({
+    orgId: id,
+    branchId: id,
+    copyIds: z
+      .array(id)
+      .min(1)
+      .max(INSPECT_MAX, `pass at most ${INSPECT_MAX} copies at a time`)
+      .refine((v) => new Set(v).size === v.length, 'contains a copy twice'),
+  }),
+  async ({ actor, input, requestId }, tx) => {
+    await actor.require('copies.manage', input.orgId, input.branchId, tx);
+    const snaps = await tx.getAll(...input.copyIds.map((c) => copyRef(input.orgId, c)));
+    for (const s of snaps) {
+      if (!s.exists) throw errors.notFound('Copy');
+      const copy = s.data() as Copy;
+      if (copy.currentBranchId !== input.branchId) throw errors.conflict('OTHER_BRANCH', `Copy ${copy.code} is not at this branch.`);
+    }
+    const due = snaps.filter((s) => s.get('status') === 'UNDER_INSPECTION');
+    // Copies of one title go to different members: the queue is read once per title, as deep as the copies of it here.
+    const perBook = new Map<string, number>();
+    for (const s of due) perBook.set(s.get('bookId') as string, (perBook.get(s.get('bookId') as string) ?? 0) + 1);
+    const waitingByBook = new Map(
+      await Promise.all([...perBook].map(async ([bookId, n]) => [bookId, await nextWaiting(tx, input.orgId, input.branchId, bookId, n)] as const)),
+    );
+    const { holdHours } = [...waitingByBook.values()].some((w) => w.length) ? await readCirculationConfig(tx, input.orgId) : { holdHours: 0 };
+
+    for (const s of due) {
+      const copy = s.data() as Copy;
+      const waiting = waitingByBook.get(copy.bookId)!.shift();
+      makeAvailable(tx, input.orgId, s, {}, { type: 'INSPECTED', actorUid: actor.uid, note: null }, waiting, holdHours);
+      recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+        action: 'copy.inspected', entityType: 'copy', entityId: s.id, branchId: input.branchId, reason: null,
+        before: { status: copy.status, condition: copy.condition },
+        after: { status: waiting ? 'RESERVED' : 'AVAILABLE', condition: copy.condition, reservationId: waiting?.id ?? null },
+      });
+    }
+    return { passed: due.map((s) => s.id), skipped: snaps.filter((s) => !due.includes(s)).map((s) => s.get('code') as string) };
   },
 );
 

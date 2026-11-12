@@ -15,6 +15,8 @@ export interface Copy {
   owningBranchId: string;
   currentBranchId: string;
   locationId: string | null;
+  /** The shelf the copy was last issued from (its usual shelf); absent until it has been issued off a shelf. */
+  lastLocationId?: string | null;
   status: CopyStatus;
   condition: string;
   acquisitionCostMinor: number;

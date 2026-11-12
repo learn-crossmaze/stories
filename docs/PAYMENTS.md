@@ -11,6 +11,16 @@ Until the online gateway arrives (Phase 2, Razorpay), subscriptions and deposits
   activates the subscription and posts DEPOSIT_COLLECTED to the deposit ledger, with an audit entry.
 - **Idempotent:** a retried request (same `requestId`) returns the first result; a second payment for an already
   active subscription is rejected (tested: exactly one payment, one activation).
+- **Sold and paid in one step:** at the counter, `subscriptions-create` with `payment: {method, amountMinor,
+  reference}` does the sale and the payment in the same transaction. The caller needs `subscriptions.manage` **and**
+  `payments.recordOffline` at the member's branch, and the amount must equal the plan fee plus the deposit top-up the
+  server works out; otherwise nothing is written. The subscription is created already ACTIVE (it never waits for
+  payment), with the same payment, ledger entry, message and both audit entries (`subscription.create`,
+  `payment.recordOffline`) as the two steps. One idempotency record covers both; its result carries `paymentId`,
+  `startAt` and `endAt`. Members cannot send `payment` (`me-subscribe` refuses the field). The console's *Subscribe* /
+  *Renew* dialog shows fee, deposit and total and offers **Take payment**, with **Save unpaid** for collecting online
+  or later; staff without `payments.recordOffline` or `deposits.view` keep the two steps
+  (tests: `functions/test/emulator/speedMembers.test.ts`, `apps/web/src/test/sellPlan.test.tsx`).
 - Deposit refunds are recorded as outgoing payments (`direction: OUT`, purpose DEPOSIT_REFUND).
 
 Amounts are integers in **paise**; currency INR.

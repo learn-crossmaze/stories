@@ -14,8 +14,7 @@ import {
   where,
 } from 'firebase/firestore';
 
-import { call } from './api';
-import { AgeGroup, db, Page, page, queryToken, withId } from './common';
+import { AgeGroup, db, Page, page, withId } from './common';
 
 export interface Member {
   id: string;
@@ -46,16 +45,69 @@ export interface Member {
   waitingCount: number;
   lifetimeLoans: number;
   lifetimeExchanges: number;
+  /** What search matches: the words of the name, member code and mobile number, and the starts of each (written by the server). */
+  searchTokens?: string[];
 }
 
-/** Member search by name, member code or phone (one token), within a branch. */
+/** The longest start of a word the server indexes (functions/src/catalogue/search.ts). */
+const WORD_MAX = 12;
+const SEARCH_LIMIT = 50;
+
+/**
+ * The words a member search must match, longest first. A mobile number is one
+ * word however it is typed ("98765 43210", "+91 98765 43210", "09876543210"):
+ * numbers are indexed without the country code. Anything else is split into
+ * words the way the server indexes them; one-letter pieces (the "M" of
+ * "KOR-M000123") are not indexed and are ignored.
+ */
+export function memberQueryWords(q: string): string[] {
+  if (/^[+\d\s()-]+$/.test(q)) {
+    let digits = q.replace(/\D/g, '');
+    // "+91…" is always the country code; without the plus, 91 is one only when a whole number follows it
+    // (mobile numbers themselves can start with 91).
+    if (/^\+91/.test(q.replace(/[\s()-]/g, '')) || (!q.includes('+') && digits.length > 10 && digits.startsWith('91'))) digits = digits.slice(2);
+    if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+    return digits.length >= 2 ? [digits.slice(0, WORD_MAX)] : [];
+  }
+  const words = q
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .split(' ')
+    .filter((w) => w.length >= 2)
+    .map((w) => w.slice(0, WORD_MAX));
+  return [...new Set(words)].sort((a, b) => b.length - a.length);
+}
+
+/** The members matching every typed word: the one whose member code was typed in full first, then by name. */
+export function narrowMembers<M extends Pick<Member, 'code' | 'fullName' | 'searchTokens'>>(rows: M[], q: string): M[] {
+  const words = memberQueryWords(q);
+  const code = q.trim().toUpperCase();
+  return rows
+    .filter((m) => words.every((w) => m.searchTokens?.includes(w)))
+    .sort((a, b) => Number(b.code === code) - Number(a.code === code) || a.fullName.localeCompare(b.fullName));
+}
+
+/** Member search by name, member code or mobile number within a branch: every typed word must match. */
 export async function searchMembers(orgId: string, branchId: string, q: string): Promise<Member[]> {
-  const token = queryToken(q.replace(/^\+?91/, ''));
-  if (!token) return [];
-  const snap = await getDocs(
-    query(collection(db(), `orgs/${orgId}/members`), where('homeBranchId', '==', branchId), where('searchTokens', 'array-contains', token), limit(20)),
-  );
-  return snap.docs.map((d) => withId<Member>(d)).sort((a, b) => a.fullName.localeCompare(b.fullName));
+  const words = memberQueryWords(q);
+  if (!words.length) return [];
+  const find = async (word: string) => {
+    const snap = await getDocs(
+      query(collection(db(), `orgs/${orgId}/members`), where('homeBranchId', '==', branchId), where('searchTokens', 'array-contains', word), limit(SEARCH_LIMIT)),
+    );
+    return snap.docs.map((d) => withId<Member>(d));
+  };
+  // The database matches one word; the rest narrow what it returns.
+  let found = await find(words[0]);
+  // A full page for a common word (a surname) may have left the member out: ask by the next word as well.
+  if (found.length === SEARCH_LIMIT && words.length > 1) {
+    const seen = new Set(found.map((m) => m.id));
+    found = [...found, ...(await find(words[1])).filter((m) => !seen.has(m.id))];
+  }
+  return narrowMembers(found, q);
 }
 
 /** Subscription filter on the member list. */
@@ -73,6 +125,9 @@ function renewalWindow() {
   return { now: Timestamp.now(), soon: Timestamp.fromMillis(Date.now() + RENEWAL_DUE_DAYS * 86_400_000) };
 }
 
+/** "Renewal due": the paid term ends from now up to RENEWAL_DUE_DAYS ahead. One place, so the list, its chip, the Dashboard and the menu count the same members. */
+const dueSoon = ({ now, soon }: ReturnType<typeof renewalWindow>): QueryConstraint[] => [where('renewalDueAt', '>=', now), where('renewalDueAt', '<=', soon)];
+
 /** Which renewal bucket a member falls in (same rules as the list filters). */
 export function renewalState(m: Pick<Member, 'renewalDueAt'>): Exclude<RenewalFilter, ''> {
   const end = m.renewalDueAt as Timestamp | null | undefined;
@@ -86,12 +141,13 @@ export function renewalState(m: Pick<Member, 'renewalDueAt'>): Exclude<RenewalFi
  * filtering by subscription (soonest first; most recently lapsed first for expired).
  */
 export async function listMembers(orgId: string, branchId: string, f: MemberFilters, after?: DocumentSnapshot): Promise<Page<Member>> {
-  const { now, soon } = renewalWindow();
+  const due = renewalWindow();
+  const { now } = due;
   const c: QueryConstraint[] = [where('homeBranchId', '==', branchId)];
   if (f.status) c.push(where('status', '==', f.status));
   if (f.audience) c.push(where('audience', '==', f.audience));
   if (f.renewal === 'ACTIVE') c.push(where('renewalDueAt', '>=', now), orderBy('renewalDueAt'));
-  else if (f.renewal === 'DUE') c.push(where('renewalDueAt', '>=', now), where('renewalDueAt', '<=', soon), orderBy('renewalDueAt'));
+  else if (f.renewal === 'DUE') c.push(...dueSoon(due), orderBy('renewalDueAt'));
   else if (f.renewal === 'EXPIRED') c.push(where('renewalDueAt', '<', now), orderBy('renewalDueAt', 'desc'));
   else if (f.renewal === 'NONE') c.push(where('renewalDueAt', '==', null), orderBy('fullName'));
   else c.push(orderBy('fullName'));
@@ -100,23 +156,25 @@ export async function listMembers(orgId: string, branchId: string, f: MemberFilt
 
 /** Member counts per subscription bucket at a branch (count queries: one read per 1000 members). */
 export async function memberCounts(orgId: string, branchId: string): Promise<Record<'ALL' | Exclude<RenewalFilter, ''>, number>> {
-  const { now, soon } = renewalWindow();
+  const due = renewalWindow();
+  const { now } = due;
   const base = collection(db(), `orgs/${orgId}/members`);
   const at = where('homeBranchId', '==', branchId);
   const count = async (...c: QueryConstraint[]) => (await getCountFromServer(query(base, at, ...c))).data().count;
   const [ALL, ACTIVE, DUE, EXPIRED, NONE] = await Promise.all([
     count(),
     count(where('renewalDueAt', '>=', now)),
-    count(where('renewalDueAt', '>=', now), where('renewalDueAt', '<=', soon)),
+    count(...dueSoon(due)),
     count(where('renewalDueAt', '<', now)),
     count(where('renewalDueAt', '==', null)),
   ]);
   return { ALL, ACTIVE, DUE, EXPIRED, NONE };
 }
 
-/** Fills plan and renewal date on members registered before the member list had them (once per branch). */
-export async function indexMemberList(orgId: string, branchId: string): Promise<void> {
-  await call('members-indexList', { orgId, branchId });
+/** How many members at a branch have a renewal due (the menu's count; the same members as the "Renewal due" chip). */
+export async function renewalsDueCount(orgId: string, branchId: string): Promise<number> {
+  const q = query(collection(db(), `orgs/${orgId}/members`), where('homeBranchId', '==', branchId), ...dueSoon(renewalWindow()));
+  return (await getCountFromServer(q)).data().count;
 }
 
 export async function getMember(orgId: string, memberId: string): Promise<Member | null> {

@@ -272,8 +272,9 @@ export async function depositAccount(orgId: string, memberId: string) {
   return s.exists() ? (s.data() as { balanceMinor: number; status: 'OPEN' | 'SETTLING' | 'CLOSED' }) : null;
 }
 
-export async function ledger(orgId: string, memberId: string): Promise<LedgerEntry[]> {
-  const snap = await getDocs(query(collection(db(), `orgs/${orgId}/depositAccounts/${memberId}/transactions`), orderBy('at', 'desc'), limit(50)));
+/** The latest deposit entries, newest first. Only read it once the account is known to exist (the rules look the account up). */
+export async function ledger(orgId: string, memberId: string, max = 50): Promise<LedgerEntry[]> {
+  const snap = await getDocs(query(collection(db(), `orgs/${orgId}/depositAccounts/${memberId}/transactions`), orderBy('at', 'desc'), limit(max)));
   return snap.docs.map((d) => withId<LedgerEntry>(d));
 }
 

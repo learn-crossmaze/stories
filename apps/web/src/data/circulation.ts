@@ -38,11 +38,32 @@ export interface Transfer {
   fromBranchId: string;
   toBranchId: string;
   status: 'DRAFT' | 'IN_TRANSIT' | 'RECEIVED' | 'CANCELLED';
-  items: { copyId: string; code: string; bookTitle: string; received: boolean; conditionIn: string | null }[];
+  /** `barcode` and `conditionOut` are missing on transfers made before they were kept. */
+  items: { copyId: string; code: string; barcode?: string; bookTitle: string; received: boolean; conditionOut?: string | null; conditionIn: string | null }[];
   itemCount: number;
   note: string | null;
   createdAt: unknown;
 }
+
+/** Copies one transfer takes (functions/src/circulation/transfers.ts). */
+export const TRANSFER_MAX = 50;
+
+/** What transfers-receive answers: how many went on the shelf picked, and the copies now held for waiting members. */
+export interface TransferReceipt {
+  transferId: string;
+  complete: boolean;
+  shelved: number;
+  /** The member is named only for staff who may see members at the branch. */
+  allocated: { code: string; bookTitle: string; memberName: string | null; memberCode: string | null }[];
+}
+
+/** Rows one reservation list reads: a list this long may not be the whole queue. */
+export const RESERVATIONS_PAGE = 100;
+
+/** Books one call takes (functions/src/circulation/circulation.ts): to issue, or on either side of an exchange. */
+export const ISSUE_MAX = 10;
+/** Books one return on its own takes. */
+export const RETURN_MAX = 30;
 
 export async function memberLoans(orgId: string, memberId: string, scope: Scope, active: boolean): Promise<Loan[]> {
   const c: QueryConstraint[] = [where('memberId', '==', memberId), ...scoped('branchId', scope)];
@@ -71,7 +92,7 @@ export async function branchReservations(orgId: string, branchId: string, status
       where('branchId', '==', branchId),
       where('status', '==', status),
       orderBy('queuedAt', 'asc'),
-      limit(100),
+      limit(RESERVATIONS_PAGE),
     ),
   );
   return snap.docs.map((d) => withId<Reservation>(d));

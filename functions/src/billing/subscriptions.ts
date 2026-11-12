@@ -5,6 +5,7 @@ import { recordAudit } from '../core/audit.js';
 import { type CallContext, command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { inOrder } from '../core/reads.js';
 import { id, reason } from '../core/schemas.js';
 import { addMonths } from '../core/time.js';
 import { loadMember } from '../members/members.js';
@@ -30,29 +31,53 @@ export const createSchema = z.strictObject({
   duration: z.enum(Object.keys(DURATIONS) as [Duration, ...Duration[]]).optional(),
 });
 
+const METHODS = ['OFFLINE_CASH', 'OFFLINE_UPI', 'OFFLINE_CARD', 'OFFLINE_BANK_TRANSFER'] as const;
+
+/** A payment taken at the counter: cash, or UPI / card / bank transfer with its reference number. */
+const counterPayment = z
+  .strictObject({ method: z.enum(METHODS), amountMinor: z.number().int().min(0), reference: z.string().trim().max(60).default('') })
+  .refine((p) => p.method === 'OFFLINE_CASH' || p.reference.length >= 4, 'needs the UPI/card/bank reference number');
+type CounterPayment = z.infer<typeof counterPayment>;
+
+/**
+ * Staff only (subscriptions-create): with `payment`, the plan is sold and paid
+ * for in one step. Members (me-subscribe) keep `createSchema`, which refuses the field.
+ */
+export const staffCreateSchema = createSchema.extend({ payment: counterPayment.optional() });
+
+const exactly = (totalMinor: number) => errors.invalid(`The amount must be exactly ₹${(totalMinor / 100).toFixed(2)}.`);
+
 /**
  * Shared by staff (subscriptions-create) and members buying their own plan
  * (me-subscribe): `authorize` decides who may act for the member.
+ *
+ * With `payment` (staff at the counter; `authorize` has checked they may take
+ * payments) nothing waits for payment: the subscription is created already
+ * active and the payment and deposit are recorded in this transaction, exactly
+ * as payments-recordOffline would. The amount must equal what is due.
  */
 export async function startSubscription(
   { actor, input, requestId }: CallContext<z.infer<typeof createSchema>>,
   tx: Transaction,
   authorize: (member: Member) => Promise<void>,
+  payment?: CounterPayment,
 ) {
     const { snap: memberSnap, member } = await loadMember(tx, input.orgId, input.memberId);
     await authorize(member);
     if (member.status !== 'ACTIVE') throw errors.conflict('MEMBER_INACTIVE', 'Reactivate the membership first.');
-    const planSnap = await tx.get(db.doc(`orgs/${input.orgId}/plans/${input.planId}`));
+    // Read together; the checks below keep the order they had when these were read one by one.
+    const [planSnap, pending, term, deposit] = await inOrder([
+      tx.get(db.doc(`orgs/${input.orgId}/plans/${input.planId}`)),
+      tx.get(db.collection(`orgs/${input.orgId}/subscriptions`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING_PAYMENT').limit(1)),
+      currentTerm(tx, input.orgId, member),
+      tx.get(depositRef(input.orgId, input.memberId)),
+    ]);
     if (!planSnap.exists || planSnap.get('status') !== 'ACTIVE') throw errors.notFound('Active plan');
     const plan = planSnap.data() as Plan;
     if (!plan.audiences.includes(member.audience)) {
       throw errors.conflict('PLAN_NOT_ELIGIBLE', `${plan.name} isn't available for ${member.audience.toLowerCase()} members.`);
     }
-    const pending = await tx.get(
-      db.collection(`orgs/${input.orgId}/subscriptions`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING_PAYMENT').limit(1),
-    );
     if (!pending.empty) throw errors.conflict('PENDING_EXISTS', 'This member already has a subscription waiting for payment. Record or cancel it first.');
-    const term = await currentTerm(tx, input.orgId, member);
     if (member.nextSubscriptionId && term?.rollover === null) {
       throw errors.conflict('RENEWAL_EXISTS', 'This member has already renewed for the next term.');
     }
@@ -64,7 +89,6 @@ export async function startSubscription(
       }
       kind = 'RENEWAL';
     }
-    const deposit = await tx.get(depositRef(input.orgId, input.memberId));
     // A CLOSED account (settled and refunded earlier) opens again when this subscription is paid.
     if (deposit.exists && deposit.get('status') === 'SETTLING') {
       throw errors.conflict('DEPOSIT_SETTLING', 'The deposit is being settled; finish the settlement before subscribing again.');
@@ -76,6 +100,7 @@ export async function startSubscription(
     const quote = priceFor(plan, duration);
     const price = quote.priceMinor;
     const depositDue = Math.max(0, plan.depositMinor - balanceOf(deposit));
+    if (payment && payment.amountMinor !== price + depositDue) throw exactly(price + depositDue);
     const ref = db.collection(`orgs/${input.orgId}/subscriptions`).doc();
     const sub = {
       memberId: input.memberId,
@@ -105,17 +130,48 @@ export async function startSubscription(
       paymentId: null,
       exchangesThisTerm: 0,
     };
-    tx.create(ref, { ...sub, createdBy: actor.uid, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-    if (term?.rollover) tx.update(memberSnap.ref, term.rollover);
+    const created = { ...sub, createdBy: actor.uid, createdAt: FieldValue.serverTimestamp() };
+    if (!payment) {
+      tx.create(ref, { ...created, updatedAt: FieldValue.serverTimestamp() });
+      if (term?.rollover) tx.update(memberSnap.ref, term.rollover);
+    }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'subscription.create', entityType: 'subscription', entityId: ref.id, branchId: member.homeBranchId, memberId: input.memberId,
       after: { memberId: input.memberId, planId: input.planId, planVersion: plan.version, duration, kind, discountMinor: quote.discountMinor, amountDue: sub.amountDue },
     });
-    return { subscriptionId: ref.id, amountDue: sub.amountDue };
+    if (!payment) return { subscriptionId: ref.id, amountDue: sub.amountDue };
+
+    // Paid at the counter: one write per document (the subscription is created active; the settlement's
+    // member update carries the rollover), with the same payment, ledger, message and audit entry as a later payment.
+    const paid = writeSettlement(
+      tx,
+      {
+        orgId: input.orgId, subscriptionId: ref.id, subRef: ref, branchId: member.homeBranchId, due: sub.amountDue,
+        kind, months: quote.months, planName: plan.name, upgrade: null,
+        memberId: input.memberId, memberSnap, member, deposit, term,
+      },
+      { method: payment.method, reference: payment.reference || null },
+      { uid: actor.uid, email: actor.email },
+      requestId,
+      created,
+    );
+    return { subscriptionId: ref.id, amountDue: sub.amountDue, paymentId: paid.paymentId, startAt: paid.start.toISOString(), endAt: paid.end.toISOString() };
 }
 
-export const create = command('subscriptions-create', createSchema, (ctx, tx) =>
-  startSubscription(ctx, tx, (member) => ctx.actor.require('subscriptions.manage', ctx.input.orgId, member.homeBranchId, tx)),
+/**
+ * Staff start a subscription for a member. With `payment` they also take the
+ * counter payment in the same step (and must be allowed to record payments).
+ */
+export const create = command('subscriptions-create', staffCreateSchema, ({ input: { payment, ...input }, ...ctx }, tx) =>
+  startSubscription(
+    { ...ctx, input },
+    tx,
+    async (member) => {
+      await ctx.actor.require('subscriptions.manage', input.orgId, member.homeBranchId, tx);
+      if (payment) await ctx.actor.require('payments.recordOffline', input.orgId, member.homeBranchId, tx);
+    },
+    payment,
+  ),
 );
 
 /** What upgrading the member's current plan would cost today, for every eligible plan (D7). */
@@ -166,8 +222,6 @@ export const cancelPending = command(
   afterCancel,
 );
 
-const METHODS = ['OFFLINE_CASH', 'OFFLINE_UPI', 'OFFLINE_CARD', 'OFFLINE_BANK_TRANSFER'] as const;
-
 /**
  * Records a counter payment (BUSINESS_RULES D1) and, in the same transaction,
  * activates the subscription and collects the deposit into the ledger. The
@@ -195,9 +249,7 @@ export const recordOfflinePayment = command(
     if (blocked) throw errors.conflict('CANNOT_ACTIVATE', `${blocked} The payment can't be taken now.`);
     const stale = upgradeProblem(s.subSnap, s.term?.snap.id ?? null);
     if (stale) throw errors.conflict('UPGRADE_STALE', stale);
-    if (input.amountMinor !== s.due.totalMinor) {
-      throw errors.invalid(`The amount must be exactly ₹${(s.due.totalMinor / 100).toFixed(2)}.`);
-    }
+    if (input.amountMinor !== s.due.totalMinor) throw exactly(s.due.totalMinor);
     const r = writeSettlement(tx, s, { method: input.method, reference: input.reference || null }, { uid: actor.uid, email: actor.email }, requestId);
     return { paymentId: r.paymentId, startAt: r.start.toISOString(), endAt: r.end.toISOString() };
   },
@@ -210,8 +262,7 @@ export async function readSettlement(tx: Transaction, orgId: string, subscriptio
   if (!subSnap.exists) throw errors.notFound('Subscription');
   const memberId = subSnap.get('memberId') as string;
   const { snap: memberSnap, member } = await loadMember(tx, orgId, memberId);
-  const deposit = await tx.get(depositRef(orgId, memberId));
-  const term = await currentTerm(tx, orgId, member);
+  const [deposit, term] = await inOrder([tx.get(depositRef(orgId, memberId)), currentTerm(tx, orgId, member)]);
   return {
     orgId,
     subscriptionId,
@@ -220,6 +271,10 @@ export async function readSettlement(tx: Transaction, orgId: string, subscriptio
     status: subSnap.get('status') as string,
     branchId: subSnap.get('branchId') as string,
     due: subSnap.get('amountDue') as { subscriptionMinor: number; depositMinor: number; totalMinor: number },
+    kind: subSnap.get('kind') as 'NEW' | 'RENEWAL' | 'UPGRADE',
+    months: subSnap.get('planSnapshot.months') as number,
+    planName: subSnap.get('planSnapshot.name') as string,
+    upgrade: (subSnap.get('upgrade') ?? null) as { fromSubscriptionId: string; creditMinor: number; unusedDays: number } | null,
     memberId,
     memberSnap,
     member,
@@ -228,13 +283,15 @@ export async function readSettlement(tx: Transaction, orgId: string, subscriptio
   };
 }
 
+type Settlement = Awaited<ReturnType<typeof readSettlement>>;
+
 /**
  * Why a pending subscription can't be activated now (besides the amount and
  * upgrade checks), or null: the membership is suspended or closed, or the
  * deposit is being settled. A counter payment is refused; money that arrives
  * online is recorded for finance (NEEDS_ATTENTION) instead.
  */
-export function settlementProblem(s: Awaited<ReturnType<typeof readSettlement>>): string | null {
+export function settlementProblem(s: Settlement): string | null {
   if (s.member.status !== 'ACTIVE') return `The membership is ${s.member.status.toLowerCase()}.`;
   if (s.deposit.exists && s.deposit.get('status') === 'SETTLING') return 'The deposit is being settled.';
   return null;
@@ -254,20 +311,25 @@ export interface SettlementPayment {
  * opens again. A renewal paid before the current term ends starts when
  * it ends (no gap, no overlap — D6). An upgrade starts now and ends the term
  * it replaces today (D7; the caller has checked upgradeProblem).
+ *
+ * With `newSubscription` (a plan sold and paid for in one step, see
+ * startSubscription) the subscription document is created here, already
+ * active, instead of a pending one being updated.
  */
 export function writeSettlement(
   tx: Transaction,
-  s: Awaited<ReturnType<typeof readSettlement>>,
+  s: Omit<Settlement, 'subSnap' | 'status'>,
   payment: SettlementPayment,
   actor: { uid: string; email: string | null },
   requestId: string | undefined,
+  newSubscription?: Record<string, unknown>,
 ) {
-  const { orgId, subscriptionId, subSnap, branchId, due, memberId, member, memberSnap, deposit, term } = s;
+  const { orgId, subscriptionId, branchId, due, kind, months, planName, upgrade, memberId, member, memberSnap, deposit, term } = s;
   const now = new Date();
-  const upgrading = subSnap.get('kind') === 'UPGRADE' && term && term.snap.id === subSnap.get('upgrade.fromSubscriptionId');
-  const startsLater = subSnap.get('kind') === 'RENEWAL' && term && term.snap.id !== subSnap.id;
+  const upgrading = kind === 'UPGRADE' && upgrade && term && term.snap.id === upgrade.fromSubscriptionId;
+  const startsLater = kind === 'RENEWAL' && term && term.snap.id !== subscriptionId;
   const start = startsLater ? term!.snap.get('endAt').toDate() : now;
-  const end = addMonths(start, subSnap.get('planSnapshot.months'));
+  const end = addMonths(start, months);
 
   const payRef = db.collection(`orgs/${orgId}/payments`).doc();
   tx.create(payRef, {
@@ -277,7 +339,7 @@ export function writeSettlement(
     subscriptionId,
     purpose: 'SUBSCRIPTION',
     direction: 'IN',
-    ...(upgrading ? { upgrade: { fromSubscriptionId: term!.snap.id, creditMinor: subSnap.get('upgrade.creditMinor'), unusedDays: subSnap.get('upgrade.unusedDays') } } : {}),
+    ...(upgrading ? { upgrade: { fromSubscriptionId: term!.snap.id, creditMinor: upgrade.creditMinor, unusedDays: upgrade.unusedDays } } : {}),
     lines: [
       { type: 'SUBSCRIPTION', amountMinor: due.subscriptionMinor },
       ...(due.depositMinor > 0 ? [{ type: 'DEPOSIT', amountMinor: due.depositMinor }] : []),
@@ -291,14 +353,16 @@ export function writeSettlement(
     recordedBy: actor.uid,
     at: FieldValue.serverTimestamp(),
   });
-  tx.update(s.subRef, {
+  const activation = {
     status: 'ACTIVE',
     startAt: Timestamp.fromDate(start),
     endAt: Timestamp.fromDate(end),
     paymentId: payRef.id,
     activatedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
-  });
+  };
+  if (newSubscription) tx.create(s.subRef, { ...newSubscription, ...activation });
+  else tx.update(s.subRef, activation);
   if (upgrading) {
     // The replaced term ends now; its unused days were credited in this payment.
     tx.update(term!.snap.ref, {
@@ -307,7 +371,7 @@ export function writeSettlement(
   }
   const memberChanges: Record<string, unknown> = term?.rollover ? { ...term.rollover } : {};
   // Member list: the plan paid for last and the date to renew by (a pre-paid renewal pushes it out).
-  Object.assign(memberChanges, { planName: subSnap.get('planSnapshot.name'), renewalDueAt: Timestamp.fromDate(end) });
+  Object.assign(memberChanges, { planName, renewalDueAt: Timestamp.fromDate(end) });
   if (startsLater) memberChanges.nextSubscriptionId = subscriptionId;
   else Object.assign(memberChanges, { activeSubscriptionId: subscriptionId, subscriptionEndsAt: Timestamp.fromDate(end), nextSubscriptionId: null });
   tx.update(memberSnap.ref, { ...memberChanges, updatedAt: FieldValue.serverTimestamp() });
@@ -322,12 +386,13 @@ export function writeSettlement(
   if (reopened) tx.update(deposit.ref, { status: 'OPEN', reopenedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
   queueWhatsApp(tx, {
     orgId, branchId, event: upgrading ? 'plan_upgraded' : 'subscription_active', memberId,
-    vars: { plan_name: subSnap.get('planSnapshot.name') as string, amount: rupeesText(due.totalMinor), valid_until: dateIN(end) },
+    vars: { plan_name: planName, amount: rupeesText(due.totalMinor), valid_until: dateIN(end) },
     ref: { subscriptionId, paymentId: payRef.id },
   });
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, orgId, {
     action: payment.gateway ? 'payment.online' : 'payment.recordOffline', entityType: 'subscription', entityId: subscriptionId, branchId, memberId,
-    before: { status: 'PENDING_PAYMENT' },
+    // (sold and paid in one step: it never waited for payment)
+    before: newSubscription ? null : { status: 'PENDING_PAYMENT' },
     after: {
       status: 'ACTIVE', paymentId: payRef.id, amountMinor: due.totalMinor, method: payment.method, reference: payment.reference,
       startAt: start.toISOString(), endAt: end.toISOString(), ...(upgrading ? { upgradedFrom: term!.snap.id } : {}),

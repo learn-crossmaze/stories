@@ -11,6 +11,7 @@ export const routes = {
   'copies-shelve': shelve.shelve,
   'copies-recordCondition': copies.recordCondition,
   'copies-inspect': copies.inspect,
+  'copies-inspectMany': copies.inspectMany,
   'copies-repair': copies.repair,
   'copies-markLost': copies.markLost,
   'copies-found': copies.found,

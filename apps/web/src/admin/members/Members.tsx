@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { AGE_GROUPS, label } from '../../data/common';
-import { indexMemberList, listMembers, type Member, memberCounts, type MemberFilters, RENEWAL_DUE_DAYS, type RenewalFilter, renewalState, searchMembers } from '../../data/members';
+import { listMembers, type Member, memberCounts, type MemberFilters, RENEWAL_DUE_DAYS, type RenewalFilter, renewalState, searchMembers } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { useDebounced } from '../../shared/useDebounced';
 import { usePagedQuery } from '../../shared/usePagedQuery';
 import { day, relativeDays } from '../../shared/format';
+import { reportError } from '../../shared/reportError';
 import { paths } from '../../paths';
 import { t } from '../../strings';
 import { Badge, EmptyState, ErrorState, Icon, SkeletonRows, StatusBadge, TableWrap, type Tone } from '../../shared/ui';
@@ -159,7 +160,6 @@ function RenewalCell({ m }: { m: Member }) {
 function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string }) {
   const { claims } = useAuth();
   const navigate = useNavigate();
-  const { branch } = useWorkspace();
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
   // The dashboard links here with ?renewal=DUE (etc.).
@@ -167,25 +167,11 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
   const [filters, setFilters] = useState<MemberFilters>(() => ({ status: '', audience: '', renewal: RENEWAL_FILTERS.find((r) => r === params.get('renewal')) ?? '' }));
   const [registering, setRegistering] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  // Older branches get plan and renewal dates filled in once, before the first listing.
-  const [indexed, setIndexed] = useState(false);
   const manage = can(claims, 'members.manage', orgId, branchId);
   const searching = debounced.trim().length >= 2;
   const set = <K extends keyof MemberFilters>(k: K) => (v: MemberFilters[K]) => setFilters((f) => ({ ...f, [k]: v }));
 
-  useEffect(() => {
-    let live = true;
-    setIndexed(false);
-    (branch?.id === branchId && branch.memberListIndexedAt ? Promise.resolve() : indexMemberList(orgId, branchId))
-      .catch((e) => console.warn('member list index', e))
-      .finally(() => live && setIndexed(true));
-    return () => {
-      live = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, branchId]);
-
-  const counts = useAsync(() => (indexed ? memberCounts(orgId, branchId) : Promise.resolve(null)), [orgId, branchId, indexed, attempt]);
+  const counts = useAsync(() => memberCounts(orgId, branchId), [orgId, branchId, attempt]);
 
   const list = usePagedQuery<Member>(
     async (after) => {
@@ -200,9 +186,30 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
       return { items: found };
     },
     [orgId, branchId, debounced, filters, attempt],
-    { enabled: indexed },
   );
   const rows = list.items;
+
+  // Enter (a scanned member card ends with one) opens the member straight away: the one whose code was typed
+  // in full, or the only match. The filters are not applied, so a scanned card always opens its member.
+  const searchBox = useRef<HTMLInputElement>(null);
+  const opening = useRef(false);
+  const openMatch = async (typed: string) => {
+    if (typed.trim().length < 2 || opening.current) return;
+    opening.current = true;
+    try {
+      const found = await searchMembers(orgId, branchId, typed);
+      // The box changed (or the page was left) while looking: the list shows what is typed now.
+      if (searchBox.current?.value !== typed) return;
+      const code = typed.trim().toUpperCase();
+      const match = found.find((m) => m.code === code) ?? (found.length === 1 ? found[0] : undefined);
+      if (match) void navigate(paths.adminMember(match.id));
+    } catch (e) {
+      // The list below runs the same search and shows the failure.
+      reportError(e, 'load');
+    } finally {
+      opening.current = false;
+    }
+  };
 
   const c = counts.data;
   const chips: { key: RenewalFilter; label: string; n: number | undefined }[] = [
@@ -217,7 +224,19 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
   return (
     <>
       <div className="toolbar">
-        <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={lt.searchMembers} aria-label={lt.searchMembers} autoFocus />
+        <input
+          ref={searchBox}
+          className="search"
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void openMatch(e.currentTarget.value);
+          }}
+          placeholder={lt.searchMembers}
+          aria-label={lt.searchMembers}
+          autoFocus
+        />
         {manage && (
           <button type="button" className="btn btn-filled" onClick={() => setRegistering(true)}>
             <Icon name="plus" /> {lt.registerMember}
@@ -264,7 +283,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
       </div>
       {list.error && rows.length === 0 ? (
         <ErrorState message={list.error} onRetry={() => setAttempt((n) => n + 1)} />
-      ) : (!indexed || list.loading) && rows.length === 0 ? (
+      ) : list.loading && rows.length === 0 ? (
         <SkeletonRows rows={6} />
       ) : rows.length === 0 ? (
         <EmptyState icon="person" title={filtered ? lt.membersEmpty : lt.membersNone} message="" />
@@ -316,7 +335,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
           )}
         </>
       )}
-      {registering && <MemberDialog orgId={orgId} branchId={branchId} onClose={() => setRegistering(false)} onSaved={(id) => navigate(paths.adminMember(id))} />}
+      {registering && <MemberDialog orgId={orgId} branchId={branchId} onClose={() => setRegistering(false)} onSaved={(id) => navigate(paths.adminMember(id), { state: { subscribe: true } })} />}
     </>
   );
 }

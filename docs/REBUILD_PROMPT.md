@@ -122,8 +122,7 @@ writes. Branch-scoped list queries must filter on the branch field the rules che
 ### 0.5 Data model (Firestore)
 
 `users/{uid}` (+ `memberships/{orgId}`), `orgs/{o}` (type CORPORATE | FRANCHISE), `orgs/{o}/branches/{b}` (code,
-name, address, contact, hours, weekly offs, `numbering`, `payments.razorpay` public settings,
-`memberListIndexedAt`) with `locations/{l}`, `counters/*` and `private/razorpay` (secrets, rules-denied),
+name, address, contact, hours, weekly offs, `numbering`, `payments.razorpay` public settings) with `locations/{l}`, `counters/*` and `private/razorpay` (secrets, rules-denied),
 `orgs/{o}/departments`, `books/{id}` (shared catalogue; `searchTokens`, `titleNormalized`, author/publisher/category
 names denormalized, `coverUrl`/`coverPath`, `status` ACTIVE | ARCHIVED), `authors`, `publishers`, `categories`,
 `config/numbering`, `counters/books`, `isbnIndex`, `orgs/{o}/copies/{c}` (+ `events`), `orgs/{o}/barcodes`,
@@ -185,12 +184,17 @@ action asks for a reason (audited).
    all-or-nothing; reserved-for-this-member copies fulfil the reservation), return (by scan or checkbox; copies go
    to UNDER_INSPECTION), exchange (return + issue in one transaction), declare lost, inspection queue.
    Copy state machine enforced server-side for all 64 status pairs.
-6. **Reservations** (place/cancel, holds ready, waiting) and **Transfers** (create → dispatch → receive, within an
-   org; owning branch never changes).
+6. **Reservations** (place/cancel, holds ready, waiting; the waiting list shows which other branch has the title on
+   its shelf) and **Transfers** (create and dispatch in one command from copy ids → receive against the transfer's
+   own copies, keeping each copy's condition, optionally onto a shelf, naming the copies held for waiting members;
+   within an org; owning branch never changes).
 7. **Members** (`/admin/members`): list of the branch's members, 50 per page, with plan, renewal date ("in 6 days",
    "ended yesterday"), books out, status; subscription chips with counts (All, Active, Renewal due in 15 days,
-   Expired, Never subscribed) plus status and age filters; search combined with filters. First visit per branch runs
-   `members-indexList` to fill `planName`/`renewalDueAt` for older members; payments keep them current. Register /
+   Expired, Never subscribed) plus status and age filters; search combined with filters (every typed word must
+   match; a mobile number is one word however typed; Enter or a scanned card opens the exact or only match). Members
+   are created with `planName`/`renewalDueAt` null and payments keep them current. Registering lands on the new
+   member's page with the plan chooser open; *Subscribe* / *Renew* shows fee, deposit top-up and total and takes the
+   counter payment in the same step (`subscriptions-create` with `payment`), or saves it unpaid. Register /
    edit (phone unique per org, guardian required under 18, optional **Aadhaar** — Verhoeff-checked, unique per org,
 shown masked with an audited *Show*, and a *Send WhatsApp updates* switch). Member page: overview (plan, subscribe/renew, record
    counter payment, **collect online**, cancel unpaid, deposit and ledger, adjustments, settlement/refund,
@@ -199,7 +203,8 @@ shown masked with an audited *Show*, and a *Send WhatsApp updates* switch). Memb
    each its own price) and an optional **promotional discount** (amount or 1–90 %, date window, which options),
    archive. **Upgrade mid-term, pro-rated** (docs/SUBSCRIPTIONS.md, D7): a quote lists every bigger plan/option with
    credit = floor(price × unused days ÷ term days); paying starts the new plan today, the old term becomes UPGRADED,
-   deposit top-up collected; **Deposit approvals** (Finance, maker-checker).
+   deposit top-up collected; **Deposit approvals** (Finance, maker-checker; approve with an optional note, one or
+   several at once, each its own `deposits-decide`; rejecting needs a reason).
 9. **Payments**: counter payments (cash/UPI/card/bank transfer; amount must equal amount due; one transaction
    activates the subscription and collects the deposit) and **Razorpay per branch** (docs/PAYMENTS.md): payment
    links sent by SMS/email, single-use UPI QR (falls back to a link-as-QR), signed webhook (`payment_link.paid`,

@@ -26,3 +26,15 @@ and book availability; member page; desk — collect a held book, limit message,
 expired member, inspection; register + subscribe + record payment; minor without guardian blocked; label sheet;
 manager declares a loan lost → finance approves the deduction; head office catalogue/plans; librarian can't edit
 the catalogue; franchise owner sees only franchise members; desk at 390px without sideways scroll.
+
+The desk's newer steps are covered by a component test (`apps/web/src/test/desk.test.tsx`: card, books and Enter
+without the mouse, the receipt and *Open again*, scans faster than lookups, renewing and paying with the scanned
+books kept, a pile of 31 in Quick return, passing several inspections at once) and still need the same walkthrough
+in a browser with a real scanner.
+
+Members and billing at the counter have component tests too: `sellPlan.test.tsx` (plan and payment in one step,
+the remembered method, a changed total, the plan chooser opening by itself), `membersPage.test.tsx` (Enter or a
+scanned card opens the member, registering lands on the plan chooser), `memberSearch.test.ts` (search words and
+narrowing) and `depositApprovals.test.tsx` (approve without a note, several at once, a failed row). The one-step
+sale's money rules are in `functions/test/emulator/speedMembers.test.ts`. A browser walkthrough is still needed for
+a member with no deposit yet and for a branch-scoped librarian.

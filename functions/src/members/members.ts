@@ -5,7 +5,7 @@ import { cancelAtGateway, markRequestsCancelled, readOpenRequests } from '../bil
 import { searchTokens } from '../catalogue/search.js';
 import { aadhaarInput, aadhaarKey } from '../core/aadhaar.js';
 import { recordAudit } from '../core/audit.js';
-import { command, query } from '../core/callable.js';
+import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { branchPatterns, existingCodes, reserveCodes } from '../core/numbering.js';
@@ -105,6 +105,12 @@ async function planAadhaar(tx: Transaction, orgId: string, memberId: string, num
   };
 }
 
+/** The result of a read that has finished, or its failure thrown now. */
+function settledValue<T>(read: PromiseSettledResult<T>): T {
+  if (read.status === 'rejected') throw read.reason;
+  return read.value;
+}
+
 /**
  * Creates a member record (reads first, then writes): checks the person
  * (phone, guardian for minors), numbers them with the branch's member pattern
@@ -115,9 +121,16 @@ export async function createMember(
   input: MemberProfile & { orgId: string; homeBranchId: string },
   opts: { actorUid: string; actorEmail: string | null; requestId?: string; accountHolderUid: string | null; source: 'STAFF' | 'SELF' },
 ) {
-  const branch = await tx.get(db.doc(`orgs/${input.orgId}/branches/${input.homeBranchId}`));
+  const ref = db.collection(`orgs/${input.orgId}/members`).doc();
+  // Read together. Each can refuse, so the outcomes are looked at one by one, in the order they used to be read.
+  const [branchRead, personRead, aadhaarRead] = await Promise.allSettled([
+    tx.get(db.doc(`orgs/${input.orgId}/branches/${input.homeBranchId}`)),
+    checkPerson(tx, input.orgId, input, null),
+    planAadhaar(tx, input.orgId, ref.id, input.aadhaar, true),
+  ]);
+  const branch = settledValue(branchRead);
   if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
-  const person = await checkPerson(tx, input.orgId, input, null);
+  const person = settledValue(personRead);
   const counter = await reserveCodes(tx, {
     kind: 'member',
     pattern: branchPatterns(branch).member,
@@ -126,8 +139,7 @@ export async function createMember(
     taken: (c) => existingCodes(tx, `orgs/${input.orgId}/members`, c),
   });
   const [code] = counter.codes;
-  const ref = db.collection(`orgs/${input.orgId}/members`).doc();
-  const aadhaar = await planAadhaar(tx, input.orgId, ref.id, input.aadhaar, true);
+  const aadhaar = settledValue(aadhaarRead);
 
   const member: Member & Record<string, unknown> = {
     code,
@@ -281,43 +293,3 @@ export const setStatus = command(
   },
   (r, ctx) => cancelAtGateway(ctx.input.orgId, r.cancelledRequestIds),
 );
-
-/**
- * One-time fill of the member list fields (`planName`, `renewalDueAt`) for a
- * branch's members registered before those fields existed. The member list
- * calls it once per branch; afterwards payments keep the fields current.
- * Safe to repeat (recomputed from the subscriptions).
- */
-export const indexList = query('members-indexList', z.strictObject({ orgId: id, branchId: id }), async ({ actor, input }) => {
-  await actor.require('members.view', input.orgId, input.branchId);
-  const branchRef = db.doc(`orgs/${input.orgId}/branches/${input.branchId}`);
-  const branch = await branchRef.get();
-  if (!branch.exists) throw errors.notFound('Branch');
-  if (branch.get('memberListIndexedAt')) return { updated: 0 };
-  const members = await db.collection(`orgs/${input.orgId}/members`).where('homeBranchId', '==', input.branchId).select().get();
-  const ids = members.docs.map((d) => d.id);
-  const latest = new Map<string, { endAt: FirebaseFirestore.Timestamp; planName: string }>();
-  for (let i = 0; i < ids.length; i += 30) {
-    const subs = await db
-      .collection(`orgs/${input.orgId}/subscriptions`)
-      .where('memberId', 'in', ids.slice(i, i + 30))
-      .select('memberId', 'status', 'endAt', 'planSnapshot.name')
-      .get();
-    for (const s of subs.docs) {
-      if (!['ACTIVE', 'EXPIRED'].includes(s.get('status')) || !s.get('endAt')) continue;
-      const endAt = s.get('endAt') as FirebaseFirestore.Timestamp;
-      const prev = latest.get(s.get('memberId'));
-      if (!prev || prev.endAt.toMillis() < endAt.toMillis()) latest.set(s.get('memberId'), { endAt, planName: s.get('planSnapshot.name') });
-    }
-  }
-  const writer = db.bulkWriter();
-  // A member changed since it was read (e.g. paid just now) already has fresh fields: skip it, don't retry.
-  writer.onWriteError(() => false);
-  for (const d of members.docs) {
-    const l = latest.get(d.id);
-    writer.update(d.ref, { planName: l?.planName ?? null, renewalDueAt: l?.endAt ?? null }, { lastUpdateTime: d.updateTime }).catch(() => undefined);
-  }
-  await writer.close();
-  await branchRef.update({ memberListIndexedAt: FieldValue.serverTimestamp() });
-  return { updated: members.size };
-});

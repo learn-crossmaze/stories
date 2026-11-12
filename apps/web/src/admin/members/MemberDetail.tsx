@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
@@ -42,6 +42,16 @@ export function MemberDetailPage() {
   const [tab, setTab] = useState<'overview' | 'history' | 'audit'>('overview');
   // Bumped after every change: the sections re-read their data in the background.
   const [reloadKey, setReloadKey] = useState(0);
+  // Arriving from "Register member": the plan chooser opens by itself, once, for that member only
+  // (this page stays mounted when a guardian or ward link leads to another member).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const fromRegister = (location.state as { subscribe?: unknown } | null)?.subscribe === true;
+  const [autoSubscribeFor, setAutoSubscribeFor] = useState(() => (fromRegister ? memberId : null));
+  useEffect(() => {
+    // Forget it in the browser history too, so Reload, Back and Forward never open the chooser again.
+    if (fromRegister) void navigate(location.pathname + location.search, { replace: true, state: null });
+  }, [fromRegister, location.pathname, location.search, navigate]);
 
   if (member.loading) return <SkeletonRows rows={5} />;
   // A failed refresh keeps the page (and any open dialog); only a member we couldn't load at all gives way to the error.
@@ -146,6 +156,8 @@ export function MemberDetailPage() {
               canCollectOnline={!!branches.find((x) => x.id === b)?.payments?.razorpay?.enabled}
               onChanged={refresh}
               onNotice={setNotice}
+              autoOpen={autoSubscribeFor === m.id}
+              onAutoOpened={() => setAutoSubscribeFor(null)}
             />
             {perm('deposits.view') && <DepositCard orgId={orgId} memberId={m.id} scope={scope} perm={perm} reloadKey={reloadKey} onChanged={refresh} />}
           </div>

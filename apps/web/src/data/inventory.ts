@@ -132,6 +132,24 @@ export async function stockByBranch(orgId: string, bookIds: string[]): Promise<R
   return res.books;
 }
 
+/** Titles per copies-availabilityMany call. */
+export const STOCK_BATCH = 60;
+
+/** `stockByBranch` for any number of titles: the calls go out together, 60 titles each. */
+export async function stockByBranchAll(orgId: string, bookIds: string[]): Promise<Record<string, BranchStock[]>> {
+  const ids = [...new Set(bookIds)];
+  const chunks = Array.from({ length: Math.ceil(ids.length / STOCK_BATCH) }, (_, n) => ids.slice(n * STOCK_BATCH, (n + 1) * STOCK_BATCH));
+  return Object.assign({}, ...(await Promise.all(chunks.map((chunk) => stockByBranch(orgId, chunk))))) as Record<string, BranchStock[]>;
+}
+
+/**
+ * The other branches with a copy of the title on the shelf right now. `undefined` while the title's stock is
+ * not loaded; an empty list when no other branch has one.
+ */
+export function shelvedElsewhere(stock: BranchStock[] | undefined, here: string): BranchStock[] | undefined {
+  return stock?.filter((s) => s.branchId !== here && s.available > 0);
+}
+
 /** Where a copy is, found anywhere in the organization (for copies held at other branches). */
 export interface CopyWhereabouts {
   copyId: string;
@@ -154,6 +172,16 @@ export async function locateCopy(orgId: string, scanned: string): Promise<CopyWh
     throw e;
   }
 }
+
+/** Copies per call to copies-inspectMany (the Inspection list shows as many). */
+export const INSPECT_BATCH = 50;
+
+/**
+ * Passes the inspection of many returned copies in one call: `passed` are the copies now back in
+ * circulation, `skipped` the codes of copies someone else had already decided.
+ */
+export const passInspections = (orgId: string, branchId: string, copyIds: string[]) =>
+  command<{ passed: string[]; skipped: string[] }>('copies-inspectMany', { orgId, branchId, copyIds });
 
 export async function getCopy(orgId: string, copyId: string): Promise<Copy | null> {
   const s = await getDoc(doc(db(), `orgs/${orgId}/copies/${copyId}`));

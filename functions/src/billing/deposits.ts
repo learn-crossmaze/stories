@@ -6,6 +6,7 @@ import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { inOrder } from '../core/reads.js';
 import { id, reason } from '../core/schemas.js';
 import { loadMember } from '../members/members.js';
 import { queueWhatsApp, rupeesText } from '../messaging/whatsapp.js';
@@ -65,13 +66,12 @@ export const decideAdjustment = command(
     const branchId = snap.get('branchId') as string;
     await actor.require('deposits.approve', input.orgId, branchId, tx);
     if (snap.get('status') !== 'PENDING') throw errors.conflict('ALREADY_DECIDED', 'This adjustment has already been decided.');
-    const threshold = await makerCheckerThreshold(tx, input.orgId);
+    const memberId = snap.get('memberId') as string;
+    const [threshold, account] = await inOrder([makerCheckerThreshold(tx, input.orgId), tx.get(depositRef(input.orgId, memberId))]);
     const delta = snap.get('deltaMinor') as number;
     if (snap.get('proposedBy') === actor.uid && Math.abs(delta) > threshold) {
       throw errors.forbidden('A different person must approve an adjustment you proposed.');
     }
-    const memberId = snap.get('memberId') as string;
-    const account = await tx.get(depositRef(input.orgId, memberId));
     if (input.decision === 'APPROVE') {
       // A settled (CLOSED) account takes no more entries; reject the adjustment instead.
       if (!account.exists || account.get('status') === 'CLOSED') {
@@ -103,13 +103,11 @@ export const startSettlement = command(
   async ({ actor, input, requestId }, tx) => {
     const { member } = await loadMember(tx, input.orgId, input.memberId);
     await actor.require('deposits.adjust', input.orgId, member.homeBranchId, tx);
-    const account = await tx.get(depositRef(input.orgId, input.memberId));
-    const subs = await Promise.all(
-      [member.activeSubscriptionId, member.nextSubscriptionId].filter(Boolean).map((s) => tx.get(db.doc(`orgs/${input.orgId}/subscriptions/${s}`))),
-    );
-    const pending = await tx.get(
-      db.collection(`orgs/${input.orgId}/subscriptions`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING_PAYMENT').limit(1),
-    );
+    const [account, subs, pending] = await inOrder([
+      tx.get(depositRef(input.orgId, input.memberId)),
+      Promise.all([member.activeSubscriptionId, member.nextSubscriptionId].filter(Boolean).map((s) => tx.get(db.doc(`orgs/${input.orgId}/subscriptions/${s}`)))),
+      tx.get(db.collection(`orgs/${input.orgId}/subscriptions`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING_PAYMENT').limit(1)),
+    ]);
     if (!account.exists || account.get('status') !== 'OPEN') throw errors.conflict('NOT_OPEN', 'There is no open deposit to settle.');
     if (member.activeLoanCount > 0) throw errors.conflict('LOANS_OUTSTANDING', 'All borrowed books must be returned before settlement.');
     if (!pending.empty) throw errors.conflict('PENDING_EXISTS', 'A subscription is waiting for payment. Take the payment or cancel it before settling the deposit.');
@@ -134,10 +132,10 @@ export const refund = command(
   async ({ actor, input, requestId }, tx) => {
     const { member } = await loadMember(tx, input.orgId, input.memberId);
     await actor.require('deposits.refund', input.orgId, member.homeBranchId, tx);
-    const account = await tx.get(depositRef(input.orgId, input.memberId));
-    const pending = await tx.get(
-      db.collection(`orgs/${input.orgId}/depositAdjustments`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING').limit(1),
-    );
+    const [account, pending] = await inOrder([
+      tx.get(depositRef(input.orgId, input.memberId)),
+      tx.get(db.collection(`orgs/${input.orgId}/depositAdjustments`).where('memberId', '==', input.memberId).where('status', '==', 'PENDING').limit(1)),
+    ]);
     if (!account.exists || account.get('status') !== 'SETTLING') throw errors.conflict('NOT_SETTLING', 'Start the settlement first.');
     if (member.activeLoanCount > 0) throw errors.conflict('LOANS_OUTSTANDING', 'All borrowed books must be returned before a refund.');
     if (!pending.empty) throw errors.conflict('ADJUSTMENTS_PENDING', 'Approve or reject the pending deposit adjustments first.');

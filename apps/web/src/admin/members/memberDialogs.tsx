@@ -1,16 +1,18 @@
 import { useState } from 'react';
 
-import { command } from '../../data/api';
-import { listPlans, type Plan, pricesFor, startUpgrade, type Subscription, upgradeQuote } from '../../data/billing';
+import { ApiError, command } from '../../data/api';
+import { depositAccount, listPlans, type Plan, pricesFor, startUpgrade, type Subscription, upgradeQuote } from '../../data/billing';
 import { PendingUpgrade, UpgradeChooser } from '../../shared/Upgrade';
 import { type Book } from '../../data/catalogue';
 import { DURATION_LABELS, type Duration, planWithOption } from '../../data/common';
 import { type Member } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { money, toMinor } from '../../shared/format';
+import { oneOf, remember } from '../../shared/remember';
 import { t } from '../../strings';
 import { SkeletonRows } from '../../shared/ui';
 import { Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
+import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
 import { BookPicker } from '../catalogue/BookPicker';
 
@@ -87,36 +89,96 @@ export function UpgradeDialog({ orgId, member, onClose, onCreated }: { orgId: st
   );
 }
 
+/**
+ * Sells or renews a plan. Staff who may take payments and see deposits (`canTakePayment`) see the total
+ * and take the counter payment in the same step; "Save unpaid" keeps the plan waiting for payment
+ * (to collect online or pay later). Everyone else only saves it unpaid, as before.
+ */
 export function SubscribeDialog({
   orgId,
   member,
   renewing,
+  previous,
+  canTakePayment = false,
   onClose,
   onCreated,
+  onPaid,
 }: {
   orgId: string;
   member: Member;
   renewing: boolean;
+  /** The member's current or last plan: chosen to begin with, while it is still on offer. */
+  previous?: Subscription;
+  canTakePayment?: boolean;
   onClose: () => void;
+  /** Saved unpaid. */
   onCreated: () => void;
+  /** Sold and paid for in one step. */
+  onPaid?: () => void;
 }) {
+  // Both read as the dialog opens. Never kept from an earlier sale: a stale price would make the server refuse the amount.
   const plans = useAsync(() => listPlans(orgId), [orgId]);
+  const deposit = useAsync(() => (canTakePayment ? depositAccount(orgId, member.id) : Promise.resolve(null)), [orgId, member.id, canTakePayment]);
   const eligible = (plans.data ?? []).filter((p) => p.status === 'ACTIVE' && p.audiences.includes(member.audience));
-  const [planId, setPlanId] = useState('');
-  const [duration, setDuration] = useState<Duration | ''>('');
+  const [planId, setPlanId] = useState(previous?.planId ?? '');
+  const [duration, setDuration] = useState<Duration | ''>(previous?.planSnapshot.duration ?? '');
   const chosen = eligible.find((p) => p.id === planId) ?? eligible[0];
   const prices = chosen ? pricesFor(chosen) : [];
-  const option = prices.find((p) => p.duration === duration) ?? prices[0];
-  const { busy, error, submit } = useSubmit(async () => {
-    if (!chosen || !option) return;
-    await command('subscriptions-create', { orgId, memberId: member.id, planId: chosen.id, duration: option.duration });
-    onCreated();
-    onClose();
-  });
+  // The option picked (or the previous plan's) counts for that plan only; any other plan starts on its first option.
+  const option = (chosen?.id === planId ? prices.find((p) => p.duration === duration) : undefined) ?? prices[0];
+
+  const methodKey = remember.key('counterPayment', orgId);
+  const [method, setMethod] = useState<Method>(() => remember.get(methodKey, 'OFFLINE_UPI', oneOf(METHODS)));
+  const [reference, setReference] = useState('');
+  const [touched, setTouched] = useState(false);
+  const loading = plans.loading || (canTakePayment && deposit.loading);
+  // Taking the payment here needs the deposit balance (the total includes the top-up); without it the plan is saved unpaid.
+  const paying = canTakePayment && !deposit.error;
+  const settling = paying && deposit.data?.status === 'SETTLING';
+  const topUp = chosen ? Math.max(0, chosen.depositMinor - (deposit.data?.balanceMinor ?? 0)) : 0;
+  const total = (option?.priceMinor ?? 0) + topUp;
+  const referenceMissing = method !== 'OFFLINE_CASH' && reference.trim().length < 4;
+
+  const action = useAction();
+  const save = (paid: boolean) =>
+    action.run(async () => {
+      if (!chosen || !option) return;
+      const sale = { orgId, memberId: member.id, planId: chosen.id, duration: option.duration };
+      if (!paid) {
+        await command('subscriptions-create', sale);
+        onCreated();
+        onClose();
+        return;
+      }
+      setTouched(true);
+      if (referenceMissing) return;
+      try {
+        await command('subscriptions-create', { ...sale, payment: { method, amountMinor: total, reference: method === 'OFFLINE_CASH' ? '' : reference.trim() } });
+      } catch (e) {
+        // The server works out the amount itself. If ours no longer matches (a discount began or ended, the plan or
+        // the deposit changed), read both again so the new total shows, and say so.
+        if (e instanceof ApiError && e.reason === 'INVALID_INPUT') {
+          plans.reload();
+          deposit.reload();
+          throw new ApiError(`${e.message} ${lt.totalChanged}`, e.reason);
+        }
+        throw e;
+      }
+      remember.set(methodKey, method);
+      (onPaid ?? onCreated)();
+      onClose();
+    });
+
   return (
     <Dialog title={renewing ? lt.renew : lt.subscribe} onClose={onClose}>
-      <form onSubmit={submit} noValidate>
-        {plans.loading ? (
+      <form
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!loading) void save(paying);
+        }}
+      >
+        {loading ? (
           <SkeletonRows rows={2} />
         ) : !eligible.length ? (
           <p className="muted">{lt.plansEmpty}</p>
@@ -145,12 +207,20 @@ export function SubscribeDialog({
             ))}
           </fieldset>
         )}
-        {chosen && prices.length > 0 && (
+        {!loading && chosen && prices.length > 0 && (
           <fieldset className="choices plan-choices">
             <legend>{lt.chooseOption}</legend>
             {prices.map((o) => (
               <label key={o.duration} className="plan-choice">
-                <input type="radio" name="option" checked={option?.duration === o.duration} onChange={() => setDuration(o.duration)} />
+                <input
+                  type="radio"
+                  name="option"
+                  checked={option?.duration === o.duration}
+                  onChange={() => {
+                    setPlanId(chosen.id);
+                    setDuration(o.duration);
+                  }}
+                />
                 <span>
                   <strong>{DURATION_LABELS[o.duration]}</strong> · {money(o.priceMinor)}
                   {o.discountMinor > 0 && (
@@ -164,8 +234,54 @@ export function SubscribeDialog({
             ))}
           </fieldset>
         )}
-        <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={t.create} onCancel={onClose} />
+        {canTakePayment && deposit.error && (
+          <Notice tone="warn">
+            {deposit.error} {lt.depositUnread}
+          </Notice>
+        )}
+        {!loading && paying && option && (
+          <>
+            <dl className="facts">
+              <dt>{lt.planFee}</dt>
+              <dd>{money(option.priceMinor)}</dd>
+              <dt>{lt.depositTopUp}</dt>
+              <dd>{money(topUp)}</dd>
+              <dt>{lt.total}</dt>
+              <dd>
+                <strong>{money(total)}</strong>
+              </dd>
+            </dl>
+            {settling ? (
+              <Notice tone="warn">{lt.depositSettling}</Notice>
+            ) : (
+              <>
+                <SelectField label={lt.paymentMethod} value={method} onChange={setMethod} options={methodOptions(METHODS)} />
+                {method !== 'OFFLINE_CASH' && (
+                  <TextField label={lt.reference} value={reference} onChange={setReference} error={touched && referenceMissing ? lt.referenceNeeded : undefined} />
+                )}
+              </>
+            )}
+          </>
+        )}
+        <FormError error={action.error} />
+        {paying ? (
+          <>
+            <p className="muted small">{lt.saveUnpaidHint}</p>
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-text" onClick={onClose} disabled={action.busy}>
+                {t.cancel}
+              </button>
+              <button type="button" className="btn btn-outlined" onClick={() => void save(false)} disabled={action.busy || loading || !option}>
+                {lt.saveUnpaid}
+              </button>
+              <button type="submit" className="btn btn-filled" disabled={action.busy || loading || !option || settling}>
+                {action.busy ? t.saving : loading ? t.loading : lt.takePayment(money(total))}
+              </button>
+            </div>
+          </>
+        ) : (
+          <DialogActions busy={action.busy} submitLabel={t.create} onCancel={onClose} />
+        )}
       </form>
     </Dialog>
   );

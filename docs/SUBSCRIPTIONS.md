@@ -28,6 +28,9 @@ upgrade replaces it).
   has only one). They store a **plan snapshot** (option, months, list price, discount and its label, price actually
   charged, deposit, limit) and the amount due: plan fee + **deposit top-up** = plan deposit − current deposit balance (never negative). Plan changes never
   alter a subscription already sold (tested).
+- Staff may send `payment` with `subscriptions-create` to take the counter payment in the same step: the
+  subscription is then created ACTIVE instead of PENDING_PAYMENT (see [PAYMENTS.md](PAYMENTS.md), Phase 1). Every
+  refusal below applies unchanged, and the amount must equal the amount due. `me-subscribe` never takes a payment.
 - Only one unpaid subscription per member; renewals open `renewalWindowDays` before the current term ends.
 - **Renewal (D6):** paid before expiry → starts exactly when the current term ends (no gap, no overlap) and is
   recorded as the member's `nextSubscriptionId`; borrowing rolls over to it automatically at the boundary.
@@ -78,7 +81,10 @@ needed (the whole balance is held until settlement).
 - **Adjustments are maker-checker:** `deposits-proposeAdjustment` (`deposits.adjust`) creates a PENDING request;
   `deposits-decide` (`deposits.approve`, Finance) posts it. The proposer cannot approve their own request above
   `orgs/{o}/config/deposits.makerCheckerThresholdMinor` (default 0 = always a second person). Lost books create a
-  proposal automatically.
+  proposal automatically. On the *Deposit approvals* page approving needs no typed reason (a note is optional) and
+  several can be approved at once: each is still its own `deposits-decide` (own transaction, audit entry and
+  requestId), one member's adjustments are sent one after another, oldest first, and a row that fails stays with the
+  server's reason. Rejecting still needs a reason.
 - **Settlement:** `deposits-startSettlement` once the term has ended, every book is back and **no subscription is
   waiting for payment** (cancel or collect it first — a payment link already sent could otherwise pay into a settled
   deposit) (account → SETTLING, new subscriptions and counter payments blocked; money that still arrives online is

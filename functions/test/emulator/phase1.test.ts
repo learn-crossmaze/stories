@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as branches from '../../src/organization/branches.js';
@@ -615,7 +615,7 @@ describe('member self-service', () => {
 });
 
 describe('member list', () => {
-  it('keeps plan and renewal date on the member, and fills them in once for older members', async () => {
+  it('keeps plan and renewal date on the member, and writes both as empty for a member who never paid', async () => {
     const paid = await register('Paid');
     const never = await register('Never');
     await subscribe(paid);
@@ -623,19 +623,8 @@ describe('member list', () => {
     const m = await get(`members/${paid}`);
     expect(m.planName).toBe('Monthly Two');
     expect(m.renewalDueAt.toMillis()).toBe(sub.get('endAt').toMillis());
-    expect((await get(`members/${never}`)).renewalDueAt).toBeNull();
-
-    // Members from before the list existed have neither field; the one-time fill computes them.
-    await path(`members/${paid}`).update({ planName: FieldValue.delete(), renewalDueAt: FieldValue.delete() });
-    await path(`members/${never}`).update({ planName: FieldValue.delete(), renewalDueAt: FieldValue.delete() });
-    expect(await failure(call(members.indexList, fin, { orgId: org, branchId: 'no-such-branch' }, null))).toBe('NOT_FOUND');
-    expect((await call<{ updated: number }>(members.indexList, lib2, { orgId: org, branchId: central }, null)).updated).toBe(2);
-    expect((await get(`members/${paid}`)).planName).toBe('Monthly Two');
-    expect((await get(`members/${paid}`)).renewalDueAt.toMillis()).toBe(sub.get('endAt').toMillis());
-    expect((await get(`members/${never}`)).renewalDueAt).toBeNull();
-    expect((await call<{ updated: number }>(members.indexList, lib2, { orgId: org, branchId: central }, null)).updated).toBe(0);
-    const outsider = await createUser('outsider@stories.test');
-    expect(await failure(call(members.indexList, outsider, { orgId: org, branchId: central }, null))).toBe('FORBIDDEN');
+    // Written as null, not left out: the "no subscription" list asks for renewalDueAt == null.
+    expect(await get(`members/${never}`)).toMatchObject({ planName: null, renewalDueAt: null });
   });
 });
 
@@ -851,12 +840,13 @@ describe('M1.6 reservations and transfers', () => {
   it('transfers move location but never ownership; foreign copies are rejected on receipt', async () => {
     const [c1, c2] = await acquire(bookId, 2);
     const other = (await acquire(bookId, 1))[0];
-    const { transferId } = await call<{ transferId: string }>(xfer.create, lib, { orgId: org, fromBranchId: central, toBranchId: north, barcodes: [c1, c2] });
+    const id1 = (await db.doc(`orgs/${org}/barcodes/${c1}`).get()).get('copyId');
+    const id2 = (await db.doc(`orgs/${org}/barcodes/${c2}`).get()).get('copyId');
+    // A draft first, dispatched as its own step (the console sends both in one command: speedTransfers.test.ts).
+    const { transferId } = await call<{ transferId: string }>(xfer.create, lib, { orgId: org, fromBranchId: central, toBranchId: north, copyIds: [id1, id2] });
     await call(xfer.dispatch, lib, { orgId: org, transferId });
     expect(await failure(call(xfer.receive, lib, { orgId: org, transferId, items: [{ barcode: other, condition: 'GOOD' }] }))).toBe('NOT_IN_TRANSFER');
     await call(xfer.receive, lib, { orgId: org, transferId, items: [{ barcode: c1, condition: 'GOOD' }, { barcode: c2, condition: 'FAIR', damaged: true }] });
-    const id1 = (await db.doc(`orgs/${org}/barcodes/${c1}`).get()).get('copyId');
-    const id2 = (await db.doc(`orgs/${org}/barcodes/${c2}`).get()).get('copyId');
     expect(await get(`copies/${id1}`)).toMatchObject({ status: 'AVAILABLE', currentBranchId: north, owningBranchId: central });
     expect(await get(`copies/${id2}`)).toMatchObject({ status: 'DAMAGED', currentBranchId: north, owningBranchId: central });
     expect((await get(`transfers/${transferId}`)).status).toBe('RECEIVED');

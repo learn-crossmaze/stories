@@ -26,6 +26,11 @@ Catalogue page filters by Active / Archived.
 ISBN, code and keywords plus their 2–12 character prefixes. The app queries one token with `array-contains`
 (prefix search), optionally with an age-group filter, ordered by title. The same scheme powers member search (name,
 member code, mobile). A dedicated search service can replace it later behind the same query functions.
+Member search (`searchMembers` in `apps/web/src/data/members.ts`) narrows by **every** typed word: the database is
+asked for the longest word (up to 50 members; the next word as well when that page is full) and the rest are matched
+against each member's own `searchTokens`. A mobile number is one word however it is typed (spaces, `+91`, a leading
+0), and a number that itself starts with 91 is found. On the Members page, Enter (a scanned member card ends with
+one) opens the member whose code was typed in full, or the only match.
 
 **Find book details (new books):** type a title (optionally with the author) or an ISBN at the top of the *New book*
 form and press *Search*. `books-lookup` searches **Open Library** (no key) and **Google Books** (needs an API key in
@@ -90,7 +95,9 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   branch's shelf pattern. Creating and archiving a shelf are audited (`location.create` / `location.archive`).
 - **Shelve books** (Collection → *Shelve books*, `/ops/inventory/shelve`, `copies-shelve`, `copies.manage` at the
   branch): lists every copy at the branch that is **available but not on a shelf** (`locationId == null`): new stock
-  received without a shelf, and returned books that passed inspection (issuing clears a copy's shelf). Pick the shelf,
+  received without a shelf, transfers received without a shelf (a shelf can be picked on receipt, see
+  [CIRCULATION.md §Transfers](CIRCULATION.md#transfers)), and returned books that passed inspection (issuing clears
+  a copy's shelf). Pick the shelf,
   tick the books or scan them (scanning also brings in a copy already on another shelf, to move it), and one click
   puts them all there: one transaction per 100 copies, all or none, with a `SHELVED` event per copy. Copies on loan,
   in transit, lost or retired, or at another branch, are refused; copies already on that shelf are left alone.
@@ -147,14 +154,19 @@ circulation counters (`activeLoanCount`, `allocatedCount`, `waitingCount`, lifet
   payments, issues, returns — one entry per member —, exchanges, lost books, reservations, deposits); entries written
   before that field existed still show when they were recorded against the member itself. If a section can't load,
   the page says so (and explains when a database index is still building) instead of showing it empty.
+  Right after *Register member* the new member's page opens with the plan chooser already open (once: not on reload
+  or Back, and only where the *Subscribe* button would show). *Current books* reads only the loans still out, and the
+  deposit card reads the account and the pending adjustments together, then the latest 8 ledger entries.
 
 
 **Member list** (Members page): every member at the branch, 50 at a time, with plan, renewal date ("in 6 days",
 "ended yesterday"), books out and status. Chips filter by subscription with counts — active, renewal due within 15
 days, expired, never subscribed — plus status and age-group filters; search (name, code, mobile) combines with them.
 Members carry `planName` and `renewalDueAt` (end of the latest paid term, pushed out by a pre-paid renewal and kept
-after expiry), written when a payment activates a subscription. Branches created before this get them filled once by
-`members-indexList` on the first visit (flagged by `memberListIndexedAt` on the branch).
+after expiry), written when a payment activates a subscription. Every way of creating a member must write both
+fields (as `null` until a plan is paid for): the "never subscribed" list asks for `renewalDueAt == null`, which does
+not match a member without the field. `renewalsDueCount` (`apps/web/src/data/members.ts`) asks for the "renewal
+due" count alone, with the same bounds as the chip, for the menu.
 
 ## Transfers
 
@@ -216,6 +228,8 @@ holder) instead of staff permissions; members never read other members' data.
 
 Every member has a credit-card-size ID card (85.6 × 54 mm): library and branch, name, member code, guardian (children),
 plan valid-until date, branch phone, and a **QR code of the member code**. At the desk, scanning it into **Find member**
-(USB scanner or the camera button) opens the member, like typing the code.
+(USB scanner or the camera button) opens the member, like typing the code. The desk opens in that field and comes back
+to it after each member, so a visit is: scan the card, scan the books, press Enter (see [CIRCULATION.md](CIRCULATION.md),
+*The desk*).
 - Staff: member page → **Library ID card** → Print (only the card prints, at real size) or Download (PNG, 300 dpi).
 - Members: Profile → **Library ID card** (also linked from Home) → Download to their phone, or Print.
