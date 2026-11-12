@@ -129,6 +129,16 @@ export async function employeeMonth(orgId: string, employeeId: string, month: st
   return snap.docs.map((d) => toRecord(d.id, d.data())).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * The signed-in person's own record for one day, or null before anything is recorded for it. A query, not a
+ * read by id: the rules prove it is their own from the `employeeUid` filter (and a read by id of a day with no
+ * record yet is refused). Equality filters only, so it needs no index of its own.
+ */
+export async function myDay(orgId: string, uid: string, date: string): Promise<AttendanceRecord | null> {
+  const snap = await getDocs(query(collection(db(), `orgs/${orgId}/attendance`), where('employeeUid', '==', uid), where('date', '==', date), limit(1)));
+  return snap.empty ? null : toRecord(snap.docs[0].id, snap.docs[0].data());
+}
+
 export async function pendingCorrections(orgId: string, scope: string[] | 'ALL'): Promise<Correction[]> {
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/attendanceCorrections`), where('status', '==', 'PENDING'), ...branchFilter(scope), limit(300)));
   return snap.docs.map((d) => ({ ...(d.data() as Omit<Correction, 'id'>), id: d.id })).sort((a, b) => a.date.localeCompare(b.date));
@@ -151,8 +161,36 @@ export async function monthLock(orgId: string, month: string, branchId: string |
   return { ...(d as MonthLock), finalizedAt: toDate(d.finalizedAt) };
 }
 
+/** What a punch wrote: the day it belongs to (a check-out can close yesterday's overnight day) and its times, in milliseconds. */
+export interface PunchResult {
+  date: string;
+  status: DayStatus;
+  late: boolean;
+  lateMinutes: number;
+  earlyExit: boolean;
+  missedCheckout: boolean;
+  workedMinutes: number;
+  checkIn: number | null;
+  checkOut: number | null;
+}
+
+/** The parts of a day the check-in card shows. */
+export type PunchedDay = Pick<AttendanceRecord, 'date' | 'status' | 'late' | 'lateMinutes' | 'earlyExit' | 'missedCheckout' | 'workedMinutes' | 'checkIn' | 'checkOut'>;
+
 export const punch = (orgId: string, direction: 'IN' | 'OUT', employeeId?: string) =>
-  command<{ date: string; status: DayStatus; late: boolean }>('attendance-punch', { orgId, punch: direction, ...(employeeId ? { employeeId } : {}) });
+  command<PunchResult>('attendance-punch', { orgId, punch: direction, ...(employeeId ? { employeeId } : {}) });
+
+/**
+ * Today as the card should show it after a punch, without reading it again. A check-out that closed
+ * yesterday's day leaves today with nothing recorded (null). An answer from an older backend carries no
+ * times: `undefined` then, and the caller reads the day instead.
+ */
+export function dayAfterPunch(result: PunchResult, today: string): PunchedDay | null | undefined {
+  if (result.date !== today) return null;
+  if (result.checkIn === undefined) return undefined;
+  const at = (ms: number | null) => (ms === null ? null : new Date(ms));
+  return { ...result, checkIn: at(result.checkIn), checkOut: at(result.checkOut) };
+}
 
 /** Finalizing is not a replayed command (it writes many records); call it directly. */
 export async function finalizeMonth(orgId: string, month: string, branchId: string | null) {

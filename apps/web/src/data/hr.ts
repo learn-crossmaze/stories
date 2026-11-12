@@ -118,10 +118,35 @@ export async function getEmployee(orgId: string, employeeId: string): Promise<Em
   return snap.exists() ? ({ id: snap.id, ...snap.data() } as Employee) : null;
 }
 
-/** The signed-in user's own employee record in an organization, if any. */
-export async function myEmployee(orgId: string, uid: string): Promise<Employee | null> {
-  const snap = await getDocs(query(collection(db(), `orgs/${orgId}/employees`), where('uid', '==', uid), limit(1)));
-  return snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as Employee);
+/** How long one read of the person's own record serves the pages and cards that ask for it. */
+const MY_EMPLOYEE_MS = 60_000;
+const mine = new Map<string, { at: number; read: Promise<Employee | null> }>();
+
+/**
+ * The signed-in user's own employee record in an organization, if any. Several
+ * parts of one screen ask for it (the page, the check-in card, the profile
+ * reminder), so callers within a minute share one read; a failed read is not
+ * kept. After changing the record, call `forgetMyEmployee()` before reading it
+ * again.
+ */
+export function myEmployee(orgId: string, uid: string): Promise<Employee | null> {
+  const key = `${orgId}:${uid}`;
+  const kept = mine.get(key);
+  if (kept && Date.now() - kept.at < MY_EMPLOYEE_MS) return kept.read;
+  const read = (async () => {
+    const snap = await getDocs(query(collection(db(), `orgs/${orgId}/employees`), where('uid', '==', uid), limit(1)));
+    return snap.empty ? null : ({ id: snap.docs[0].id, ...snap.docs[0].data() } as Employee);
+  })();
+  mine.set(key, { at: Date.now(), read });
+  read.catch(() => {
+    if (mine.get(key)?.read === read) mine.delete(key);
+  });
+  return read;
+}
+
+/** Forgets the person's own record, so the next `myEmployee` reads it afresh (after they changed their photo, details or documents). */
+export function forgetMyEmployee(): void {
+  mine.clear();
 }
 
 export async function getPrivateProfile(orgId: string, employeeId: string): Promise<PrivateProfile> {

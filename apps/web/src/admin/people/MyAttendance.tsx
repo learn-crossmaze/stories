@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import { type Correction, employeeMonth, myCorrections, punch, timeOf } from '../../data/attendance';
+import { type Correction, dayAfterPunch, employeeMonth, myCorrections, myDay, punch, type PunchedDay, timeOf } from '../../data/attendance';
 import { monthIST, todayIST } from '../../shared/dates';
-import { myEmployee } from '../../data/hr';
+import { type Employee, myEmployee } from '../../data/hr';
 import { paths } from '../../paths';
 import { EmptyState, ErrorState, Icon, makeStatusBadge, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
@@ -18,24 +18,32 @@ import { CorrectionRequestDialog, DayFlags, MonthRecords } from './attendanceKit
 const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
 const CorrectionBadge = makeStatusBadge<Correction['status']>({ PENDING: 'info', APPROVED: 'ok', REJECTED: 'danger' }, ht.correctionStatus);
 
-/** Check in / check out for today. Renders nothing for people without an employee record. */
-export function CheckInCard({ compact }: { compact?: boolean }) {
+/**
+ * Check in / check out for today. Renders nothing for people without an employee record. A page that has
+ * already read the person's record passes it as `me`; `onPunched` tells it a punch went through.
+ */
+export function CheckInCard({ compact, me, onPunched }: { compact?: boolean; me?: Employee; onPunched?: () => void }) {
   const { user } = useAuth();
   const { org } = useWorkspace();
   const data = useAsync(async () => {
     if (!org || !user) return null;
-    const me = await myEmployee(org.id, user.uid);
-    if (!me || !WORKING.includes(me.status)) return null;
-    const today = (await employeeMonth(org.id, me.id, monthIST(), { ownUid: user.uid })).find((r) => r.date === todayIST()) ?? null;
-    return { me, today };
-  }, [org?.id, user?.uid]);
+    const [emp, today] = await Promise.all([me ?? myEmployee(org.id, user.uid), myDay(org.id, user.uid, todayIST())]);
+    if (!emp || !WORKING.includes(emp.status)) return null;
+    return { me: emp, today: today as PunchedDay | null };
+  }, [org?.id, user?.uid, me?.id]);
+  // Today as the last punch left it, shown over what was loaded (`over`): a new read, another person or another organization drops it.
+  const [punched, setPunched] = useState<{ over: unknown; day: PunchedDay | null } | null>(null);
   const { busy, error, run } = useAction();
   if (!data.data) return null;
-  const { me, today } = data.data;
+  const loaded = data.data;
+  const today = punched?.over === loaded ? punched.day : loaded.today;
   const act = (action: 'IN' | 'OUT') =>
     run(async () => {
-      await punch(org!.id, action);
-      data.reload();
+      const day = dayAfterPunch(await punch(org!.id, action), todayIST());
+      // The answer says what the day is now, so nothing is read again (an older backend sends no times: read then).
+      if (day === undefined) data.reload();
+      else setPunched({ over: loaded, day });
+      onPunched?.();
     });
   const status = today?.checkOut ? ht.checkedOutAt(timeOf(today.checkOut)) : today?.checkIn ? ht.checkedInAt(timeOf(today.checkIn)) : ht.notCheckedIn;
   return (
@@ -44,7 +52,7 @@ export function CheckInCard({ compact }: { compact?: boolean }) {
         <h2 id="checkin-title">
           <Icon name="clock" /> {ht.todayCard}
         </h2>
-        <p className="muted small">{me.shiftName ?? ht.noShift}</p>
+        <p className="muted small">{loaded.me.shiftName ?? ht.noShift}</p>
         <p aria-live="polite">{status}</p>
         {today && <DayFlags r={today} />}
       </div>
@@ -77,11 +85,9 @@ export function MyAttendancePage() {
   const [asking, setAsking] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const me = useAsync(() => (org && user ? myEmployee(org.id, user.uid) : Promise.resolve(null)), [org?.id, user?.uid]);
-  const records = useAsync(
-    () => (org && user && me.data ? employeeMonth(org.id, me.data.id, month, { ownUid: user.uid }) : Promise.resolve([])),
-    [org?.id, me.data?.id, month],
-  );
-  const corrections = useAsync(() => (org && user && me.data ? myCorrections(org.id, user.uid) : Promise.resolve([])), [org?.id, me.data?.id]);
+  // Own records are found by the account, so neither read waits for the employee record.
+  const records = useAsync(() => (org && user ? employeeMonth(org.id, '', month, { ownUid: user.uid }) : Promise.resolve([])), [org?.id, user?.uid, month]);
+  const corrections = useAsync(() => (org && user ? myCorrections(org.id, user.uid) : Promise.resolve([])), [org?.id, user?.uid]);
   if (!org) return <NoOrgState />;
 
   return (
@@ -101,7 +107,7 @@ export function MyAttendancePage() {
         <EmptyState icon="clock" title={ht.noEmployeeRecord} message="" />
       ) : (
         <>
-          <CheckInCard />
+          <CheckInCard me={me.data} onPunched={records.reload} />
           <section className="section" aria-labelledby="my-month">
             <div className="page-header-row">
               <h2 id="my-month">{ht.tabMonth}</h2>

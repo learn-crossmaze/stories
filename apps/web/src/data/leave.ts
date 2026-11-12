@@ -133,8 +133,12 @@ export async function ledgerFor(orgId: string, employeeId: string, year: string,
   return snap.docs.map((d) => ({ ...(d.data() as Omit<LedgerEntry, 'id' | 'at'>), id: d.id, at: toDate(d.get('at')) })).sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
 }
 
-export const applyLeave = (input: { orgId: string; employeeId?: string; typeId: string; from: string; to: string; halfDay: HalfDay; reason: string }) =>
-  command<{ leaveId: string; days: number }>('leave-apply', input);
+/**
+ * Applies for leave, or records it for `employeeId`. `approve` (only for someone else's leave) approves it in
+ * the same step; it is sent only when true, so recording without it works against an older backend too.
+ */
+export const applyLeave = ({ approve, ...input }: { orgId: string; employeeId?: string; typeId: string; from: string; to: string; halfDay: HalfDay; reason: string; approve?: boolean }) =>
+  command<{ leaveId: string; days: number; status?: 'PENDING' | 'APPROVED' }>('leave-apply', { ...input, ...(approve ? { approve: true } : {}) });
 
 /** Accrual writes many documents; it is not a replayed command. */
 export async function accrueLeave(orgId: string, month: string) {

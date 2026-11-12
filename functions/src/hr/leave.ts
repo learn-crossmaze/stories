@@ -8,9 +8,10 @@ import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { LINKS, notify } from '../core/notify.js';
 import { db, REGION } from '../core/firebase.js';
+import { readAll } from '../core/reads.js';
 import { id, name, reason } from '../core/schemas.js';
 import { inChunks, JOB_OPTIONS, sweep } from '../core/sweep.js';
-import { dayContext, ensureWorking, isClosed, lockRef, ms, ownEmployee, recordFor, recordRef } from './attendance.js';
+import { contextFrom, ensureWorking, isClosed, lockRef, ms, ownEmployee, recordFor, recordRef } from './attendance.js';
 import { businessDate, datesOfMonth, type DayLeave, monthOf } from './attendanceRules.js';
 import { auditCtx, date, holidayApplies, month, WORKING, weeklyOffsOf, year } from './common.js';
 import { DEFAULT_LEAVE_TYPES, days2, type LeaveType, leaveDays, monthlyCredit, yearlyCredit } from './leaveRules.js';
@@ -305,17 +306,24 @@ async function ensureOpen(tx: Transaction, orgId: string, branchId: string | nul
  * Applies for leave: the caller's own, or with `employeeId` on someone's
  * behalf (a leave approver for their branch). Days exclude weekly offs and
  * holidays; the balance must cover them unless the type is unlimited.
+ *
+ * With `approve`, leave recorded for someone else is approved in the same
+ * step (recording it already needs `leave.approve` at their branch): the days
+ * are used at once and marked on attendance, as `leave-decide` would. Never
+ * for the caller's own leave.
  */
 export const apply = command(
   'leave-apply',
   z
-    .strictObject({ orgId: id, employeeId: id.optional(), typeId: id, from: date, to: date, halfDay: z.enum(['NONE', 'FIRST', 'SECOND']).default('NONE'), reason })
+    .strictObject({ orgId: id, employeeId: id.optional(), typeId: id, from: date, to: date, halfDay: z.enum(['NONE', 'FIRST', 'SECOND']).default('NONE'), reason, approve: z.boolean().default(false) })
     .refine((r) => r.from <= r.to, { message: 'must not be before the start', path: ['to'] })
     .refine((r) => r.from.slice(0, 4) === r.to.slice(0, 4), { message: 'must be in the same year as the start (apply twice across the new year)', path: ['to'] })
     .refine((r) => r.halfDay === 'NONE' || r.from === r.to, { message: 'a half day is a single date', path: ['halfDay'] }),
   async ({ actor, input, requestId }, tx) => {
     const employee = input.employeeId ? await loadEmployee(tx, input.orgId, input.employeeId) : await ownEmployee(tx, input.orgId, actor);
     const self = employee.get('uid') === actor.uid;
+    // The caller's own leave needs no permission, so it can never be approved in the same step.
+    if (input.approve && self) throw errors.forbidden("You can't approve your own leave.");
     const branchId = (employee.get('branchId') as string | null) ?? null;
     if (!self) await requireFor(actor, 'leave.approve', input.orgId, branchId, tx);
     ensureWorking(employee);
@@ -342,7 +350,12 @@ export const apply = command(
     if (!type.unlimited && available(balance, input.typeId) < days)
       throw errors.conflict('INSUFFICIENT_BALANCE', `Only ${available(balance, input.typeId)} days of ${type.name} are available for ${y}.`);
 
+    // Approving now: the days' attendance is read here, before the first write.
+    const markLeave = input.approve ? await markDays(tx, input.orgId, employee, dates, { paid: type.paid, half: input.halfDay !== 'NONE', typeId: input.typeId }) : null;
+
     const ref = requestsCol(input.orgId).doc();
+    const approved = input.approve;
+    markLeave?.();
     tx.set(ref, {
       orgId: input.orgId,
       employeeId: employee.id,
@@ -362,36 +375,84 @@ export const apply = command(
       days,
       year: y,
       reason: input.reason,
-      status: 'PENDING',
+      status: approved ? 'APPROVED' : 'PENDING',
       appliedBy: actor.uid,
       appliedAt: FieldValue.serverTimestamp(),
-      decidedBy: null,
-      decidedByEmail: null,
+      decidedBy: approved ? actor.uid : null,
+      decidedByEmail: approved ? actor.email : null,
+      ...(approved ? { decidedAt: FieldValue.serverTimestamp() } : {}),
       decisionNote: null,
     });
-    bump(tx, input.orgId, employee, y, input.typeId, { pending: days });
-    notify(tx, employee.get('uid'), { orgId: input.orgId, kind: 'leave.recorded', title: `${type.name} recorded for you: ${span_(input.from, input.to)}`, body: 'It is waiting for approval.', link: LINKS.myLeave }, actor.uid);
+    const request = { id: ref.id, typeId: input.typeId, year: y, from: input.from, to: input.to, days };
+    if (!approved) bump(tx, input.orgId, employee, y, input.typeId, { pending: days });
+    // One notice either way (each is also a WhatsApp staff alert).
+    notify(
+      tx,
+      employee.get('uid'),
+      approved
+        ? { orgId: input.orgId, kind: 'leave.approved', title: `${type.name} recorded for you and approved: ${span_(input.from, input.to)}`, link: LINKS.myLeave }
+        : { orgId: input.orgId, kind: 'leave.recorded', title: `${type.name} recorded for you: ${span_(input.from, input.to)}`, body: 'It is waiting for approval.', link: LINKS.myLeave },
+      actor.uid,
+    );
     recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
       action: 'leave.apply',
       entityType: 'employee',
       entityId: employee.id,
       branchId,
-      after: { requestId: ref.id, typeId: input.typeId, from: input.from, to: input.to, days, self },
+      after: { requestId: ref.id, typeId: input.typeId, from: input.from, to: input.to, days, self, ...(approved ? { approved: true } : {}) },
       reason: input.reason,
     });
-    return { leaveId: ref.id, days };
+    if (approved) writeApproval(tx, auditCtx(actor, requestId), actor.uid, input.orgId, employee, request, { held: false, note: null });
+    return { leaveId: ref.id, days, status: approved ? 'APPROVED' : 'PENDING' };
   },
 );
 
-/** Sets (or clears) leave on each day's attendance record. Reads first; returns the writer. */
+/**
+ * What approving writes besides the request and the attendance days: the days
+ * become used (`held`: they were waiting as pending until now), a TAKEN ledger
+ * entry, and the audit entry. Shared by `leave-decide` and by leave recorded
+ * and approved in one step, so the two cannot drift apart.
+ */
+function writeApproval(
+  tx: Transaction,
+  ctx: ReturnType<typeof auditCtx>,
+  byUid: string,
+  orgId: string,
+  employee: DocumentSnapshot,
+  request: { id: string; typeId: string; year: string; from: string; to: string; days: number },
+  opts: { held: boolean; note: string | null },
+) {
+  const { id: leaveId, typeId, year: y, days } = request;
+  bump(tx, orgId, employee, y, typeId, opts.held ? { pending: -days, used: days } : { used: days });
+  ledger(tx, `${leaveId}_taken`, orgId, employee, { year: y, typeId, kind: 'TAKEN', days: -days, by: byUid, requestId: leaveId });
+  recordAudit(tx, ctx, orgId, {
+    action: 'leave.approve',
+    entityType: 'employee',
+    entityId: employee.id,
+    branchId: employee.get('branchId') ?? null,
+    after: { requestId: leaveId, typeId, from: request.from, to: request.to, days },
+    reason: opts.note,
+  });
+}
+
+/**
+ * Sets (or clears) leave on each day's attendance record. Reads first; returns the writer.
+ *
+ * The caller must have called `ensureOpen` for these dates in the same
+ * transaction: the month locks are not read again here (that read is what
+ * makes a finalization running at the same time conflict). The shift and the
+ * branch are read once, and the day records and holidays in one read.
+ */
 async function markDays(tx: Transaction, orgId: string, employee: DocumentSnapshot, dates: string[], leave: DayLeave | null) {
   const today = businessDate(Date.now());
-  const days = await Promise.all(
-    dates.map(async (day) => {
-      const [current, ctx] = await Promise.all([tx.get(recordRef(orgId, employee.id, day)), dayContext(tx, orgId, employee, day)]);
-      return { day, current, ctx };
-    }),
-  );
+  const branchId = (employee.get('branchId') as string | null) ?? null;
+  const shiftId = (employee.get('shiftId') as string | null | undefined) ?? null;
+  const [shift, branch, snaps] = await Promise.all([
+    shiftId ? tx.get(db.doc(`orgs/${orgId}/shifts/${shiftId}`)) : null,
+    branchId ? tx.get(db.doc(`orgs/${orgId}/branches/${branchId}`)) : null,
+    readAll(tx, [...dates.map((day) => recordRef(orgId, employee.id, day)), ...dates.map((day) => db.doc(`orgs/${orgId}/holidays/${day}`))]),
+  ]);
+  const days = dates.map((day, i) => ({ day, current: snaps[i], ctx: contextFrom(employee, day, shift, branch, snaps[dates.length + i], false) }));
   return () => {
     for (const { day, current, ctx } of days) {
       const checkIn = ms(current.get('checkIn'));
@@ -440,7 +501,7 @@ export const decide = command(
       decidedAt: FieldValue.serverTimestamp(),
       decisionNote: input.note || null,
     });
-    bump(tx, input.orgId, employee, y, typeId, approve ? { pending: -days, used: days } : { pending: -days });
+    if (!approve) bump(tx, input.orgId, employee, y, typeId, { pending: -days });
     notify(
       tx,
       req.get('employeeUid'),
@@ -453,15 +514,18 @@ export const decide = command(
       },
       actor.uid,
     );
-    if (approve) ledger(tx, `${req.id}_taken`, input.orgId, employee, { year: y, typeId, kind: 'TAKEN', days: -days, by: actor.uid, requestId: req.id });
-    recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
-      action: approve ? 'leave.approve' : 'leave.reject',
-      entityType: 'employee',
-      entityId: employee.id,
-      branchId: employee.get('branchId') ?? null,
-      after: { requestId: req.id, typeId, from: req.get('from'), to: req.get('to'), days },
-      reason: input.note || null,
-    });
+    if (approve) {
+      writeApproval(tx, auditCtx(actor, requestId), actor.uid, input.orgId, employee, { id: req.id, typeId, year: y, from: req.get('from'), to: req.get('to'), days }, { held: true, note: input.note || null });
+    } else {
+      recordAudit(tx, auditCtx(actor, requestId), input.orgId, {
+        action: 'leave.reject',
+        entityType: 'employee',
+        entityId: employee.id,
+        branchId: employee.get('branchId') ?? null,
+        after: { requestId: req.id, typeId, from: req.get('from'), to: req.get('to'), days },
+        reason: input.note || null,
+      });
+    }
     return { leaveId: req.id, status: approve ? 'APPROVED' : 'REJECTED' };
   },
 );

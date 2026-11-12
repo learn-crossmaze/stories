@@ -816,3 +816,15 @@ main h1[tabindex='-1']:focus { outline: none; }
 .role-area .check .icon { width: 18px; height: 18px; color: var(--success); flex: none; margin-top: 2px; }
 .role-all { font-weight: 600; }
 .check.is-disabled { opacity: 0.6; }
+
+/* People → Documents: the review dialog shows the file beside its details, so it is wider than a form. */
+.dialog:has(.doc-review) { width: min(1120px, 100%); }
+.doc-review { display: flex; flex-direction: column; gap: 12px; }
+.doc-review-place { margin: 0; font-weight: 600; }
+.doc-review-place:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 4px; }
+.doc-review-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.doc-review-file { min-height: 240px; display: grid; place-items: center; background: var(--surface-dim); border: 1px solid var(--outline); border-radius: var(--radius-md); overflow: auto; }
+.doc-review-file img { max-width: 100%; height: auto; display: block; }
+.doc-review-file iframe { width: 100%; height: min(70vh, 720px); border: 0; display: block; }
+.doc-review-facts { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .doc-review-body { grid-template-columns: 1fr; } }

@@ -25,6 +25,19 @@ export async function openFile(action: string, data: Record<string, unknown>) {
   }
 }
 
+export interface FetchedFile {
+  /** A blob: address for the file. The caller revokes it (URL.revokeObjectURL) when done with it. */
+  url: string;
+  contentType: string;
+  fileName: string;
+}
+
+/** Fetches a file from an action, to show inside the page. One call is one opening on the server's record. */
+export async function fetchFile(action: string, data: Record<string, unknown>): Promise<FetchedFile> {
+  const res = await call<FileResponse>(action, data);
+  return { url: objectUrl(res), contentType: res.contentType, fileName: res.fileName };
+}
+
 /** Fetches a file from an action and saves it under the name the server gives it. */
 export async function downloadFile(action: string, data: Record<string, unknown>) {
   const res = await call<FileResponse>(action, data);

@@ -1,5 +1,5 @@
 // HR's document queue: waiting for verification, expiring soon, expired.
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
@@ -14,7 +14,7 @@ import { ht } from '../../strings/hr';
 import { FormError } from '../components/Dialog';
 import { Tabs } from '../components/kit';
 import { useWorkspace } from '../Workspace';
-import { DocumentBadge, ExpiryNote, useDocumentReview } from './EmployeeDocuments';
+import { DocumentBadge, documentKey, DocumentReviewDialog, ExpiryNote, useDocumentReview } from './EmployeeDocuments';
 
 type Queue = 'pending' | 'expiring' | 'expired';
 
@@ -29,10 +29,23 @@ export function DocumentsPage() {
   }, [org?.id, JSON.stringify(scope)]);
   const [tab, setTab] = useState<Queue>('pending');
   const [openError, setOpenError] = useState<string | null>(null);
-  const review = useDocumentReview(org?.id ?? '', data.reload);
+  // Documents reviewed on this page. They leave the pending list at once and never come back to it: a read that
+  // began before a decision was saved can still list the document as pending.
+  const [done, setDone] = useState<ReadonlySet<string>>(new Set());
+  const markDone = (d: EmployeeDocument) => setDone((s) => new Set(s).add(documentKey(d)));
+  const review = useDocumentReview(org?.id ?? '', (d) => {
+    markDone(d);
+    data.reload();
+  });
+  // The review dialog: where it starts in the list of documents waiting for this viewer, and whether it decided any.
+  const [reviewing, setReviewing] = useState<number | null>(null);
+  const decided = useRef(false);
   if (!org) return <NoOrgState />;
 
-  const q = data.data?.queue;
+  const loaded = data.data?.queue;
+  const q = loaded && { ...loaded, pending: loaded.pending.filter((d) => !done.has(documentKey(d))) };
+  // Never one's own upload: someone else verifies those (the server refuses it too).
+  const reviewable = (q?.pending ?? []).filter((d) => d.uploadedBy !== user?.uid);
   const reminder = new Map((data.data?.types ?? []).map((x) => [x.id, x.reminderDays]));
   const rows: EmployeeDocument[] = q ? q[tab] : [];
   const open = async (d: EmployeeDocument) => {
@@ -46,9 +59,16 @@ export function DocumentsPage() {
 
   return (
     <>
-      <header className="page-header">
-        <h1>{ht.documentsTitle}</h1>
-        <p className="muted">{ht.documentsIntro}</p>
+      <header className="page-header page-header-row">
+        <div>
+          <h1>{ht.documentsTitle}</h1>
+          <p className="muted">{ht.documentsIntro}</p>
+        </div>
+        {reviewable.length > 0 && (
+          <button type="button" className="btn btn-filled" onClick={() => setReviewing(0)}>
+            {ht.reviewPending(reviewable.length)}
+          </button>
+        )}
       </header>
       <Tabs
         value={tab}
@@ -106,6 +126,9 @@ export function DocumentsPage() {
                     </button>
                     {d.status === 'PENDING' && d.uploadedBy !== user?.uid && (
                       <>
+                        <button type="button" className="btn btn-text" onClick={() => setReviewing(Math.max(0, reviewable.indexOf(d)))} aria-label={`${ht.review} ${d.typeName}, ${d.employeeName}`}>
+                          {ht.review}
+                        </button>
                         <button type="button" className="btn btn-text" disabled={review.busy} onClick={() => void review.verify(d)} aria-label={`${ht.verify} ${d.typeName}, ${d.employeeName}`}>
                           {ht.verify}
                         </button>
@@ -122,6 +145,23 @@ export function DocumentsPage() {
         </TableWrap>
       )}
       {review.dialog}
+      {reviewing !== null && (
+        <DocumentReviewDialog
+          orgId={org.id}
+          documents={reviewable}
+          start={reviewing}
+          onReviewed={(d) => {
+            decided.current = true;
+            markDone(d);
+          }}
+          onClose={() => {
+            setReviewing(null);
+            // One refresh for the whole sitting: verifying replaces older copies, which sit in the other two lists.
+            if (decided.current) data.reload();
+            decided.current = false;
+          }}
+        />
+      )}
     </>
   );
 }

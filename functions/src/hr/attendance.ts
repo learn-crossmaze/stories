@@ -11,6 +11,7 @@ import { LINKS, notify } from '../core/notify.js';
 import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
 import { id, reason } from '../core/schemas.js';
+import { inChunks } from '../core/sweep.js';
 import { atIST, businessDate, datesOfMonth, type DayLeave, DEFAULT_RULES, evaluateDay, monthOf, type ShiftRules, summarize, weekdayOf } from './attendanceRules.js';
 import { auditCtx, date, holidayApplies, month, time, WORKING, weeklyOffsOf } from './common.js';
 import { canFor, employeesCol, loadEmployee, requireFor } from './model.js';
@@ -55,13 +56,19 @@ export async function dayContext(tx: Transaction, orgId: string, employee: Docum
     tx.get(db.doc(`orgs/${orgId}/holidays/${day}`)),
     tx.get(lockRef(orgId, monthOf(day), branchId)),
   ]);
+  return contextFrom(employee, day, shift, branch, holiday, isClosed(lock));
+}
+
+/** A day's context from documents already read: the employee's shift and branch, and the holiday document of that day. */
+export function contextFrom(employee: DocumentSnapshot, day: string, shift: DocumentSnapshot | null, branch: DocumentSnapshot | null, holiday: DocumentSnapshot, locked: boolean): DayContext {
+  const branchId = (employee.get('branchId') as string | null) ?? null;
   return {
     rules: shift?.exists ? (shift.data() as ShiftRules) : DEFAULT_RULES,
-    shiftId: shift?.exists ? shiftId : null,
+    shiftId: shift?.exists ? shift.id : null,
     shiftName: shift?.exists ? (shift.get('name') as string) : null,
     weeklyOff: weeklyOffsOf(employee, branch).includes(weekdayOf(day)),
     holiday: holiday.exists && holidayApplies(holiday.get('branchIds') as string[] | undefined, branchId),
-    locked: isClosed(lock),
+    locked,
   };
 }
 
@@ -135,15 +142,16 @@ export const punch = command(
     const yesterday = businessDate(now - 86_400_000);
 
     let day = today;
-    let current = await tx.get(recordRef(input.orgId, employee.id, today));
+    let [current, ctx] = await Promise.all([tx.get(recordRef(input.orgId, employee.id, today)), dayContext(tx, input.orgId, employee, today)]);
     if (input.punch === 'OUT' && !ms(current.get('checkIn'))) {
       const prev = await tx.get(recordRef(input.orgId, employee.id, yesterday));
       if (ms(prev.get('checkIn')) && !ms(prev.get('checkOut'))) {
         day = yesterday;
         current = prev;
+        // The day written is yesterday: its own shift, holiday and month lock apply.
+        ctx = await dayContext(tx, input.orgId, employee, yesterday);
       }
     }
-    const ctx = await dayContext(tx, input.orgId, employee, day);
     if (ctx.locked) throw errors.conflict('MONTH_FINALIZED', 'Attendance for this month is finalized. Ask HR to reopen it.');
     const checkIn = ms(current.get('checkIn'));
     const checkOut = ms(current.get('checkOut'));
@@ -160,7 +168,18 @@ export const punch = command(
       branchId: record.branchId,
       after: { date: day, at: new Date(now).toISOString(), self },
     });
-    return { date: day, status: record.status, late: record.late };
+    // Plain numbers (the result is stored for replays): the card and the day board show the day from this, without reading it again.
+    return {
+      date: day,
+      status: record.status,
+      late: record.late,
+      lateMinutes: record.lateMinutes,
+      earlyExit: record.earlyExit,
+      missedCheckout: record.missedCheckout,
+      workedMinutes: record.workedMinutes,
+      checkIn: input.punch === 'IN' ? now : checkIn,
+      checkOut: input.punch === 'OUT' ? now : null,
+    };
   },
 );
 
@@ -316,6 +335,9 @@ async function employeesFor(orgId: string, branchId: string | null, m: string) {
 }
 
 const BATCH = 400;
+/** Finalizing: employees whose days are read together, and batches committed together. */
+const READ_AT_ONCE = 10;
+const COMMITS_AT_ONCE = 4;
 
 /** The fields of a day record that finalization sets: its evaluation, never the punches or leave. */
 function evaluationOf(record: ReturnType<typeof recordFor>) {
@@ -382,24 +404,34 @@ export const finalize = query(
       const shiftById = new Map(shifts.docs.map((s) => [s.id, s]));
       const holidayOn = new Map(holidays.docs.map((h) => [h.id, h.get('branchIds') as string[] | undefined]));
 
-      let batch = db.batch();
-      let ops = 0;
-      const flush = async () => {
-        if (ops) await batch.commit();
-        batch = db.batch();
-        ops = 0;
+      // Each person's days, read by employee (not by branch: someone who moved here keeps the days recorded at the old branch), a few people at a time.
+      const employedDays = (e: DocumentSnapshot) => {
+        const joined = (e.get('joiningDate') as string | null) ?? null;
+        const exit = (e.get('exitDate') as string | null) ?? null;
+        return days.filter((day) => !((joined && day < joined) || (exit && day > exit)));
       };
-      const put = async (write: (b: WriteBatch) => void) => {
-        write(batch);
-        if (++ops >= BATCH) await flush();
+      const recordsOf = new Map<string, DocumentSnapshot[]>();
+      await inChunks(employees, READ_AT_ONCE, async (e) => {
+        const employed = employedDays(e);
+        recordsOf.set(e.id, employed.length ? await db.getAll(...employed.map((day) => recordRef(orgId, e.id, day))) : []);
+      });
+
+      // Every write is built first, in batches; nothing is committed inside the loop.
+      const batches: WriteBatch[] = [db.batch()];
+      let ops = 0;
+      const put = (write: (b: WriteBatch) => void) => {
+        if (ops >= BATCH) {
+          batches.push(db.batch());
+          ops = 0;
+        }
+        write(batches.at(-1)!);
+        ops += 1;
       };
       for (const e of employees) {
         const shift = e.get('shiftId') ? shiftById.get(e.get('shiftId')) : undefined;
         const offs = weeklyOffsOf(e, branch);
-        const joined = (e.get('joiningDate') as string | null) ?? null;
-        const exit = (e.get('exitDate') as string | null) ?? null;
-        const employed = days.filter((day) => !((joined && day < joined) || (exit && day > exit)));
-        const records = employed.length ? await db.getAll(...employed.map((day) => recordRef(orgId, e.id, day))) : [];
+        const employed = employedDays(e);
+        const records = recordsOf.get(e.id)!;
         const results = [];
         for (const [i, day] of employed.entries()) {
           const ctx: DayContext = {
@@ -413,11 +445,11 @@ export const finalize = query(
           const prior = records[i].exists ? records[i] : undefined;
           const record = recordFor(orgId, e, day, ctx, ms(prior?.get('checkIn')), ms(prior?.get('checkOut')), (prior?.get('source') as string | undefined) ?? 'FINALIZE', leaveOf(prior), true);
           results.push(record);
-          await put((b) => b.set(records[i].ref, { ...evaluationOf(record), finalized: true }, { merge: true }));
+          put((b) => b.set(records[i].ref, { ...evaluationOf(record), finalized: true }, { merge: true }));
         }
         const summary = summarize(results);
         totalPayable += summary.payableDays;
-        await put((b) =>
+        put((b) =>
           b.set(db.doc(`orgs/${orgId}/attendanceSummaries/${e.id}_${m}`), {
             orgId,
             employeeId: e.id,
@@ -435,8 +467,15 @@ export const finalize = query(
       }
       // People this month no longer covers here (moved to another branch, or not employed in it after all).
       const keep = new Set(employees.map((e) => e.id));
-      for (const s of oldSummaries.docs) if (!keep.has(s.get('employeeId'))) await put((b) => b.delete(s.ref));
-      await flush();
+      for (const s of oldSummaries.docs) if (!keep.has(s.get('employeeId'))) put((b) => b.delete(s.ref));
+      // The batches touch different documents, so a few go at once. Every one that was started is waited for
+      // before a failure is reported: none may still be landing when the lock is put back.
+      const filled = ops ? batches : batches.slice(0, -1);
+      for (let i = 0; i < filled.length; i += COMMITS_AT_ONCE) {
+        const done = await Promise.allSettled(filled.slice(i, i + COMMITS_AT_ONCE).map((b) => b.commit()));
+        const failed = done.find((d) => d.status === 'rejected');
+        if (failed) throw (failed as PromiseRejectedResult).reason;
+      }
 
       await db.runTransaction(async (tx) => {
         const lock = await tx.get(ref);
