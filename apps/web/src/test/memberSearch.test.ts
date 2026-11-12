@@ -21,7 +21,7 @@ vi.mock('firebase/firestore', async (importOriginal) => ({
   },
 }));
 
-const { memberQueryWords, narrowMembers, searchMembers } = await import('../data/members');
+const { memberQueryReadings, memberQueryWords, narrowMembers, searchMembers } = await import('../data/members');
 
 /** The words the server stores for a member (functions/src/catalogue/search.ts): each word and its starts, 2 to 12 long. */
 function tokens(...fields: string[]) {
@@ -79,6 +79,21 @@ describe('member search words', () => {
   it('caps each word at the 12 characters the index keeps', () => {
     expect(memberQueryWords('Venkatanarasimharajuvaripeta')).toEqual(['venkatanaras']);
   });
+
+  it('reads digits and dashes as a member code as well as a mobile number', () => {
+    // A branch may number its members "{YYYY}-{SEQ:6}": the code is indexed as its two pieces.
+    expect(memberQueryReadings('2026-000123')).toEqual([['2026000123'], ['000123', '2026']]);
+    expect(memberQueryReadings('98765 43210')).toEqual([['9876543210'], ['98765', '43210']]);
+    expect(memberQueryReadings('91 9876543210')).toEqual([['9876543210'], ['9876543210', '91']]);
+    // One reading where both come to the same, and for what can only be a mobile number or is not one at all.
+    expect(memberQueryReadings('9876543210')).toEqual([['9876543210']]);
+    expect(memberQueryReadings('2026')).toEqual([['2026']]);
+    expect(memberQueryReadings('+91 98765 43210')).toEqual([['9876543210']]);
+    expect(memberQueryReadings('(98765) 432-10')).toEqual([['9876543210']]);
+    expect(memberQueryReadings('KOR-M000123')).toEqual([['m000123', 'kor']]);
+    expect(memberQueryReadings('+91')).toEqual([]);
+    expect(memberQueryReadings('-')).toEqual([]);
+  });
 });
 
 describe('narrowing and order', () => {
@@ -102,6 +117,15 @@ describe('narrowing and order', () => {
   it('puts the member whose code was typed in full first', () => {
     expect(names('kor-m000123')).toEqual(['Priya Nair', 'Zoya Khan']);
     expect(names('KOR')).toEqual(['Anil Sharma', 'Priya Nair', 'Priya Sharma', 'Zoya Khan']);
+  });
+
+  it('finds a code made of digits and dashes, and still a mobile number typed with a space', () => {
+    const dated = [member('5', 'Asha Rao', '2026-000123', '9876543210'), member('6', 'Bela Rao', '2026-000124', '9123456789'), member('7', 'Chitra Rao', '2025-000123')];
+    const found = (q: string) => narrowMembers(dated, q).map((m) => m.fullName);
+    expect(found('2026-000123')).toEqual(['Asha Rao']);
+    expect(found('2026-0001')).toEqual(['Asha Rao', 'Bela Rao']);
+    expect(found('98765 43210')).toEqual(['Asha Rao']);
+    expect(found('2026-999999')).toEqual([]);
   });
 
   it('drops a row without stored words rather than guess', () => {
@@ -129,6 +153,32 @@ describe('searching', () => {
     world.answers = { kumar: kumars, anil: [anil, member('a2', 'Anil Rao', 'KOR-M000778')] };
     expect((await searchMembers('o1', 'b1', 'anil kumar')).map((m) => m.id)).toEqual(['a1']);
     expect(world.asked).toEqual(['kumar', 'anil']);
+  });
+
+  it('a scanned code of digits and dashes is looked up as a code as well as a mobile number', async () => {
+    const asha = member('5', 'Asha Rao', '2026-000123', '9876543210');
+    world.answers = { '000123': [asha, member('7', 'Chitra Rao', '2025-000123')] };
+    expect((await searchMembers('o1', 'b1', '2026-000123')).map((m) => m.id)).toEqual(['5']);
+    expect(world.asked).toEqual(['2026000123', '000123']);
+  });
+
+  it('shows the member with that code first when a mobile number happens to start with the same digits', async () => {
+    const coded = member('8', 'Zara Ali', '91-000123');
+    const phoned = member('9', 'Amit Bose', 'KOR-M000009', '9100012345');
+    world.answers = { '91000123': [phoned], '000123': [coded] };
+    expect((await searchMembers('o1', 'b1', '91-000123')).map((m) => m.id)).toEqual(['8', '9']);
+  });
+
+  it('a mobile number typed with a space or a country code is still found, each word asked for once', async () => {
+    const asha = member('5', 'Asha Rao', 'KOR-M000005', '9876543210');
+    world.answers = { '9876543210': [asha], '98765': [asha, member('6', 'Bela Rao', 'KOR-M000006', '9876500000')] };
+    expect((await searchMembers('o1', 'b1', '98765 43210')).map((m) => m.id)).toEqual(['5']);
+    expect(world.asked).toEqual(['9876543210', '98765']);
+    world.asked.length = 0;
+    expect((await searchMembers('o1', 'b1', '91 9876543210')).map((m) => m.id)).toEqual(['5']);
+    expect((await searchMembers('o1', 'b1', '+91 98765 43210')).map((m) => m.id)).toEqual(['5']);
+    expect((await searchMembers('o1', 'b1', '9876543210')).map((m) => m.id)).toEqual(['5']);
+    expect(world.asked).toEqual(['9876543210', '9876543210', '9876543210']);
   });
 
   it('asks nothing for a query with no word to search by', async () => {

@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 
 import { AgeGroup, db, Page, page, withId } from './common';
+import type { DeliveryAddress } from './delivery';
 
 export interface Member {
   id: string;
@@ -26,6 +27,8 @@ export interface Member {
   phone: string | null;
   email: string | null;
   address: { line1: string; line2: string; city: string; state: string; postalCode: string } | null;
+  /** Where the last home delivery was booked to (with landmark and map pin): prefills the next booking. */
+  deliveryAddress?: DeliveryAddress | null;
   homeBranchId: string;
   status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
   guardian: { memberId: string; name: string; relationship: string } | null;
@@ -52,6 +55,8 @@ export interface Member {
 /** The longest start of a word the server indexes (functions/src/catalogue/search.ts). */
 const WORD_MAX = 12;
 const SEARCH_LIMIT = 50;
+/** Only what a mobile number is typed with: digits, spaces, dashes, brackets and a plus. */
+const PHONE_LIKE = /^[+\d\s()-]+$/;
 
 /**
  * The words a member search must match, longest first. A mobile number is one
@@ -61,7 +66,7 @@ const SEARCH_LIMIT = 50;
  * "KOR-M000123") are not indexed and are ignored.
  */
 export function memberQueryWords(q: string): string[] {
-  if (/^[+\d\s()-]+$/.test(q)) {
+  if (PHONE_LIKE.test(q)) {
     let digits = q.replace(/\D/g, '');
     // "+91…" is always the country code; without the plus, 91 is one only when a whole number follows it
     // (mobile numbers themselves can start with 91).
@@ -69,6 +74,11 @@ export function memberQueryWords(q: string): string[] {
     if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
     return digits.length >= 2 ? [digits.slice(0, WORD_MAX)] : [];
   }
+  return wordsOf(q);
+}
+
+/** A query split into words the way the server indexes them, longest first. */
+function wordsOf(q: string): string[] {
   const words = q
     .normalize('NFKD')
     .replace(/[̀-ͯ]/g, '')
@@ -81,33 +91,50 @@ export function memberQueryWords(q: string): string[] {
   return [...new Set(words)].sort((a, b) => b.length - a.length);
 }
 
+/**
+ * Every way a query can be read, each as the words a member must match. Digits and dashes alone are a mobile
+ * number, and may just as well be a member code where a branch numbers its members that way ("2026-000123",
+ * indexed as "2026" and "000123"): both are searched. A plus sign or brackets can only be a mobile number.
+ */
+export function memberQueryReadings(q: string): string[][] {
+  const phone = memberQueryWords(q);
+  const readings = PHONE_LIKE.test(q) && !/[+()]/.test(q) ? [phone, wordsOf(q)] : [phone];
+  return readings.filter((words, n) => words.length > 0 && readings.findIndex((other) => other.join(' ') === words.join(' ')) === n);
+}
+
 /** The members matching every typed word: the one whose member code was typed in full first, then by name. */
 export function narrowMembers<M extends Pick<Member, 'code' | 'fullName' | 'searchTokens'>>(rows: M[], q: string): M[] {
-  const words = memberQueryWords(q);
+  const readings = memberQueryReadings(q);
   const code = q.trim().toUpperCase();
   return rows
-    .filter((m) => words.every((w) => m.searchTokens?.includes(w)))
+    .filter((m) => readings.some((words) => words.every((w) => m.searchTokens?.includes(w))))
     .sort((a, b) => Number(b.code === code) - Number(a.code === code) || a.fullName.localeCompare(b.fullName));
 }
 
 /** Member search by name, member code or mobile number within a branch: every typed word must match. */
 export async function searchMembers(orgId: string, branchId: string, q: string): Promise<Member[]> {
-  const words = memberQueryWords(q);
-  if (!words.length) return [];
-  const find = async (word: string) => {
-    const snap = await getDocs(
+  const asked = new Map<string, Promise<Member[]>>();
+  // Each word is asked for once, also when two readings of the query share it.
+  const find = (word: string) => {
+    const known = asked.get(word);
+    if (known) return known;
+    const rows = getDocs(
       query(collection(db(), `orgs/${orgId}/members`), where('homeBranchId', '==', branchId), where('searchTokens', 'array-contains', word), limit(SEARCH_LIMIT)),
-    );
-    return snap.docs.map((d) => withId<Member>(d));
+    ).then((snap) => snap.docs.map((d) => withId<Member>(d)));
+    asked.set(word, rows);
+    return rows;
   };
-  // The database matches one word; the rest narrow what it returns.
-  let found = await find(words[0]);
-  // A full page for a common word (a surname) may have left the member out: ask by the next word as well.
-  if (found.length === SEARCH_LIMIT && words.length > 1) {
-    const seen = new Set(found.map((m) => m.id));
-    found = [...found, ...(await find(words[1])).filter((m) => !seen.has(m.id))];
-  }
-  return narrowMembers(found, q);
+  // Nearly always one reading; digits with dashes are looked up as a mobile number and as a member code at once.
+  const found = await Promise.all(
+    memberQueryReadings(q).map(async (words) => {
+      // The database matches one word; the rest narrow what it returns.
+      const rows = await find(words[0]);
+      // A full page for a common word (a surname) may have left the member out: ask by the next word as well.
+      return rows.length === SEARCH_LIMIT && words.length > 1 ? [...rows, ...(await find(words[1]))] : rows;
+    }),
+  );
+  const byId = new Map(found.flat().map((m) => [m.id, m]));
+  return narrowMembers([...byId.values()], q);
 }
 
 /** Subscription filter on the member list. */

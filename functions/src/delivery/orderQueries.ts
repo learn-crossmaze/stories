@@ -9,15 +9,28 @@ import { collects, type Delivery, deliveriesCol, OPEN_STATUSES, row } from './mo
 
 // Reading deliveries: the branch's board, the rider's run, one delivery.
 
-/** The branch's delivery board: everything open, and what closed in the last two weeks. */
-export const list = query('deliveries-list', z.strictObject({ orgId: id, branchId: id }), async ({ actor, input }) => {
+/**
+ * The branch's delivery board: everything open, and, only when `closed` is asked for, what closed in the last two
+ * weeks. `closed` is always in the answer (empty when not asked), so callers that only count the open rows pay
+ * for one query.
+ */
+export const list = query('deliveries-list', z.strictObject({ orgId: id, branchId: id, closed: z.boolean().default(false) }), async ({ actor, input }) => {
   await actor.require('delivery.manage', input.orgId, input.branchId);
   const since = Timestamp.fromMillis(Date.now() - 14 * 86_400_000);
   const [open, closed] = await Promise.all([
     deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('status', 'in', [...OPEN_STATUSES]).orderBy('requestedAt', 'asc').limit(200).get(),
-    deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('closedAt', '>=', since).orderBy('closedAt', 'desc').limit(60).get(),
+    input.closed ? deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('closedAt', '>=', since).orderBy('closedAt', 'desc').limit(60).get() : null,
   ]);
-  return { open: open.docs.map(row), closed: closed.docs.map(row) };
+  return { open: open.docs.map(row), closed: closed?.docs.map(row) ?? [] };
+});
+
+/** How many visits wait to be dispatched and how many bags wait to be received (the menu and dashboard counts). */
+export const counts = query('deliveries-counts', z.strictObject({ orgId: id, branchId: id }), async ({ actor, input }) => {
+  await actor.require('delivery.manage', input.orgId, input.branchId);
+  // Equality filters only: served by the automatic indexes. An orderBy or a range here would need a composite one.
+  const at = deliveriesCol(input.orgId).where('branchId', '==', input.branchId);
+  const [requested, returning] = await Promise.all([at.where('status', '==', 'REQUESTED').count().get(), at.where('status', '==', 'RETURNING').count().get()]);
+  return { requested: requested.data().count, returning: returning.data().count };
 });
 
 /** The rider's run: deliveries assigned to the caller that are out. */

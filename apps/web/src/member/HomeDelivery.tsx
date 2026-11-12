@@ -102,7 +102,8 @@ export function HomeDelivery({ m }: { m: Membership }) {
               feeMinor: s.feeMinor,
               holds: m.reservations.filter((r) => r.status === 'ALLOCATED' && r.branchId === m.branch.id).map((r) => ({ id: r.id, title: r.bookTitle })),
               loans: m.loans.filter((l) => l.status === 'ACTIVE').map((l) => ({ id: l.id, title: l.bookTitle })),
-              address: m.member.address,
+              address: m.member.deliveryAddress ?? m.member.address,
+              pincodes: s.pincodes,
             }}
             submitLabel={dt.memberBook}
             onCancel={() => setBooking(false)}

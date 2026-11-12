@@ -261,9 +261,48 @@ describe('selling a plan and taking the payment in one step', () => {
     await user.click(within(dialog).getByRole('button', { name: pay(35000) }));
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1].payment).toEqual({ method: 'OFFLINE_CASH', amountMinor: 35000, reference: '' });
-    expect(calls[1].requestId).not.toBe(calls[0].requestId);
+    // Still the same sale: the refused try saved nothing, so the server runs this one.
+    expect(calls[1].requestId).toBe(calls[0].requestId);
     expect(await screen.findByText(lt.paymentRecorded)).toBeInTheDocument();
   });
+
+  it('after a lost answer, taking the payment again is the same request even with the reference corrected', async () => {
+    const user = userEvent.setup();
+    world.deposit = { balanceMinor: 100000, status: 'OPEN' };
+    const { unmount } = render(<Card />);
+    const dialog = await openDialog(user);
+    await user.type(await within(dialog).findByLabelText(lt.reference), 'UPI1234');
+    // The server may have saved the sale, but no answer comes back (the automatic retries get none either).
+    world.respond = () => new FirebaseError('functions/unavailable', 'unavailable');
+    await user.click(within(dialog).getByRole('button', { name: pay(30000) }));
+    expect(await within(dialog).findByText(t.errorNetwork, undefined, { timeout: 5000 })).toBeInTheDocument();
+    expect(calls).toHaveLength(3);
+    expect(changed).not.toHaveBeenCalled();
+
+    // A new request here would be taken as the member renewing early: a second payment on the books.
+    world.respond = () => ({ subscriptionId: 's9', paymentId: 'pay9' });
+    await user.type(within(dialog).getByLabelText(lt.reference), '5');
+    await user.click(within(dialog).getByRole('button', { name: pay(30000) }));
+    await waitFor(() => expect(calls).toHaveLength(4));
+    expect(calls[3].payment).toEqual({ method: 'OFFLINE_UPI', amountMinor: 30000, reference: 'UPI12345' });
+    expect(new Set(calls.map((c) => c.requestId)).size).toBe(1);
+    expect(await screen.findByText(lt.paymentRecorded)).toBeInTheDocument();
+    unmount();
+
+    // Opening the dialog again is a new sale, and saving unpaid is never the paid request.
+    calls.length = 0;
+    render(<Card />);
+    const again = await openDialog(user);
+    await user.selectOptions(await within(again).findByLabelText(lt.paymentMethod), 'OFFLINE_CASH');
+    world.respond = () => new FirebaseError('functions/unavailable', 'unavailable');
+    await user.click(within(again).getByRole('button', { name: pay(30000) }));
+    expect(await within(again).findByText(t.errorNetwork, undefined, { timeout: 5000 })).toBeInTheDocument();
+    world.respond = () => ({ subscriptionId: 's10' });
+    await user.click(within(again).getByRole('button', { name: lt.saveUnpaid }));
+    await waitFor(() => expect(calls).toHaveLength(4));
+    expect(calls[3]).not.toHaveProperty('payment');
+    expect(calls[3].requestId).not.toBe(calls[0].requestId);
+  }, 20_000);
 });
 
 describe('the plan chooser opening by itself after a registration', () => {

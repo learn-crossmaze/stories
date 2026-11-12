@@ -54,11 +54,13 @@ beforeEach(async () => {
   await call(staff.setRoles, sa, { orgId: org, email: lib.email, roles: ['LIBRARIAN'], branchIds: [central] });
   await call(staff.setRoles, sa, { orgId: org, email: fin.email, roles: ['FINANCE_ADMIN'], branchIds: ['*'] });
   await call(staff.setRoles, sa, { orgId: org, email: fin2.email, roles: ['FINANCE_ADMIN'], branchIds: ['*'] });
-  // Renewal opens a week before the end, so a second sale straight after the first is too early.
+  // A monthly plan as the owner makes one: renewal opens 30 days before the end (the default), which is
+  // about as long as the term itself.
   planId = (await call<{ planId: string }>(plans.create, sa, {
     orgId: org, name: 'Monthly Two', options: [{ duration: 'MONTHLY', priceMinor: PRICE }], depositMinor: DEPOSIT, maxSimultaneousBooks: 2,
-    audiences: ['CHILDREN', 'TEENS', 'ADULTS'], renewalWindowDays: 7,
+    audiences: ['CHILDREN', 'TEENS', 'ADULTS'],
   })).planId;
+  expect((await get(`plans/${planId}`)).renewalWindowDays).toBe(30);
 });
 
 describe('selling a plan and taking the counter payment in one step', () => {
@@ -234,15 +236,58 @@ describe('selling a plan and taking the counter payment in one step', () => {
     expect((await get(`depositAccounts/${m}`)).balanceMinor).toBe(DEPOSIT);
   });
 
-  it('two sales at the same moment, or a second one straight after, sell one plan', async () => {
+  it('a retry with the same request id is the first sale again, whatever method or reference it now carries', async () => {
+    // The console sends one request id for as long as the sale dialog is open (the answer to the first try may be lost).
+    const m = await register('Asha');
+    const first = await sell(m, cash(PRICE + DEPOSIT));
+    await path(`subscriptions/${first.subscriptionId}`).update({ endAt: Timestamp.fromMillis(Date.now() + 29 * DAY) });
+    const requestId = randomUUID();
+    const a = await sell(m, { method: 'OFFLINE_UPI', amountMinor: PRICE, reference: 'UPI1234' }, lib, requestId);
+    const counts = await written();
+    expect(await sell(m, { method: 'OFFLINE_UPI', amountMinor: PRICE, reference: 'UPI12345' }, lib, requestId)).toEqual(a);
+    expect(await sell(m, cash(PRICE), lib, requestId)).toEqual(a);
+    expect(await written()).toEqual(counts);
+    expect((await all('payments')).map((p) => p.get('reference')).sort()).toEqual(['UPI1234', null].sort());
+  });
+
+  it('two sales to a new member at the same moment sell one plan and take the deposit once', async () => {
     const m = await register('Asha');
     const results = await Promise.allSettled([sell(m, cash(PRICE + DEPOSIT)), sell(m, cash(PRICE + DEPOSIT))]);
-    // The slower one runs again after the first commits and finds the member already has the plan.
+    // The slower one runs again after the first commits: the member has the plan and the deposit is held, so it is
+    // too early (a month of more than 30 days) or the amount no longer matches.
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(await failure(sell(m, cash(PRICE + DEPOSIT)))).toBe('TOO_EARLY');
-    expect(await failure(sell(m, cash(PRICE)))).toBe('TOO_EARLY');
+    const refused = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(['TOO_EARLY', 'INVALID_INPUT']).toContain(await failure(Promise.reject(refused.reason)));
     expect(await written()).toEqual({ subscriptions: 1, payments: 1, audit: 2 });
     expect((await get(`depositAccounts/${m}`)).balanceMinor).toBe(DEPOSIT);
+    expect(await ledgerOf(m)).toHaveLength(1);
+  });
+
+  it('a second sale under a new request id is refused only while more than the renewal window is left', async () => {
+    const m = await register('Asha');
+    const first = await sell(m, cash(PRICE + DEPOSIT));
+    const sub = path(`subscriptions/${first.subscriptionId}`);
+    // Sold in a month of 31 days: more than the 30 days of the window are left, so it is too early.
+    await sub.update({ endAt: Timestamp.fromMillis(Date.now() + 31 * DAY) });
+    const counts = await written();
+    expect(await failure(sell(m, cash(PRICE)))).toBe('TOO_EARLY');
+    expect(await failure(sell(m, cash(PRICE + DEPOSIT)))).toBe('TOO_EARLY');
+    expect(await written()).toEqual(counts);
+
+    // Sold in a month of 30 days (or February): just under 30 days are left, which is inside the window. The server
+    // cannot tell a repeat of the sale from the member renewing early, and takes the payment for the next term.
+    // Only the request id stops a repeat from the same dialog (see the retry tests above).
+    const endsAt = Timestamp.fromMillis(Date.now() + 30 * DAY - 60_000);
+    await sub.update({ endAt: endsAt });
+    const second = await sell(m, cash(PRICE));
+    expect(second.startAt).toBe(endsAt.toDate().toISOString());
+    expect(await get(`subscriptions/${second.subscriptionId}`)).toMatchObject({ status: 'ACTIVE', kind: 'RENEWAL', previousSubscriptionId: first.subscriptionId });
+    expect(await get(`members/${m}`)).toMatchObject({ activeSubscriptionId: first.subscriptionId, nextSubscriptionId: second.subscriptionId });
+    expect(await written()).toEqual({ subscriptions: 2, payments: 2, audit: 4 });
+    expect((await get(`depositAccounts/${m}`)).balanceMinor).toBe(DEPOSIT);
+    // One term ahead is the most that can be sold.
+    expect(await failure(sell(m, cash(PRICE)))).toBe('RENEWAL_EXISTS');
+    expect(await written()).toEqual({ subscriptions: 2, payments: 2, audit: 4 });
   });
 
   it('members cannot record a payment when they buy their own plan', async () => {

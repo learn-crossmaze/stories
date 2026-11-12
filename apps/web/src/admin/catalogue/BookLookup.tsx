@@ -1,9 +1,11 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { call, errorText } from '../../data/api';
-import { label } from '../../data/common';
+import { catalogueByIsbn } from '../../data/bulkBooks';
+import { type AgeGroup, label } from '../../data/common';
 import { paths } from '../../paths';
+import { normalizeIsbn } from '../../shared/isbn';
 import { Icon } from '../../shared/ui';
 import { CameraScanner } from '../components/CameraScanner';
 import { lt } from '../../strings/library';
@@ -20,28 +22,53 @@ export interface Candidate {
   language: string | null;
   synopsis: string;
   genres: string[];
+  /** The server's guess from the subject headings, when they say who the book is for (staff confirm it). */
+  ageGroup?: AgeGroup | null;
   subjects: string[];
   coverUrl: string | null;
   existingBookId: string | null;
 }
 
-/** "Find book details": search public catalogues by title or ISBN and pick a match. */
-export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void> }) {
+/**
+ * "Find book details": an ISBN is looked for in our own catalogue first (one quick read, and it works when the
+ * public catalogues are down); otherwise public catalogues are searched by title or ISBN, to pick a match.
+ * `pristine` says nothing has been typed into the form yet: only then is the one match for a searched ISBN
+ * filled in without a click (the other matches stay listed).
+ */
+export function BookLookup({ onPick, pristine = false }: { onPick: (c: Candidate) => void | Promise<void>; pristine?: boolean }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Candidate[] | null>(null);
   const [applying, setApplying] = useState<number | null>(null);
+  const [applied, setApplied] = useState<string | null>(null);
   const [camera, setCamera] = useState(false);
+  // Read when the search answers, not when it was started: someone may have begun typing in the form meanwhile.
+  const untouched = useRef(pristine);
+  untouched.current = pristine;
 
   const search = async (e?: FormEvent, term = q) => {
     e?.preventDefault();
     if (term.trim().length < 2 || busy) return;
     setBusy(true);
     setError(null);
+    setApplied(null);
     try {
+      const isbn = normalizeIsbn(term);
+      // A failed read of our own catalogue must not stop the search: saving still refuses a duplicate ISBN.
+      const ours = isbn ? await catalogueByIsbn(isbn).catch(() => null) : null;
+      if (ours) {
+        setResults([ours]);
+        return;
+      }
       const res = await call<{ candidates: Candidate[] }>('books-lookup', { q: term.trim() });
       setResults(res.candidates);
+      // Open Library's ISBN is often another edition's, so "the one match" may not exist: the list is the fallback.
+      const exact = isbn ? res.candidates.filter((c) => c.isbn === isbn) : [];
+      if (exact.length === 1 && !exact[0].existingBookId && untouched.current) {
+        await onPick(exact[0]);
+        setApplied(exact[0].title);
+      }
     } catch (err) {
       setError(errorText(err, lt.lookupFailed));
       setResults(null);
@@ -53,6 +80,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
   const pick = async (c: Candidate, i: number) => {
     setApplying(i);
     setError(null);
+    setApplied(null);
     try {
       await onPick(c);
       setResults(null);
@@ -96,6 +124,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
       )}
       <p className="muted small">{lt.lookupHint}</p>
       {error && <p className="field-error" role="alert">{error}</p>}
+      {applied !== null && <p className="small" role="status">{lt.lookupApplied(applied)}</p>}
       {results && results.length === 0 && <p className="muted">{lt.lookupNone}</p>}
       {results && results.length > 0 && (
         <ul className="lookup-results">
@@ -120,7 +149,7 @@ export function BookLookup({ onPick }: { onPick: (c: Candidate) => Promise<void>
                 <div className="muted small">
                   {[c.publisher, c.year, c.isbn && `ISBN ${c.isbn}`, c.genres.map(label).join(', ')].filter(Boolean).join(' · ')}
                 </div>
-                <div className="muted small">{c.source}</div>
+                <div className="muted small">{c.source === 'catalogue' ? lt.catalogueTitle : c.source}</div>
               </div>
               {c.existingBookId ? (
                 <Link to={paths.adminBook(c.existingBookId)} className="btn btn-text">

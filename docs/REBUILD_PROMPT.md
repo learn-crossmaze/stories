@@ -179,7 +179,10 @@ action asks for a reason (audited).
    **Print labels**: A4 sheets 3 × 8, each label a QR tag (26 mm QR + "Stories", copy code, title). **No 1-D
    barcodes are printed anywhere.** **Shelve books** (`/ops/inventory/shelve`, `copies-shelve`): bulk-assign a
    shelf to up to 100 copies that are not on one (new or returned after inspection); the dashboard shows a to-do
-   while any are left.
+   while any are left. A returned book shows its usual shelf (`lastLocationId`, the shelf it was issued from, when
+   that is an active shelf of the branch) and one click puts the ticked books back on theirs (one `copies-shelve`
+   per shelf, sent together). The scan field keeps the keyboard; a scanned shelf code picks the shelf; the list is
+   read once and shelved rows are hidden on the page.
 5. **Circulation desk**: find member (name, code, phone, or scan the member ID card QR), issue (1–10 copies,
    all-or-nothing; reserved-for-this-member copies fulfil the reservation), return (by scan or checkbox; copies go
    to UNDER_INSPECTION), exchange (return + issue in one transaction), declare lost, inspection queue.
@@ -191,7 +194,7 @@ action asks for a reason (audited).
 7. **Members** (`/admin/members`): list of the branch's members, 50 per page, with plan, renewal date ("in 6 days",
    "ended yesterday"), books out, status; subscription chips with counts (All, Active, Renewal due in 15 days,
    Expired, Never subscribed) plus status and age filters; search combined with filters (every typed word must
-   match; a mobile number is one word however typed; Enter or a scanned card opens the exact or only match). Members
+   match; a mobile number is one word however typed, and digits with dashes are also tried as a member code; Enter or a scanned card opens the exact or only match). Members
    are created with `planName`/`renewalDueAt` null and payments keep them current. Registering lands on the new
    member's page with the plan chooser open; *Subscribe* / *Renew* shows fee, deposit top-up and total and takes the
    counter payment in the same step (`subscriptions-create` with `payment`), or saves it unpaid. Register /
@@ -204,7 +207,8 @@ shown masked with an audited *Show*, and a *Send WhatsApp updates* switch). Memb
    archive. **Upgrade mid-term, pro-rated** (docs/SUBSCRIPTIONS.md, D7): a quote lists every bigger plan/option with
    credit = floor(price × unused days ÷ term days); paying starts the new plan today, the old term becomes UPGRADED,
    deposit top-up collected; **Deposit approvals** (Finance, maker-checker; approve with an optional note, one or
-   several at once, each its own `deposits-decide`; rejecting needs a reason).
+   several at once, each its own `deposits-decide`; rejecting needs a reason; when someone else decided first the
+   row goes and the page says the person's own decision was not used).
 9. **Payments**: counter payments (cash/UPI/card/bank transfer; amount must equal amount due; one transaction
    activates the subscription and collects the deposit) and **Razorpay per branch** (docs/PAYMENTS.md): payment
    links sent by SMS/email, single-use UPI QR (falls back to a link-as-QR), signed webhook (`payment_link.paid`,

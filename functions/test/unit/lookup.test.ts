@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fromGoogle, fromOpenLibrary, guessGenres, merge } from '../../src/catalogue/lookup.js';
+import { answersExactly, fromGoogle, fromOpenLibrary, guessAgeGroup, guessGenres, merge } from '../../src/catalogue/lookup.js';
 
 // Trimmed real-world response shapes.
 const google = {
@@ -41,10 +41,10 @@ describe('book lookup parsing', () => {
     const [ti, godaan] = fromGoogle(google);
     expect(ti).toMatchObject({
       source: 'Google Books', title: 'Treasure Island', authors: ['Robert Louis Stevenson'], publisher: 'Penguin UK', year: 2008,
-      isbn: '9780141321004', language: 'en', synopsis: 'Young Jim Hawkins finds a treasure map…', genres: ['FICTION'],
+      isbn: '9780141321004', language: 'en', synopsis: 'Young Jim Hawkins finds a treasure map…', genres: ['FICTION'], ageGroup: 'CHILDREN',
     });
     expect(ti.coverUrl).toBe('https://books.google.com/books/content?id=x&printsec=frontcover&img=1&zoom=0&source=gbs_api');
-    expect(godaan).toMatchObject({ title: 'Godaan', year: 1936, language: 'hi', isbn: null, coverUrl: null });
+    expect(godaan).toMatchObject({ title: 'Godaan', year: 1936, language: 'hi', isbn: null, coverUrl: null, ageGroup: null });
     expect(fromGoogle(google)).toHaveLength(2); // the volume without a title is dropped
     expect(fromGoogle({ totalItems: 0 })).toEqual([]);
   });
@@ -53,7 +53,7 @@ describe('book lookup parsing', () => {
     const [ti, malgudi] = fromOpenLibrary(openLibrary);
     expect(ti).toMatchObject({
       source: 'Open Library', publisher: 'Cassell', year: 1883, isbn: '9780141321004', language: 'en',
-      coverUrl: 'https://covers.openlibrary.org/b/id/8231856-L.jpg', genres: ['ADVENTURE', 'FICTION'],
+      coverUrl: 'https://covers.openlibrary.org/b/id/8231856-L.jpg', genres: ['ADVENTURE', 'FICTION'], ageGroup: null,
     });
     expect(malgudi.isbn).toBeNull();
   });
@@ -66,5 +66,33 @@ describe('book lookup parsing', () => {
   it('guesses at most three genres from subjects', () => {
     expect(guessGenres(['Detective and mystery stories', 'Fiction', 'Science fiction', 'Classic literature'])).toEqual(['MYSTERY', 'SCIENCE', 'CLASSICS']);
     expect(guessGenres([])).toEqual([]);
+  });
+
+  it('guesses the age group only from headings that name the audience, the older group first', () => {
+    expect(guessAgeGroup(['Juvenile Fiction'])).toBe('CHILDREN');
+    expect(guessAgeGroup(['Pirates', "Children's stories"])).toBe('CHILDREN');
+    expect(guessAgeGroup(['Picture books'])).toBe('CHILDREN');
+    expect(guessAgeGroup(['Young Adult Fiction'])).toBe('TEENS');
+    expect(guessAgeGroup(['Teen fiction'])).toBe('TEENS');
+    expect(guessAgeGroup(['Juvenile Fiction', 'Young Adult Fiction'])).toBe('TEENS');
+    // About children or teenagers, not for them.
+    expect(guessAgeGroup(['Missing children', 'Abused children', 'Teenage pregnancy', 'Juvenile delinquency', 'Young adults'])).toBeNull();
+    expect(guessAgeGroup(['Fiction', 'Classic literature'])).toBeNull();
+    expect(guessAgeGroup([])).toBeNull();
+  });
+
+  it('reads the age group from every subject, not only the eight that are returned', () => {
+    const subject = [...Array.from({ length: 10 }, (_, i) => `Subject ${i}`), 'Juvenile literature'];
+    const [c] = fromOpenLibrary({ docs: [{ title: 'Long list', subject }] });
+    expect(c.subjects).toHaveLength(8);
+    expect(c.ageGroup).toBe('CHILDREN');
+  });
+
+  it("stops waiting for Open Library only when Google has the very ISBN that was asked for", () => {
+    const list = fromGoogle(google);
+    expect(answersExactly(list, '9780141321004')).toBe(true);
+    expect(answersExactly(list, '9780306406157')).toBe(false); // another edition: Open Library may have it
+    expect(answersExactly(list, null)).toBe(false); // a title search always waits for both
+    expect(answersExactly([], '9780141321004')).toBe(false);
   });
 });

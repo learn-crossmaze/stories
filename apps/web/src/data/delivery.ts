@@ -97,9 +97,33 @@ const at = (orgId: string, branchId: string) => ({ orgId, branchId });
 export const deliverySettings = (orgId: string, branchId: string) => call<SettingsView>('deliveries-settings', at(orgId, branchId));
 export const saveDeliverySettings = (orgId: string, branchId: string, s: Omit<DeliverySettings, 'couriers'> & { couriers: Record<string, { enabled: boolean; environment: 'LIVE' | 'TEST'; apiKey: string }> }) =>
   command('deliveries-saveSettings', { ...at(orgId, branchId), ...s });
-export const listDeliveries = (orgId: string, branchId: string) => call<{ open: Delivery[]; closed: Delivery[] }>('deliveries-list', at(orgId, branchId));
+/** The branch's open visits. `closed` is empty unless asked for: what closed in the last 14 days is read only for the Done tab. */
+export const listDeliveries = (orgId: string, branchId: string, closed = false) =>
+  call<{ open: Delivery[]; closed: Delivery[] }>('deliveries-list', closed ? { ...at(orgId, branchId), closed: true } : at(orgId, branchId));
+
+const counting = new Map<string, Promise<{ requested: number; returning: number }>>();
+/**
+ * How many visits wait to be dispatched and how many bags wait to be received at the branch. Callers that ask at
+ * the same moment (the menu and the dashboard) share one request; nothing is kept once it has answered, so the
+ * next call counts afresh.
+ */
+export function deliveryCounts(orgId: string, branchId: string): Promise<{ requested: number; returning: number }> {
+  const key = `${orgId}/${branchId}`;
+  let pending = counting.get(key);
+  if (!pending) {
+    pending = call<{ requested: number; returning: number }>('deliveries-counts', at(orgId, branchId)).finally(() => counting.delete(key));
+    counting.set(key, pending);
+  }
+  return pending;
+}
+/** A reserved book that is ready for the member at the delivery's branch. */
+export interface ReadyHold {
+  reservationId: string;
+  bookTitle: string;
+  copyCode: string | null;
+}
 export const getDelivery = (orgId: string, deliveryId: string) =>
-  call<{ delivery: Delivery; memberLoans: MemberLoan[]; holds: { reservationId: string; bookTitle: string; copyCode: string | null }[] }>('deliveries-get', { orgId, deliveryId });
+  call<{ delivery: Delivery; memberLoans: MemberLoan[]; holds: ReadyHold[] }>('deliveries-get', { orgId, deliveryId });
 export const myDeliveries = (orgId: string) => call<{ deliveries: (Delivery & { memberLoans: MemberLoan[] })[] }>('deliveries-mine', { orgId });
 
 export interface RequestInput {

@@ -41,7 +41,7 @@ export async function handleDeliveryWebhook(req: Request, res: { status: (n: num
   const doc = found.docs[0];
   if (!doc || doc.get('branchId') !== branchId) return res.status(200).send('unknown order');
   try {
-    await syncOne(orgId, doc.id, 0);
+    await syncOne(orgId, doc.id, 0, doc);
   } catch (e) {
     // The courier's API didn't answer: use the status the event carries.
     const raw = String(body.status ?? body.event ?? body.event_type ?? (body.data as Record<string, unknown> | undefined)?.status ?? '');

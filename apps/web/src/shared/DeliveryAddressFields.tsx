@@ -67,7 +67,18 @@ export function MapPinField({ label, hint, value, onChange }: { label: string; h
   );
 }
 
-export function DeliveryAddressFields({ value, onChange, showErrors }: { value: DeliveryAddress; onChange: (a: DeliveryAddress) => void; showErrors?: boolean }) {
+/** `pinWarning` is shown under a well-formed PIN code (outside the delivery area, say); it does not stop the form. */
+export function DeliveryAddressFields({
+  value,
+  onChange,
+  showErrors,
+  pinWarning,
+}: {
+  value: DeliveryAddress;
+  onChange: (a: DeliveryAddress) => void;
+  showErrors?: boolean;
+  pinWarning?: string;
+}) {
   const set = (k: keyof DeliveryAddress) => (v: string) => onChange({ ...value, [k]: v });
   const err = (bad: boolean) => (showErrors && bad ? 'Required' : undefined);
   return (
@@ -84,7 +95,7 @@ export function DeliveryAddressFields({ value, onChange, showErrors }: { value: 
         value={value.postalCode}
         onChange={set('postalCode')}
         autoComplete="postal-code"
-        error={err(!/^\d{6}$/.test(value.postalCode.trim()))}
+        error={err(!/^\d{6}$/.test(value.postalCode.trim())) ?? pinWarning}
       />
       <MapPinField label={dt.address.map} hint={dt.address.mapHint} value={value.geo} onChange={(geo) => onChange({ ...value, geo })} />
     </div>

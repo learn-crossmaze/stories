@@ -167,10 +167,12 @@ export async function createDelivery(
     requestedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  // Remembered for the member's next booking (landmark and map pin included). A prefill only: never taken as checked.
+  tx.update(memberSnap.ref, { deliveryAddress: input.address });
   queueWhatsApp(tx, { orgId: input.orgId, branchId: input.branchId, event: 'delivery_requested', memberId: input.memberId, vars: { delivery_date: dateLabel(input.date, input.slot) }, ref: { deliveryId: ref.id } });
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
     action: 'delivery.request', entityType: 'delivery', entityId: ref.id, branchId: input.branchId, memberId: input.memberId,
-    after: { kind: input.kind, date: input.date, slot: input.slot, holds: input.holdIds.length, collect: input.collectLoanIds.length, by: who },
+    after: { kind: input.kind, date: input.date, slot: input.slot, holds: input.holdIds.length, collect: input.collectLoanIds.length, by: who, addressSaved: true },
   });
   return { deliveryId: ref.id };
 }

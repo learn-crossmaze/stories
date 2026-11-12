@@ -7,6 +7,7 @@ import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { bookPattern, existingCodes, reserveCodes } from '../core/numbering.js';
+import { inOrder } from '../core/reads.js';
 import { id, name, reason } from '../core/schemas.js';
 import { bucket } from './covers.js';
 import { normalizeIsbn } from './isbn.js';
@@ -118,6 +119,44 @@ async function resolveRefs(tx: Transaction, input: Pick<BookInput, 'authorIds' |
   return { authorNames, publisherName: (publisherNames[0] ?? null) as string | null, categoryNames };
 }
 
+type NamedKind = 'authors' | 'publishers';
+interface NamedRef {
+  id: string;
+  name: string;
+  isNew: boolean;
+}
+
+/**
+ * Authors or publishers given by name (a read, inside the transaction): the
+ * active one with the same normalized name, as `${kind}-create` checks, or a
+ * new id for `writeNewRefs` to create. Keyed by normalized name, in the order
+ * first seen; a name spelt two ways is looked up once and keeps its first spelling.
+ */
+async function resolveByName(tx: Transaction, kind: NamedKind, names: Iterable<string>): Promise<Map<string, NamedRef>> {
+  const wanted = new Map<string, string>();
+  for (const n of names) if (!wanted.has(normalizeText(n))) wanted.set(normalizeText(n), n);
+  const found = await Promise.all(
+    [...wanted.keys()].map(async (key) => {
+      const hit = await tx.get(db.collection(kind).where('nameNormalized', '==', key).where('status', '==', 'ACTIVE').limit(1));
+      return [key, hit.empty ? null : hit.docs[0]] as const;
+    }),
+  );
+  const refs = new Map<string, NamedRef>();
+  for (const [key, doc] of found) {
+    refs.set(key, doc ? { id: doc.id, name: doc.get('name') as string, isNew: false } : { id: db.collection(kind).doc().id, name: wanted.get(key)!, isNew: true });
+  }
+  return refs;
+}
+
+/** Creates the authors or publishers `resolveByName` did not find (the same document `${kind}-create` writes). */
+function writeNewRefs(tx: Transaction, kind: NamedKind, refs: Iterable<NamedRef>) {
+  const now = FieldValue.serverTimestamp();
+  for (const r of refs) {
+    if (!r.isNew) continue;
+    tx.create(db.doc(`${kind}/${r.id}`), { name: r.name, nameNormalized: normalizeText(r.name), searchTokens: searchTokens(r.name), status: 'ACTIVE', createdAt: now, updatedAt: now });
+  }
+}
+
 function derived(input: BookInput, code: string, isbn13: string | null, names: Awaited<ReturnType<typeof resolveRefs>>) {
   return {
     ...input,
@@ -143,31 +182,69 @@ function canonicalIsbn(raw: string): string | null {
   return isbn;
 }
 
+/**
+ * books-create takes authors and the publisher by id, by name, or both: names
+ * (`newAuthors`, `newPublisher`) are matched to the active author or publisher
+ * of that name, or added in the same transaction, so the New book form needs
+ * no command of its own for them. Not called authorNames/publisherName: those
+ * are the stored copies of the names on the book.
+ */
+const createSchema = z.strictObject({
+  ...bookFields,
+  authorIds: z.array(id).max(5).default([]),
+  newAuthors: z.array(z.string().trim().min(1).max(100)).max(5).default([]),
+  newPublisher: z.string().trim().max(100).nullable().default(null),
+});
+
 /** Adds a title to the shared catalogue. ISBNs are unique (isbnIndex); codes follow the catalogue pattern (default BOOK-000001). */
-export const create = command('books-create', bookSchema, async ({ actor, input, requestId }, tx) => {
+export const create = command('books-create', createSchema, async ({ actor, input: { newAuthors, newPublisher, ...input }, requestId }, tx) => {
   await actor.requireCatalog('books.create', tx);
+  // A name of punctuation only normalizes to nothing: it names nobody.
+  const authorsNamed = newAuthors.filter((n) => normalizeText(n));
+  const publisherNamed = newPublisher && normalizeText(newPublisher) ? newPublisher : null;
+  if (!input.authorIds.length && !authorsNamed.length) throw errors.invalid('Please check authorIds: needs at least one author.');
+  if (input.publisherId && publisherNamed) throw errors.invalid('Choose a publisher from the list or name a new one, not both.');
   const isbn = canonicalIsbn(input.isbn);
   const isbnRef = isbn ? db.doc(`isbnIndex/${isbn}`) : null;
-  if (isbnRef && (await tx.get(isbnRef)).exists) {
-    throw errors.conflict('DUPLICATE_ISBN', 'A book with this ISBN is already in the catalogue.');
-  }
-  const names = await resolveRefs(tx, input);
+  // Read together; refused for the first reason listed, as when these ran one after another.
+  const [, listed, authorsByName, publishersByName, pattern] = await inOrder([
+    isbnRef
+      ? tx.get(isbnRef).then((known) => {
+          if (known.exists) throw errors.conflict('DUPLICATE_ISBN', 'A book with this ISBN is already in the catalogue.');
+        })
+      : null,
+    resolveRefs(tx, input),
+    resolveByName(tx, 'authors', authorsNamed),
+    resolveByName(tx, 'publishers', publisherNamed ? [publisherNamed] : []),
+    bookPattern(tx),
+  ]);
+  // Authors chosen by id first, then the named ones; a name that is one of the chosen authors counts once.
+  const authors = new Map([...new Set(input.authorIds)].map((authorId, i) => [authorId, listed.authorNames[i]]));
+  for (const a of authorsByName.values()) if (!authors.has(a.id)) authors.set(a.id, a.name);
+  if (authors.size > 5) throw errors.invalid('Please check authorIds: a book can have at most 5 authors.');
+  const [publisher] = publishersByName.values();
+  const fields: BookInput = { ...input, authorIds: [...authors.keys()], publisherId: input.publisherId ?? publisher?.id ?? null };
+  const names = { authorNames: [...authors.values()], publisherName: listed.publisherName ?? publisher?.name ?? null, categoryNames: listed.categoryNames };
   const counter = await reserveCodes(tx, {
     kind: 'book',
-    pattern: await bookPattern(tx),
+    pattern,
     values: {},
     base: 'counters',
     taken: (c) => existingCodes(tx, 'books', c),
   });
   const [code] = counter.codes;
   const ref = db.collection('books').doc();
-  const book = { ...derived(input, code, isbn, names), code, number: counter.number, status: 'ACTIVE' };
+  const book = { ...derived(fields, code, isbn, names), code, number: counter.number, status: 'ACTIVE' };
+  const added = [...authorsByName.values(), ...publishersByName.values()].filter((r) => r.isNew).map((r) => r.name);
 
+  writeNewRefs(tx, 'authors', authorsByName.values());
+  writeNewRefs(tx, 'publishers', publishersByName.values());
   counter.commit();
   if (isbnRef) tx.create(isbnRef, { bookId: ref.id });
   tx.create(ref, { ...book, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+  // The authors and publisher added here get no audit entry of their own, so they are named in this one.
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, null, {
-    action: 'book.create', entityType: 'book', entityId: ref.id, after: { code, title: input.title, isbn },
+    action: 'book.create', entityType: 'book', entityId: ref.id, after: { code, title: input.title, isbn, newAuthorsAndPublishers: added },
   });
   return { bookId: ref.id, code };
 });
@@ -213,26 +290,11 @@ export async function planNewBooks(tx: Transaction, input: BulkBook[]) {
   const known = await Promise.all(isbns.map((isbn) => tx.get(db.doc(`isbnIndex/${isbn}`))));
   const fresh = items.filter((_, i) => !known[i].exists);
   const existing = items.flatMap((it, i) => (known[i].exists ? [{ isbn: it.isbn, title: it.title, bookId: known[i].get('bookId') as string }] : []));
-  const wanted = (kind: 'authors' | 'publishers') => {
-    const names = new Map<string, string>();
-    for (const it of fresh) for (const n of kind === 'authors' ? it.authors : it.publisher ? [it.publisher] : []) names.set(normalizeText(n), names.get(normalizeText(n)) ?? n);
-    return names;
-  };
-  const resolve = async (kind: 'authors' | 'publishers') => {
-    const names = wanted(kind);
-    const found = await Promise.all(
-      [...names.keys()].map(async (key) => {
-        const hit = await tx.get(db.collection(kind).where('nameNormalized', '==', key).where('status', '==', 'ACTIVE').limit(1));
-        return [key, hit.empty ? null : hit.docs[0]] as const;
-      }),
-    );
-    const ids = new Map<string, { id: string; name: string; isNew: boolean }>();
-    for (const [key, doc] of found) {
-      ids.set(key, doc ? { id: doc.id, name: doc.get('name') as string, isNew: false } : { id: db.collection(kind).doc().id, name: names.get(key)!, isNew: true });
-    }
-    return ids;
-  };
-  const [authorIds, publisherIds, pattern] = await Promise.all([resolve('authors'), resolve('publishers'), fresh.length ? bookPattern(tx) : null]);
+  const [authorIds, publisherIds, pattern] = await Promise.all([
+    resolveByName(tx, 'authors', fresh.flatMap((it) => it.authors)),
+    resolveByName(tx, 'publishers', fresh.flatMap((it) => (it.publisher ? [it.publisher] : []))),
+    fresh.length ? bookPattern(tx) : null,
+  ]);
   const counter =
     pattern === null ? null : await reserveCodes(tx, { kind: 'book', pattern, values: {}, base: 'counters', count: fresh.length, taken: (c) => existingCodes(tx, 'books', c) });
   const created = fresh.map((it, i) => ({ isbn: it.isbn, bookId: db.collection('books').doc().id, code: counter!.codes[i], number: counter!.number + i, title: it.title }));
@@ -242,12 +304,8 @@ export async function planNewBooks(tx: Transaction, input: BulkBook[]) {
 
   function write() {
     const now = FieldValue.serverTimestamp();
-    for (const [kind, ids] of [['authors', authorIds], ['publishers', publisherIds]] as const) {
-      for (const r of ids.values()) {
-        if (!r.isNew) continue;
-        tx.create(db.doc(`${kind}/${r.id}`), { name: r.name, nameNormalized: normalizeText(r.name), searchTokens: searchTokens(r.name), status: 'ACTIVE', createdAt: now, updatedAt: now });
-      }
-    }
+    writeNewRefs(tx, 'authors', authorIds.values());
+    writeNewRefs(tx, 'publishers', publisherIds.values());
     counter?.commit();
     fresh.forEach((it, i) => {
       const { bookId, code, number } = created[i];
@@ -403,7 +461,7 @@ function describeUsage(u: BookUsage): string {
 
 /** What still refers to a title (for the book page before offering "Delete permanently"). */
 export const usage = query('books-usage', z.strictObject({ bookId: id }), async ({ actor, input }) => {
-  await db.runTransaction((tx) => actor.requireCatalog('books.edit', tx));
+  await actor.requireCatalog('books.edit');
   const u = await bookUsage(input.bookId, (q) => q.get());
   return { ...u, summary: u.copies.total || u.reservations.total ? describeUsage(u) : null };
 });

@@ -1,7 +1,7 @@
 // Physical copies, their events and shelf locations.
 import { collection, doc, type DocumentSnapshot, getCountFromServer, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, where } from 'firebase/firestore';
 
-import { call, command, toApiError } from './api';
+import { call, command, errorText, toApiError } from './api';
 import { searchBooks } from './catalogue';
 import { Condition, CopyStatus, db, page, withId } from './common';
 
@@ -15,6 +15,8 @@ export interface Copy {
   owningBranchId: string;
   currentBranchId: string;
   locationId: string | null;
+  /** Its usual shelf: the one it was last issued from. Absent until then, and it may be a shelf of another branch. */
+  lastLocationId?: string | null;
   status: CopyStatus;
   condition: Condition;
   acquisitionCostMinor: number;
@@ -107,14 +109,52 @@ export async function shelveCopies(orgId: string, branchId: string, locationId: 
   return shelved;
 }
 
-/** Finds a scanned copy at the branch (barcode or code). */
+/**
+ * The shelf a copy can go straight back to: its usual shelf, when the copy is off the shelf now and that shelf
+ * is one of `shelfIds` (the branch's active shelves). A shelf since archived, or one of another branch (the book
+ * came back elsewhere), is never offered.
+ */
+export function usualShelf(copy: Copy, shelfIds: ReadonlySet<string>): string | null {
+  return !copy.locationId && copy.lastLocationId && shelfIds.has(copy.lastLocationId) ? copy.lastLocationId : null;
+}
+
+/** Copies going to one shelf. */
+export interface ShelfGroup {
+  locationId: string;
+  copyIds: string[];
+}
+
+/** The copies that have a usual shelf to go back to (see `usualShelf`), grouped by it; the others are left out. */
+export function usualShelfGroups(copies: Copy[], shelfIds: ReadonlySet<string>): ShelfGroup[] {
+  const groups = new Map<string, string[]>();
+  for (const c of copies) {
+    const to = usualShelf(c, shelfIds);
+    if (to) groups.set(to, [...(groups.get(to) ?? []), c.id]);
+  }
+  return [...groups].map(([locationId, copyIds]) => ({ locationId, copyIds }));
+}
+
+/**
+ * Puts each group on its shelf: one copies-shelve per shelf, all sent together. Every shelf is all or none on
+ * its own, so one that is refused doesn't hold back the others: its `error` says why.
+ */
+export async function shelveGroups(orgId: string, branchId: string, groups: ShelfGroup[]): Promise<(ShelfGroup & { error?: string })[]> {
+  const settled = await Promise.allSettled(groups.map((g) => shelveCopies(orgId, branchId, g.locationId, g.copyIds)));
+  return groups.map((g, i) => {
+    const s = settled[i];
+    return s.status === 'fulfilled' ? g : { ...g, error: errorText(s.reason) };
+  });
+}
+
+/** Finds a scanned copy at the branch (barcode or code; a barcode match comes first). */
 export async function findCopy(orgId: string, branchId: string, scanned: string): Promise<Copy | null> {
   const value = scanned.trim().toUpperCase();
-  for (const field of ['barcode', 'code']) {
-    const snap = await getDocs(query(collection(db(), `orgs/${orgId}/copies`), where('currentBranchId', '==', branchId), where(field, '==', value), limit(1)));
-    if (!snap.empty) return withId<Copy>(snap.docs[0]);
-  }
-  return null;
+  // Both are asked together; the rule needs the branch filter on each.
+  const [byBarcode, byCode] = await Promise.all(
+    ['barcode', 'code'].map((field) => getDocs(query(collection(db(), `orgs/${orgId}/copies`), where('currentBranchId', '==', branchId), where(field, '==', value), limit(1)))),
+  );
+  const hit = byBarcode.docs[0] ?? byCode.docs[0];
+  return hit ? withId<Copy>(hit) : null;
 }
 
 /** In-stock and on-the-shelf copies of a title at one branch (functions/src/inventory/copies.ts). */

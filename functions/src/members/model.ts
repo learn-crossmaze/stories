@@ -1,4 +1,5 @@
 import type { AgeGroup } from '../catalogue/model.js';
+import type { DeliveryAddress } from '../delivery/model.js';
 
 export const ADULT_AGE = 18;
 export const TEEN_AGE = 13;
@@ -51,4 +52,6 @@ export interface Member {
   lifetimeExchanges: number;
   /** Last four digits of the Aadhaar number (the full number is in private/aadhaar, functions only). */
   aadhaarLast4?: string | null;
+  /** Where the last home delivery was booked to (landmark and map pin included): prefills the next booking. */
+  deliveryAddress?: DeliveryAddress | null;
 }

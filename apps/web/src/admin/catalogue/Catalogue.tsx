@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
-import { command } from '../../data/api';
-import { type Book, listRefs, type RefItem, searchBooks } from '../../data/catalogue';
+import { ApiError, command } from '../../data/api';
+import { catalogueByIsbn } from '../../data/bulkBooks';
+import { type Book, importCoverInBackground, listRefs, newTitleDefaults, normalizeName, type RefItem, searchBooks } from '../../data/catalogue';
 import { AGE_GROUPS, type AgeGroup, GENRES, label, LANGUAGES, READING_LEVELS } from '../../data/common';
 import { type BranchStock, stockByBranch } from '../../data/inventory';
+import { normalizeIsbn } from '../../shared/isbn';
 import { useAsync } from '../../shared/useAsync';
 import { useDebounced } from '../../shared/useDebounced';
 import { usePagedQuery } from '../../shared/usePagedQuery';
@@ -43,41 +45,86 @@ export function useCanDeleteBooks() {
 }
 
 const csv = (s: string) => s.split(',').map((x) => x.trim()).filter(Boolean);
-/** Loose name match for reusing existing authors/publishers ("R. L. Stevenson" ≠ "Robert Louis Stevenson", but case and punctuation don't matter). */
-const sameName = (a: string, b: string) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '') === b.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+const MAX_AUTHORS = 5;
+/** Stands for "the publisher named in the form" in the publisher list (an id never contains "+"). */
+const NAMED_PUBLISHER = '+named';
 
+/**
+ * The New book / Edit book form. A new book can name authors and a publisher we don't have yet (from a lookup
+ * match, or typed in the authors list): they travel as names and books-create matches or adds them when the
+ * book is saved, so filling the form sends nothing. Editing takes ids only.
+ */
 export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: () => void; onSaved: (id: string) => void }) {
-  const refs = useAsync(async () => ({ authors: await listRefs('authors'), publishers: await listRefs('publishers'), categories: await listRefs('categories') }), []);
-  const [f, setF] = useState({
-    title: book?.title ?? '',
-    subtitle: book?.subtitle ?? '',
-    isbn: book?.isbn ?? '',
-    authorIds: book?.authorIds ?? [],
-    publisherId: book?.publisherId ?? '',
-    categoryIds: book?.categoryIds ?? [],
-    language: book?.language ?? 'en',
-    genres: (book?.genres ?? []) as string[],
-    ageGroup: book?.ageGroup ?? 'ADULTS',
-    minAge: book?.minAge != null ? String(book.minAge) : '',
-    readingLevel: book?.readingLevel ?? 'INTERMEDIATE',
-    synopsis: book?.synopsis ?? '',
-    edition: book?.edition ?? '',
-    year: book?.publicationYear ? String(book.publicationYear) : '',
-    keywords: (book?.keywords ?? []).join(', '),
-    contentTags: (book?.contentTags ?? []).join(', '),
-    price: book ? String(book.replacementPriceMinor / 100) : '0',
+  const { claims } = useAuth();
+  const { org, branch } = useWorkspace();
+  const navigate = useNavigate();
+  const refs = useAsync(async () => {
+    const [authors, publishers, categories] = await Promise.all([listRefs('authors'), listRefs('publishers'), listRefs('categories')]);
+    return { authors, publishers, categories };
+  }, []);
+  const [f, setF] = useState(() => {
+    // A new book starts from the age group and reading level last chosen here; genres stay empty so someone chooses.
+    const start = newTitleDefaults.get();
+    return {
+      title: book?.title ?? '',
+      subtitle: book?.subtitle ?? '',
+      isbn: book?.isbn ?? '',
+      authorIds: book?.authorIds ?? [],
+      newAuthors: [] as string[],
+      publisherId: book?.publisherId ?? '',
+      newPublisher: '',
+      categoryIds: book?.categoryIds ?? [],
+      language: book?.language ?? 'en',
+      genres: (book?.genres ?? []) as string[],
+      ageGroup: book?.ageGroup ?? start.ageGroup,
+      /** What the age group was before a lookup match's guess replaced it; null once the person has chosen. */
+      ageBeforeGuess: null as AgeGroup | null,
+      minAge: book?.minAge != null ? String(book.minAge) : '',
+      readingLevel: book?.readingLevel ?? start.readingLevel,
+      synopsis: book?.synopsis ?? '',
+      edition: book?.edition ?? '',
+      year: book?.publicationYear ? String(book.publicationYear) : '',
+      keywords: (book?.keywords ?? []).join(', '),
+      contentTags: (book?.contentTags ?? []).join(', '),
+      price: book ? String(book.replacementPriceMinor / 100) : '0',
+    };
   });
   const [touched, setTouched] = useState(false);
   const [lookupCover, setLookupCover] = useState<{ url: string; source: string } | null>(null);
   const set = <K extends keyof typeof f>(k: K) => (v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
   const errors = {
     title: f.title.trim() ? undefined : t.required,
-    authorIds: f.authorIds.length ? undefined : 'Choose at least one author.',
+    authorIds: f.authorIds.length + f.newAuthors.length ? undefined : 'Choose at least one author.',
     genres: f.genres.length ? undefined : 'Choose at least one genre.',
     year: !f.year || /^\d{4}$/.test(f.year) ? undefined : 'Enter a 4-digit year.',
     price: Number.isFinite(toMinor(f.price)) && toMinor(f.price) >= 0 ? undefined : 'Enter an amount in rupees.',
   };
   const invalid = Object.values(errors).some(Boolean);
+  /** Nothing typed yet: the one match for a searched ISBN may fill the form without a click. */
+  const pristine = !f.title.trim() && !f.isbn.trim() && !f.authorIds.length && !f.newAuthors.length;
+
+  // A new book whose ISBN we already have: say so under the field as soon as the ISBN is complete (typed or
+  // scanned), with a link to the title, instead of after the whole form is filled. Saving refuses it either way.
+  const isbn13 = book ? null : normalizeIsbn(f.isbn);
+  const [ours, setOurs] = useState<{ isbn: string; id: string; title: string } | null>(null);
+  /** The ISBN last looked for in our catalogue (by this effect, or by the lookup the form was filled from). */
+  const checkedIsbn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isbn13 || isbn13 === checkedIsbn.current) return;
+    let live = true;
+    catalogueByIsbn(isbn13).then(
+      (hit) => {
+        if (!live) return; // the field has changed since: this answer is about another ISBN
+        checkedIsbn.current = isbn13;
+        if (hit?.existingBookId) setOurs({ isbn: isbn13, id: hit.existingBookId, title: hit.title });
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [isbn13]);
+  const duplicate = ours && ours.isbn === isbn13 ? ours : null;
 
   const addRef = (kind: 'authors' | 'publishers' | 'categories', field: 'authorIds' | 'categoryIds' | 'publisherId') => async (name: string) => {
     const { id } = await command<{ id: string }>(`${kind}-create`, { name });
@@ -86,28 +133,65 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
     else set(field)([...(f[field] as string[]), id]);
   };
 
-  /** Reuses an existing author/publisher with the same name, or adds it to the catalogue. */
-  const refFor = async (kind: 'authors' | 'publishers', name: string) => {
-    const hit = (refs.data?.[kind] ?? []).find((i) => i.status === 'ACTIVE' && sameName(i.name, name));
-    if (hit) return hit.id;
-    return (await command<{ id: string }>(`${kind}-create`, { name })).id;
+  /** The active author or publisher with this name in the loaded list (compared as the server compares names). */
+  const known = (kind: 'authors' | 'publishers', name: string) =>
+    (refs.data?.[kind] ?? []).find((i) => i.status === 'ACTIVE' && normalizeName(i.name) === normalizeName(name));
+
+  /** Authors by name, split into the ones in the loaded list (ids) and the rest (names for the server), five in all. */
+  const authorsFor = (names: string[], have: { authorIds: string[]; newAuthors: string[] } = { authorIds: [], newAuthors: [] }) => {
+    const authorIds = [...have.authorIds];
+    const newAuthors = [...have.newAuthors];
+    for (const raw of names) {
+      const name = raw.trim().slice(0, 100).trim();
+      if (!normalizeName(name) || authorIds.length + newAuthors.length >= MAX_AUTHORS) continue;
+      const hit = known('authors', name);
+      if (hit ? authorIds.includes(hit.id) : newAuthors.some((n) => normalizeName(n) === normalizeName(name))) continue;
+      if (hit) authorIds.push(hit.id);
+      else newAuthors.push(name);
+    }
+    return { authorIds, newAuthors };
   };
 
-  /** Fills the form from a public-catalogue match; staff review everything before saving. */
-  const applyLookup = async (c: Candidate) => {
-    const authorIds: string[] = [];
-    for (const a of c.authors.slice(0, 5)) authorIds.push(await refFor('authors', a));
-    const publisherId = c.publisher ? await refFor('publishers', c.publisher) : '';
-    refs.reload();
+  /** "+ name" in the authors list of a new book: no command, the name is added with the book. */
+  const addAuthorName = async (name: string) => setF((s) => ({ ...s, ...authorsFor([name], s) }));
+
+  // Removing a named author takes its button away with focus on it: focus goes to the next name's button (the
+  // last one after the last name), or to the authors filter when no name is left, so it never falls out of the dialog.
+  const authorsBox = useRef<HTMLDivElement>(null);
+  const removedAt = useRef<number | null>(null);
+  const removeAuthorName = (i: number) => {
+    removedAt.current = i;
+    setF((s) => ({ ...s, newAuthors: s.newAuthors.filter((_, j) => j !== i) }));
+  };
+  useEffect(() => {
+    const i = removedAt.current;
+    if (i === null) return;
+    removedAt.current = null;
+    const buttons = authorsBox.current?.querySelectorAll<HTMLElement>('.chips-removable button') ?? [];
+    (buttons[Math.min(i, buttons.length - 1)] ?? authorsBox.current?.querySelector<HTMLElement>('.pick-filter input'))?.focus();
+  }, [f.newAuthors]);
+
+  /** Fills the form from a public-catalogue match; staff review everything before saving. Sends nothing. */
+  const applyLookup = (c: Candidate) => {
+    const authors = authorsFor(c.authors);
+    const publisher = c.publisher && normalizeName(c.publisher) ? c.publisher.trim().slice(0, 100).trim() : '';
+    const publisherId = publisher ? (known('publishers', publisher)?.id ?? '') : '';
+    // The lookup has just checked this ISBN against our catalogue: no need to ask again.
+    if (c.isbn && !c.existingBookId) checkedIsbn.current = normalizeIsbn(c.isbn);
+    const guess = c.ageGroup && AGE_GROUPS.includes(c.ageGroup) ? c.ageGroup : null;
     setF((s) => ({
       ...s,
       title: c.title,
       subtitle: c.subtitle,
       isbn: c.isbn ?? '',
-      authorIds: authorIds.length ? [...new Set(authorIds)] : s.authorIds,
-      publisherId: publisherId || s.publisherId,
+      ...(authors.authorIds.length + authors.newAuthors.length ? authors : {}),
+      ...(publisher ? { publisherId, newPublisher: publisherId ? '' : publisher } : {}),
       language: c.language && c.language in LANGUAGES ? (c.language as Book['language']) : s.language,
       genres: c.genres.length ? c.genres : s.genres,
+      // A guess from the subject headings, shown in the select for staff to confirm (never remembered as their choice).
+      // A match with no guess puts back what an earlier match's guess replaced: that guess was about another book.
+      ageGroup: guess ?? s.ageBeforeGuess ?? s.ageGroup,
+      ageBeforeGuess: guess ? (s.ageBeforeGuess ?? s.ageGroup) : null,
       year: c.year ? String(c.year) : s.year,
       synopsis: c.synopsis || s.synopsis,
       keywords: s.keywords || c.subjects.filter((x) => !x.includes(',') && x.length <= 40).slice(0, 5).join(', '),
@@ -115,7 +199,14 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
     setLookupCover(c.coverUrl ? { url: c.coverUrl, source: c.source } : null);
   };
 
+  // After creating: straight on to adding its copies when this person can add copies at the branch in use.
+  const canAddCopies = !book && !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
+  /** Where the save in progress goes next; "Create only" sets it for one submit. */
+  const next = useRef<'copies' | 'list'>('copies');
+
   const { busy, error, submit } = useSubmit(async () => {
+    const toCopies = canAddCopies && next.current === 'copies';
+    next.current = 'copies';
     setTouched(true);
     if (invalid) return;
     const body = {
@@ -124,20 +215,46 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
       readingLevel: f.readingLevel, synopsis: f.synopsis.trim(), edition: f.edition.trim(), publicationYear: f.year ? Number(f.year) : null,
       keywords: csv(f.keywords), contentTags: csv(f.contentTags), replacementPriceMinor: toMinor(f.price),
     };
-    const res = book ? await command<{ bookId: string }>('books-update', { bookId: book.id, ...body }) : await command<{ bookId: string }>('books-create', body);
-    if (!book && lookupCover) {
-      // The book is saved either way; a cover that can't be fetched can be added from a photo later.
-      await command('books-setCover', { bookId: res.bookId, imageUrl: lookupCover.url }).catch((e: unknown) => console.warn('cover import failed', e));
+    if (book) {
+      const res = await command<{ bookId: string }>('books-update', { bookId: book.id, ...body });
+      onSaved(res.bookId);
+      onClose();
+      return;
+    }
+    let res: { bookId: string };
+    try {
+      // Names are sent only when there are some, so a book made of ids alone is the same request as it always was.
+      res = await command<{ bookId: string }>('books-create', {
+        ...body,
+        ...(f.newAuthors.length ? { newAuthors: f.newAuthors } : {}),
+        ...(f.newPublisher ? { newPublisher: f.newPublisher } : {}),
+      });
+    } catch (e) {
+      // The ISBN turned out to be ours (it was not checked, or was added meanwhile): link to that title under the field.
+      if (e instanceof ApiError && e.reason === 'DUPLICATE_ISBN' && isbn13) {
+        const hit = await catalogueByIsbn(isbn13).catch(() => null);
+        if (hit?.existingBookId) setOurs({ isbn: isbn13, id: hit.existingBookId, title: hit.title });
+      }
+      throw e;
+    }
+    // The book is saved; its cover is fetched without making anyone wait (one that can't be fetched can be added
+    // from a photo later). From here on only the parent is touched: this dialog is closing.
+    const cover = lookupCover ? importCoverInBackground(res.bookId, lookupCover.url) : null;
+    onClose();
+    if (toCopies) {
+      // The catalogue page is being left, so its list is not reloaded; the book page shows the cover when it lands.
+      navigate(`${paths.adminBook(res.bookId)}?acquire=1`);
+      return;
     }
     onSaved(res.bookId);
-    onClose();
+    void cover?.then((added) => added && onSaved(res.bookId));
   });
 
   const opts = (items: RefItem[] | undefined) => (items ?? []).filter((i) => i.status === 'ACTIVE').map((i) => ({ value: i.id, label: i.name }));
   return (
     <Dialog title={book ? lt.editBook : lt.newBook} onClose={onClose}>
       <form onSubmit={submit} noValidate className="form-grid">
-        {!book && <BookLookup onPick={applyLookup} />}
+        {!book && <BookLookup onPick={applyLookup} pristine={pristine} />}
         {lookupCover && (
           <div className="span-2 lookup-cover-note">
             <img src={lookupCover.url} alt="" className="lookup-cover" />
@@ -151,17 +268,74 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
           <TextField label={lt.title} value={f.title} onChange={set('title')} error={touched ? errors.title : undefined} />
         </div>
         <TextField label={lt.subtitle} value={f.subtitle} onChange={set('subtitle')} />
-        <TextField label={lt.isbn} value={f.isbn} onChange={set('isbn')} hint={lt.isbnHint} />
-        <div className="span-2">
-          <MultiPick legend={lt.authors} options={opts(refs.data?.authors)} value={f.authorIds} onChange={set('authorIds')} max={5} error={touched ? errors.authorIds : undefined} onAdd={addRef('authors', 'authorIds')} />
+        <div>
+          <TextField label={lt.isbn} value={f.isbn} onChange={set('isbn')} hint={lt.isbnHint} />
+          {duplicate && (
+            <p className="muted small" role="status">
+              {lt.isbnOurs(duplicate.title)} <Link to={paths.adminBook(duplicate.id)}>{lt.bulkOpenBook}</Link>
+            </p>
+          )}
         </div>
-        <SelectField label={lt.publisher} value={f.publisherId} onChange={set('publisherId')} options={[{ value: '', label: lt.noPublisher }, ...opts(refs.data?.publishers)]} />
+        <div className="span-2" ref={authorsBox}>
+          <MultiPick
+            legend={lt.authors}
+            options={opts(refs.data?.authors)}
+            value={f.authorIds}
+            // Names count towards the five: the list can never tick more than what is left.
+            onChange={(ids) => set('authorIds')(ids.slice(0, MAX_AUTHORS - f.newAuthors.length))}
+            max={Math.max(1, MAX_AUTHORS - f.newAuthors.length)}
+            error={touched ? errors.authorIds : undefined}
+            onAdd={book ? addRef('authors', 'authorIds') : addAuthorName}
+          />
+          {f.newAuthors.length > 0 && (
+            <>
+              <p className="muted small">{lt.namedAuthors}</p>
+              <ul className="chips chips-removable">
+                {f.newAuthors.map((n, i) => (
+                  <li key={n}>
+                    {n}
+                    <button type="button" className="btn btn-text" aria-label={lt.removeNamed(n)} title={lt.removeNamed(n)} onClick={() => removeAuthorName(i)}>
+                      <Icon name="close" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+        <SelectField
+          label={lt.publisher}
+          value={f.newPublisher ? NAMED_PUBLISHER : f.publisherId}
+          // Choosing from the list (or None) replaces a publisher named by a lookup match.
+          onChange={(v) => v !== NAMED_PUBLISHER && setF((s) => ({ ...s, publisherId: v, newPublisher: '' }))}
+          options={[
+            { value: '', label: lt.noPublisher },
+            ...(f.newPublisher ? [{ value: NAMED_PUBLISHER, label: lt.namedPublisher(f.newPublisher) }] : []),
+            ...opts(refs.data?.publishers),
+          ]}
+        />
         <SelectField label={lt.language} value={f.language} onChange={set('language')} options={Object.entries(LANGUAGES).map(([value, l]) => ({ value: value as Book['language'], label: l }))} />
         <div className="span-2">
           <MultiPick legend={lt.genres} options={GENRES.map((g) => ({ value: g, label: label(g) }))} value={f.genres} onChange={set('genres')} max={3} error={touched ? errors.genres : undefined} />
         </div>
-        <SelectField label={lt.ageGroup} value={f.ageGroup} onChange={set('ageGroup')} options={AGE_GROUPS.map((a) => ({ value: a, label: label(a) }))} />
-        <SelectField label={lt.readingLevel} value={f.readingLevel} onChange={set('readingLevel')} options={READING_LEVELS.map((r) => ({ value: r, label: label(r) }))} />
+        <SelectField
+          label={lt.ageGroup}
+          value={f.ageGroup}
+          onChange={(ageGroup) => {
+            setF((s) => ({ ...s, ageGroup, ageBeforeGuess: null }));
+            if (!book) newTitleDefaults.set({ ageGroup });
+          }}
+          options={AGE_GROUPS.map((a) => ({ value: a, label: label(a) }))}
+        />
+        <SelectField
+          label={lt.readingLevel}
+          value={f.readingLevel}
+          onChange={(readingLevel) => {
+            set('readingLevel')(readingLevel);
+            if (!book) newTitleDefaults.set({ readingLevel });
+          }}
+          options={READING_LEVELS.map((r) => ({ value: r, label: label(r) }))}
+        />
         <TextField label={lt.minAge} type="number" value={f.minAge} onChange={set('minAge')} />
         <TextField label={lt.year} value={f.year} onChange={set('year')} error={touched ? errors.year : undefined} />
         <TextField label={lt.edition} value={f.edition} onChange={set('edition')} />
@@ -176,7 +350,30 @@ export function BookDialog({ book, onClose, onSaved }: { book?: Book; onClose: (
         <TextField label={lt.contentTags} value={f.contentTags} onChange={set('contentTags')} />
         <div className="span-2">
           <FormError error={error} />
-          <DialogActions busy={busy} submitLabel={book ? t.save : t.create} onCancel={onClose} />
+          {canAddCopies ? (
+            // The one submit button (so Enter uses it) goes on to the copies; "Create only" stays on the catalogue.
+            <div className="dialog-actions">
+              <button type="button" className="btn btn-text" onClick={onClose} disabled={busy}>
+                {t.cancel}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outlined"
+                disabled={busy}
+                onClick={() => {
+                  next.current = 'list';
+                  void submit();
+                }}
+              >
+                {lt.createOnly}
+              </button>
+              <button type="submit" className="btn btn-filled" disabled={busy}>
+                {busy ? t.saving : lt.createAndCopies}
+              </button>
+            </div>
+          ) : (
+            <DialogActions busy={busy} submitLabel={book ? t.save : t.create} onCancel={onClose} />
+          )}
         </div>
       </form>
     </Dialog>

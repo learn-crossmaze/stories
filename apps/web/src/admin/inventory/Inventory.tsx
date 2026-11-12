@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
@@ -81,7 +81,8 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
             setScanMsg(null);
             setElsewhere(null);
             const c = await findCopy(orgId, branchId, v);
-            if (c) return navigate(paths.adminCopy(c.id));
+            // The copy just read goes along, so its page paints at once (CopyDetailPage).
+            if (c) return navigate(paths.adminCopy(c.id), { state: { copy: c } });
             // Not here: find which branch holds it (staff can't open other branches' copies directly).
             try {
               const w = await locateCopy(orgId, v);
@@ -134,7 +135,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
                 {copies.map((c) => (
                   <tr key={c.id}>
                     <td className="nowrap">
-                      <Link to={paths.adminCopy(c.id)} className="mono">
+                      <Link to={paths.adminCopy(c.id)} state={{ copy: c }} className="mono">
                         {c.code}
                       </Link>
                     </td>
@@ -219,14 +220,25 @@ export function InventoryPage() {
 
 type Action = 'inspect' | 'repair' | 'move' | 'condition' | 'lost' | 'found' | 'retire';
 
-function ConditionDialog({ title, onClose, run, showOutcome, locations }: {
+interface ConditionValues {
+  condition: Condition;
+  note: string;
+  outcome: 'PASS' | 'DAMAGED';
+  locationId: string;
+}
+
+function ConditionDialog({ title, onClose, run, showOutcome, locations, initial, unchanged }: {
   title: string;
   onClose: () => void;
-  run: (v: { condition: Condition; note: string; outcome: 'PASS' | 'DAMAGED'; locationId: string }) => Promise<void>;
+  run: (v: ConditionValues) => Promise<void>;
   showOutcome?: boolean;
   locations?: { value: string; label: string }[];
+  /** What the copy has now, to start from (GOOD and no shelf otherwise). */
+  initial?: { condition?: Condition; locationId?: string };
+  /** Nothing to save as it stands (a move to the shelf the copy is on). */
+  unchanged?: (v: ConditionValues) => boolean;
 }) {
-  const [v, setV] = useState({ condition: 'GOOD' as Condition, note: '', outcome: 'PASS' as 'PASS' | 'DAMAGED', locationId: '' });
+  const [v, setV] = useState<ConditionValues>({ condition: initial?.condition ?? 'GOOD', note: '', outcome: 'PASS', locationId: initial?.locationId ?? '' });
   const { busy, error, submit } = useSubmit(() => run(v).then(onClose));
   return (
     <Dialog title={title} onClose={onClose}>
@@ -241,7 +253,7 @@ function ConditionDialog({ title, onClose, run, showOutcome, locations }: {
         )}
         {!locations && <TextField label={lt.note} value={v.note} onChange={(note) => setV({ ...v, note })} />}
         <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+        <DialogActions busy={busy} disabled={unchanged?.(v)} submitLabel={t.save} onCancel={onClose} />
       </form>
     </Dialog>
   );
@@ -254,14 +266,17 @@ export function CopyDetailPage() {
   const orgId = org?.id ?? '';
   const copy = useAsync(() => (orgId ? getCopy(orgId, copyId) : Promise.resolve(null)), [orgId, copyId]);
   const events = useAsync(() => (orgId ? copyEvents(orgId, copyId) : Promise.resolve([])), [orgId, copyId]);
-  const c = copy.data;
+  // Opened from a scan or a list row, the copy read there shows while this page reads it afresh: only then, and
+  // only for this copy (history keeps the state through Back, Forward and a reload, so it can be hours old).
+  const seed = (useLocation().state as { copy?: Copy } | null)?.copy;
+  const c = !copy.loading ? copy.data : seed?.id === copyId ? seed : undefined;
   const locations = useAsync(() => (orgId && c ? listLocations(orgId, c.currentBranchId) : Promise.resolve([])), [orgId, c?.currentBranchId]);
   // The title's cover and authors (a generated cover when there is no photo).
   const book = useAsync(() => (c ? getBook(c.bookId) : Promise.resolve(null)), [c?.bookId]);
   const authors = book.data?.authorNames?.join(', ') ?? '';
   const [action, setAction] = useState<Action | null>(null);
 
-  if (copy.loading) return <SkeletonRows rows={4} />;
+  if (copy.loading && !c) return <SkeletonRows rows={4} />;
   if (copy.error) return <ErrorState message={copy.error} onRetry={copy.reload} />;
   if (!c) return <EmptyState page icon="shelves" title={t.notFoundTitle} message="" />;
   const refresh = () => {
@@ -353,10 +368,24 @@ export function CopyDetailPage() {
         )}
       </section>
 
-      {action === 'inspect' && <ConditionDialog title={lt.inspect} showOutcome onClose={() => setAction(null)} run={(v) => act('copies-inspect', { outcome: v.outcome, condition: v.condition, note: v.note })} />}
+      {action === 'inspect' && (
+        <ConditionDialog title={lt.inspect} showOutcome initial={{ condition: c.condition }} onClose={() => setAction(null)} run={(v) => act('copies-inspect', { outcome: v.outcome, condition: v.condition, note: v.note })} />
+      )}
       {action === 'repair' && <ConditionDialog title={lt.repair} onClose={() => setAction(null)} run={(v) => act('copies-repair', { condition: v.condition, note: v.note })} />}
-      {action === 'condition' && <ConditionDialog title={lt.recordCondition} onClose={() => setAction(null)} run={(v) => act('copies-recordCondition', { condition: v.condition, note: v.note })} />}
-      {action === 'move' && <ConditionDialog title={lt.relocate} locations={locOptions} onClose={() => setAction(null)} run={(v) => act('copies-relocate', { locationId: v.locationId || null })} />}
+      {action === 'condition' && (
+        <ConditionDialog title={lt.recordCondition} initial={{ condition: c.condition }} onClose={() => setAction(null)} run={(v) => act('copies-recordCondition', { condition: v.condition, note: v.note })} />
+      )}
+      {/* Opens once the shelves are read, so it starts on the copy's own shelf (one since archived is not in the list). */}
+      {action === 'move' && !locations.loading && (
+        <ConditionDialog
+          title={lt.relocate}
+          locations={locOptions}
+          initial={{ locationId: locOptions.some((l) => l.value === c.locationId) ? (c.locationId ?? '') : '' }}
+          unchanged={(v) => (v.locationId || null) === (c.locationId ?? null)}
+          onClose={() => setAction(null)}
+          run={(v) => act('copies-relocate', { locationId: v.locationId || null })}
+        />
+      )}
       {action === 'found' && <ConditionDialog title={lt.found} onClose={() => setAction(null)} run={(v) => act('copies-found', { note: v.note })} />}
       {action === 'lost' && (
         <ConfirmWithReason title={lt.lostTitle(c.code)} body={lt.lostBody} confirmLabel={lt.markLost} onClose={() => setAction(null)} onConfirm={(reason) => act('copies-markLost', { reason }).then(() => setAction(null))} />

@@ -136,10 +136,13 @@ export class Actor {
   /**
    * The shared catalogue belongs to head office: a permission counts only if
    * held in a CORPORATE organization (franchises can't edit shared titles).
+   * A command passes its `tx`; a read that writes nothing may leave it out
+   * (a plain query, read afresh on every call: nothing is cached).
    */
-  async canCatalog(perm: Permission, tx: Transaction): Promise<boolean> {
+  async canCatalog(perm: Permission, tx?: Transaction): Promise<boolean> {
     if (this.isSuperAdmin) return true;
-    const snaps = await tx.get(db.collection(`users/${this.uid}/memberships`).where('status', '==', 'ACTIVE'));
+    const held = db.collection(`users/${this.uid}/memberships`).where('status', '==', 'ACTIVE');
+    const snaps = await (tx ? tx.get(held) : held.get());
     return snaps.docs.some((d) => {
       const m = d.data() as Membership;
       return m.orgType === 'CORPORATE' && holds(m, perm);
@@ -153,7 +156,7 @@ export class Actor {
     return { perms: m ? permissionsOf(m) : new Set(), branchIds: m?.branchIds ?? [] };
   }
 
-  async requireCatalog(perm: Permission, tx: Transaction): Promise<void> {
+  async requireCatalog(perm: Permission, tx?: Transaction): Promise<void> {
     if (!(await this.canCatalog(perm, tx))) throw errors.forbidden();
   }
 

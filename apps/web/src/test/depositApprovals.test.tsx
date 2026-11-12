@@ -18,6 +18,8 @@ const world = vi.hoisted(() => ({
   respond: (() => ({})) as (data: never) => unknown,
   pending: [] as unknown[],
   reads: 0,
+  /** Holds back the answer to a read of the list until it resolves. */
+  gate: null as Promise<void> | null,
 }));
 const calls = world.calls as Sent[];
 
@@ -38,6 +40,7 @@ vi.mock('../data/billing', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../data/billing')>()),
   pendingAdjustments: async () => {
     world.reads++;
+    await world.gate;
     return [...world.pending];
   },
 }));
@@ -70,6 +73,7 @@ beforeEach(() => {
   world.respond = () => ({});
   world.pending = [];
   world.reads = 0;
+  world.gate = null;
 });
 
 describe('deciding one adjustment', () => {
@@ -132,6 +136,29 @@ describe('deciding one adjustment', () => {
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: lt.approve }));
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Member m2' })).toBeNull());
     expect(screen.queryByRole('dialog')).toBeNull();
+    // Never as if this approval went through: the other person may have rejected it.
+    expect(screen.getByText(lt.decidedElsewhere(money(-5000), 'Member m2'))).toBeInTheDocument();
+  });
+
+  it('says so when a rejection came too late, and takes the message away at the next decision', async () => {
+    const [a, b] = [adj(1, 'm1', -50000), adj(2, 'm2', -5000)];
+    world.pending = [a, b];
+    const user = await open();
+    // A colleague approved it a moment ago: the deduction is already in the member's deposit.
+    world.respond = () => refused('ALREADY_DECIDED', 'This adjustment has already been decided.');
+    await user.click(within(await waitFor(() => rowOf(a))).getByRole('button', { name: lt.reject }));
+    const dialog = screen.getByRole('dialog', { name: lt.rejectTitle(money(-50000), 'Member m1') });
+    await user.type(within(dialog).getByLabelText(t.reasonLabel), 'Wrong amount');
+    await user.click(within(dialog).getByRole('button', { name: lt.reject }));
+    expect(await screen.findByText(lt.decidedElsewhere(money(-50000), 'Member m1'))).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Member m1' })).toBeNull();
+
+    world.respond = () => ({});
+    await user.click(within(rowOf(b)).getByRole('button', { name: lt.approve }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: lt.approve }));
+    expect(await screen.findByText(lt.approvalsEmpty)).toBeInTheDocument();
+    expect(screen.queryByText(lt.decidedElsewhere(money(-50000), 'Member m1'))).toBeNull();
   });
 });
 
@@ -226,6 +253,7 @@ describe('approving several at once', () => {
     expect(await screen.findByText(lt.approvalsNotDone(1))).toBeInTheDocument();
     expect(screen.queryByText('Reason 1')).toBeNull();
     expect(screen.queryByText('Reason 3')).toBeNull();
+    expect(screen.getByText(lt.decidedElsewhere(money(-5000), 'Member m2'))).toBeInTheDocument();
     expect(within(screen.getByText('Reason 2').closest('tr')!).getByText('The deposit balance is not enough for this deduction.')).toBeInTheDocument();
     expect(box(b)).toBeChecked();
     expect(screen.getByRole('button', { name: lt.approveSelected(1) })).toBeEnabled();
@@ -238,5 +266,58 @@ describe('approving several at once', () => {
     expect(calls.map((c) => c.adjustmentId)).toEqual(expect.arrayContaining(['a1', 'a2', 'a3']));
     expect(calls.filter((c) => c.adjustmentId === 'a2')).toHaveLength(2);
     expect(new Set(calls.map((c) => c.requestId)).size).toBe(4);
+  });
+
+  it('a confirmation whose rows went away closes for good: it does not open by itself at the next tick', async () => {
+    const [a, b, c] = [adj(1, 'm1', -1000), adj(2, 'm2', -2000), adj(3, 'm3', -3000)];
+    world.pending = [a, b, c];
+    const user = await open();
+    // One decision; the list is being read again in the background.
+    let release = () => {};
+    world.gate = new Promise((resolve) => (release = resolve));
+    await user.click(within(await waitFor(() => rowOf(c))).getByRole('button', { name: lt.approve }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: lt.approve }));
+    await waitFor(() => expect(screen.queryByText('Reason 3')).toBeNull());
+    await user.click(box(a));
+    await user.click(box(b));
+    await user.click(screen.getByRole('button', { name: lt.approveSelected(2) }));
+    expect(screen.getByRole('dialog', { name: lt.approveManyTitle(2) })).toBeInTheDocument();
+
+    // The read comes back: a colleague has decided both meanwhile, and a new one is waiting.
+    const d = adj(4, 'm4', -4000);
+    world.pending = [d];
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await user.click(await waitFor(() => box(d)));
+    expect(box(d)).toBeChecked();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(calls).toHaveLength(1);
+    // Asking again still works.
+    await user.click(screen.getByRole('button', { name: lt.approveSelected(1) }));
+    expect(screen.getByRole('dialog', { name: lt.approveManyTitle(1) })).toBeInTheDocument();
+  });
+
+  it('keeps the keyboard on the page while a batch runs and after it', async () => {
+    const [a, b] = [adj(1, 'm1', -90000), adj(2, 'm2', -20000)];
+    world.pending = [a, b];
+    const held: Record<string, (answer: unknown) => void> = {};
+    world.respond = (data: Sent) => new Promise((resolve) => (held[data.adjustmentId] = resolve)) as never;
+    const user = await open();
+    await waitFor(() => rowOf(a));
+    await user.click(screen.getByRole('checkbox', { name: lt.selectAllApprovable }));
+    // By keyboard: the button that opens the confirmation is switched off while the batch runs.
+    screen.getByRole('button', { name: lt.approveSelected(2) }).focus();
+    await user.keyboard('{Enter}');
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: lt.approveSelected(2) }));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    const heading = screen.getByRole('heading', { name: lt.approvalsTitle });
+    expect(heading).toHaveFocus();
+    held.a1({});
+    held.a2(refused('DEPOSIT_INSUFFICIENT', 'The deposit balance is not enough for this deduction.'));
+    expect(await screen.findByText(lt.approvalsNotDone(1))).toBeInTheDocument();
+    expect(heading).toHaveFocus();
+    // From the heading, Tab reaches the page's own controls.
+    await user.tab();
+    expect(screen.getByRole('button', { name: lt.approveSelected(1) })).toHaveFocus();
   });
 });

@@ -21,6 +21,13 @@ Until the online gateway arrives (Phase 2, Razorpay), subscriptions and deposits
   *Renew* dialog shows fee, deposit and total and offers **Take payment**, with **Save unpaid** for collecting online
   or later; staff without `payments.recordOffline` or `deposits.view` keep the two steps
   (tests: `functions/test/emulator/speedMembers.test.ts`, `apps/web/src/test/sellPlan.test.tsx`).
+  The dialog sends **one `requestId` for the paid sale for as long as it is open**: if the answer was lost, taking
+  the payment again returns the first result, also after the method or reference was corrected. That is what stops
+  a repeat, because the server takes a second paid sale under a *new* request as the member renewing early whenever
+  the current term has no more than the plan's `renewalWindowDays` left (TOO_EARLY otherwise, RENEWAL_EXISTS after
+  one renewal). With the default window of 30 days a monthly term is inside it from the day it is sold, so two
+  counters selling to the same member at once can both be paid (one current term, one next term).
+  [OPEN QUESTION for the owner: should a paid sale be refused for a while after the current term was activated?]
 - Deposit refunds are recorded as outgoing payments (`direction: OUT`, purpose DEPOSIT_REFUND).
 
 Amounts are integers in **paise**; currency INR.

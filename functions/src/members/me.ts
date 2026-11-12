@@ -142,7 +142,8 @@ export const overview = query('me-overview', z.strictObject({}), async ({ actor 
         self: member.accountHolderUid === actor.uid,
         member: plain({
           code: member.code, fullName: member.fullName, dob: member.dob, audience: member.audience, isMinor: member.isMinor,
-          phone: member.phone, email: member.email, address: member.address ?? null, status: member.status, guardian: member.guardian,
+          phone: member.phone, email: member.email, address: member.address ?? null, deliveryAddress: member.deliveryAddress ?? null,
+          status: member.status, guardian: member.guardian,
           activeSubscriptionId: member.activeSubscriptionId, nextSubscriptionId: member.nextSubscriptionId,
           subscriptionEndsAt: member.subscriptionEndsAt, renewalDueAt: member.renewalDueAt ?? null, planName: member.planName ?? null,
           activeLoanCount: member.activeLoanCount, allocatedCount: member.allocatedCount, waitingCount: member.waitingCount,

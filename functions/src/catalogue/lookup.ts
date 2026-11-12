@@ -4,13 +4,15 @@ import { query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { normalizeIsbn } from './isbn.js';
-import { LANGUAGES, type Genre } from './model.js';
+import { type AgeGroup, LANGUAGES, type Genre } from './model.js';
 
 /**
  * Book details from public catalogues, to prefill the "New book" form.
  * Google Books (better for Indian editions; needs GOOGLE_BOOKS_API_KEY in
  * production — anonymous quota is shared and usually exhausted) and Open
- * Library (no key) are searched together; either may be down.
+ * Library (no key) are searched together; either may be down. A caller that
+ * only wants one ISBN (`exact`, the Receive books page) is answered as soon as
+ * Google Books has that very ISBN, without waiting for Open Library.
  */
 export interface Candidate {
   source: 'Google Books' | 'Open Library';
@@ -23,6 +25,8 @@ export interface Candidate {
   language: (typeof LANGUAGES)[number] | null;
   synopsis: string;
   genres: Genre[];
+  /** A guess from the subject headings (see guessAgeGroup); null when they don't say who the book is for. */
+  ageGroup: AgeGroup | null;
   subjects: string[];
   coverUrl: string | null;
   /** Set when a title with this ISBN is already in the catalogue. */
@@ -53,6 +57,21 @@ export function guessGenres(subjects: string[]): Genre[] {
   return GENRE_WORDS.filter(([, re]) => re.test(text)).map(([g]) => g).slice(0, 3);
 }
 
+// Audience headings only ("Juvenile Fiction", "Young Adult Fiction", "Children's stories", "Picture books"), never a
+// bare "children" or "teen": subjects such as "Missing children" or "Juvenile delinquency" are about them, not for them.
+const TEEN_HEADINGS = /\byoung adult\b|\bteen(age)? (fiction|literature)\b/i;
+const CHILD_HEADINGS = /\bjuvenile\b(?! (delinquen|justice|court|offender|detention|crime))|\bchildren['’]?s (fiction|stories|literature|books|poetry)\b|\bpicture books?\b/i;
+
+/**
+ * Best-guess age group from subject headings, or null (the form then keeps its own choice). A guess only ever moves
+ * a title to a younger shelf than the Adults default, and child members see titles by age group, so it is kept to
+ * headings that name the audience, and the older group wins when both are named. Staff confirm it in the form.
+ */
+export function guessAgeGroup(subjects: string[]): AgeGroup | null {
+  const text = subjects.join(' | ');
+  return TEEN_HEADINGS.test(text) ? 'TEENS' : CHILD_HEADINGS.test(text) ? 'CHILDREN' : null;
+}
+
 const clean = (s: unknown, max: number) =>
   typeof s === 'string'
     ? s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
@@ -64,8 +83,10 @@ const yearOf = (s: unknown) => {
 };
 const https = (u: unknown) => (typeof u === 'string' && u ? u.replace(/^http:\/\//, 'https://') : null);
 
-async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { 'User-Agent': 'Stories library (storiesforall.in)' } });
+/** `stop` lets the caller give up on the request before the timeout does. */
+async function getJson(url: string, stop?: AbortSignal): Promise<unknown> {
+  const signal = stop ? AbortSignal.any([stop, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS);
+  const res = await fetch(url, { signal, headers: { 'User-Agent': 'Stories library (storiesforall.in)' } });
   if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
   return res.json();
 }
@@ -96,6 +117,7 @@ export function fromGoogle(body: unknown): Candidate[] {
       language: v.language && LANGS.has(v.language) ? (v.language as Candidate['language']) : null,
       synopsis: clean(v.description, 2000),
       genres: guessGenres(subjects),
+      ageGroup: guessAgeGroup(subjects),
       subjects: subjects.slice(0, 8),
       // zoom=0 without the page curl is the largest image Google serves publicly.
       coverUrl: https(img?.replace('&edge=curl', '').replace(/zoom=\d/, 'zoom=0')),
@@ -126,6 +148,7 @@ export function fromOpenLibrary(body: unknown): Candidate[] {
       language: lang as Candidate['language'],
       synopsis: clean(d.first_sentence?.[0], 2000),
       genres: guessGenres(subjects),
+      ageGroup: guessAgeGroup(subjects),
       subjects: subjects.slice(0, 8),
       coverUrl: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-L.jpg` : null,
     }];
@@ -156,23 +179,53 @@ export function merge(lists: Candidate[][]): Candidate[] {
   return out.slice(0, 10);
 }
 
-/** Searches public catalogues by title (optionally "title author") or ISBN. */
-export const lookup = query('books-lookup', z.strictObject({ q: z.string().trim().min(2).max(200) }), async ({ actor, input }) => {
-  await db.runTransaction((tx) => actor.requireCatalog('books.create', tx));
-  const isbn = normalizeIsbn(input.q);
-  const settled = await Promise.allSettled([
-    getJson(googleUrl(input.q, isbn)).then(fromGoogle),
-    getJson(openLibraryUrl(input.q, isbn)).then(fromOpenLibrary),
-  ]);
-  const ok = settled.filter((s): s is PromiseFulfilledResult<Candidate[]> => s.status === 'fulfilled');
-  if (!ok.length) {
-    console.warn('books-lookup: all sources failed', settled.map((s) => (s.status === 'rejected' ? String(s.reason) : 'ok')));
-    throw errors.conflict('LOOKUP_UNAVAILABLE', "Book search isn't available right now. Fill in the details by hand, or try again later.");
-  }
-  const candidates = merge(ok.map((s) => s.value));
-  const known = await Promise.all(candidates.map((c) => (c.isbn ? db.doc(`isbnIndex/${c.isbn}`).get() : null)));
-  return {
-    candidates: candidates.map((c, i) => ({ ...c, existingBookId: known[i]?.exists ? (known[i]!.get('bookId') as string) : null })),
-    sources: settled.map((s, i) => ({ source: i === 0 ? 'Google Books' : 'Open Library', ok: s.status === 'fulfilled' })),
-  };
-});
+/**
+ * Whether Google's answer is enough on its own for a caller that wants exactly this ISBN. merge() puts Google first and
+ * keeps one result per ISBN, so when Google has the ISBN, Open Library's answer could not change which record is used.
+ * Never the other way round: Open Library's ISBN is the first of the whole work's, often not the one asked for.
+ */
+export const answersExactly = (google: Candidate[], isbn: string | null): boolean => !!isbn && google.some((c) => c.isbn === isbn);
+
+type Outcome = { ok: true; value: Candidate[] } | { ok: false; reason: unknown };
+/** Never rejects: a source that is given up on (or times out later) must not become an unhandled rejection. */
+const settle = (p: Promise<Candidate[]>): Promise<Outcome> =>
+  p.then(
+    (value) => ({ ok: true as const, value }),
+    (reason: unknown) => ({ ok: false as const, reason }),
+  );
+
+/**
+ * Searches public catalogues by title (optionally "title author") or ISBN. `exact: true` with an ISBN means "I only
+ * need this ISBN": the answer goes out as soon as Google Books has it, and Open Library is then not waited for
+ * (`sources` reports it as skipped). In every other case both are waited for, as before.
+ */
+export const lookup = query(
+  'books-lookup',
+  z.strictObject({ q: z.string().trim().min(2).max(200), exact: z.boolean().optional() }),
+  async ({ actor, input }) => {
+    // Before anything goes out to the public services.
+    await actor.requireCatalog('books.create');
+    const isbn = normalizeIsbn(input.q);
+    const giveUp = new AbortController();
+    const google = settle(getJson(googleUrl(input.q, isbn)).then(fromGoogle));
+    const openLibrary = settle(getJson(openLibraryUrl(input.q, isbn), giveUp.signal).then(fromOpenLibrary));
+    const first = await google;
+    const skip = !!input.exact && first.ok && answersExactly(first.value, isbn);
+    if (skip) giveUp.abort();
+    const second = skip ? null : await openLibrary;
+    const ok = [first, second].flatMap((s) => (s?.ok ? [s.value] : []));
+    if (!ok.length) {
+      console.warn('books-lookup: all sources failed', [first, second].map((s) => (s && !s.ok ? String(s.reason) : 'ok')));
+      throw errors.conflict('LOOKUP_UNAVAILABLE', "Book search isn't available right now. Fill in the details by hand, or try again later.");
+    }
+    const candidates = merge(ok);
+    const known = await Promise.all(candidates.map((c) => (c.isbn ? db.doc(`isbnIndex/${c.isbn}`).get() : null)));
+    return {
+      candidates: candidates.map((c, i) => ({ ...c, existingBookId: known[i]?.exists ? (known[i]!.get('bookId') as string) : null })),
+      sources: [
+        { source: 'Google Books', ok: first.ok },
+        second ? { source: 'Open Library', ok: second.ok } : { source: 'Open Library', ok: null, skipped: true },
+      ],
+    };
+  },
+);

@@ -85,15 +85,24 @@ export const lt = {
   shelveNav: 'Shelve books',
   shelveTitle: 'Shelve books',
   shelveButton: (n: number) => (n ? `Shelve books (${n})` : 'Shelve books'),
-  shelveIntro: 'New books and returned books that passed inspection wait here until they are on a shelf. Pick the shelf, tick the books (or scan them), and put them all there in one go.',
+  shelveIntro:
+    'New books and returned books that passed inspection wait here until they are on a shelf. A returned book shows its usual shelf: tick the books (or scan them) and put them all back in one go. For the others, pick the shelf first, or scan or type its code.',
   shelveShelf: 'Put on shelf',
   shelvePickShelf: 'Choose a shelf',
   shelveNoShelves: 'This branch has no shelves yet. Add one on the Inventory page first.',
-  shelveScan: 'Scan a book to tick it',
+  shelveScan: 'Scan a book to tick it, or a shelf code to choose that shelf',
   shelveSelectAll: 'Select all',
   shelveSelectRow: (code: string) => `Select ${code}`,
-  shelveSubmit: (n: number) => `Shelve ${n} ${n === 1 ? 'book' : 'books'}`,
+  shelveSubmit: (n: number, shelf?: string) => (shelf ? `Put ${n} ${n === 1 ? 'book' : 'books'} on ${shelf}` : `Shelve ${n} ${n === 1 ? 'book' : 'books'}`),
   shelveDone: (n: number, shelf: string) => `${n} ${n === 1 ? 'book is' : 'books are'} now on ${shelf}.`,
+  shelveUsual: 'Usual shelf',
+  shelveNoUsual: 'None',
+  shelveBack: (n: number) => `Put ${n} back on ${n === 1 ? 'its usual shelf' : 'their usual shelves'}`,
+  shelveBackDone: (n: number, shelves: string[]) =>
+    `${n} ${n === 1 ? 'book is' : 'books are'} back on ${shelves.length === 1 ? shelves[0] : `${shelves.length} shelves: ${shelves.join(', ')}`}.`,
+  shelveBackFailed: (shelf: string, why: string) => `Nothing was put on ${shelf}. ${why}`,
+  shelveShelfSet: (shelf: string) => `Shelf chosen: ${shelf}.`,
+  shelveRefresh: 'Check for more books',
   shelveEmpty: 'Every book here is on a shelf.',
   shelveMore: (n: number) => `Showing the first ${n}. Shelve these to see the rest.`,
   shelveScannedOther: (code: string, where: string) => `${code} is already on ${where}; ticked to move it.`,
@@ -275,6 +284,10 @@ export const lt = {
   creditsTotal: 'Credits',
   approvingProgress: (done: number, total: number) => `Approving ${done} of ${total}…`,
   approvalsNotDone: (n: number) => `${n} could not be approved. The reason is on ${n === 1 ? 'its row' : 'each row'}; they stay selected so you can try again.`,
+  decidedElsewhere: (amount: string, member: string) =>
+    `Someone else had already decided ${amount} for ${member}, so your decision was not used. Open the member’s deposit to see what was decided.`,
+  decidedElsewhereMany: (rows: string[]) =>
+    `Someone else had already decided ${rows.length} of these, so your approval was not used for them: ${rows.join('; ')}. Open each member’s deposit to see what was decided.`,
   // desk
   deskTitle: 'Circulation desk',
   findMember: 'Member',
@@ -558,7 +571,7 @@ export const lt = {
   lookupPlaceholder: 'Find book details: title, "title author", or ISBN',
   lookupButton: 'Search',
   lookupSearching: 'Searching…',
-  lookupHint: 'Searches Google Books and Open Library. Pick a match to fill the form, then check the details before saving.',
+  lookupHint: 'An ISBN is checked against our catalogue first. Then Google Books and Open Library are searched. Pick a match to fill the form, then check the details before saving.',
   lookupNone: 'No matches. Try the ISBN, a shorter title, or add the author\'s name.',
   lookupNoAuthor: 'Author unknown',
   lookupUse: 'Use this',
@@ -567,6 +580,14 @@ export const lt = {
   lookupFailed: "Book search didn't work. Fill in the details by hand.",
   lookupCoverNote: (source: string) => `The cover from ${source} will be added when you save.`,
   lookupCoverSkip: "Don't use this cover",
+  lookupApplied: (title: string) => `Filled in the form with "${title}". Check the details before saving.`,
+  // New book form: a title we already have, authors and publisher by name, what happens after Create
+  isbnOurs: (title: string) => `Already in the catalogue: ${title}.`,
+  namedAuthors: 'Authors by name. We use the one we already have, or add a new one when you save:',
+  removeNamed: (name: string) => `Remove ${name}`,
+  namedPublisher: (name: string) => `${name} (from the book details)`,
+  createAndCopies: 'Create and add copies',
+  createOnly: 'Create only',
 
   // online payments (Razorpay)
   payments: 'Payments',

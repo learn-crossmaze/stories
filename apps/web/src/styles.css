@@ -434,6 +434,10 @@ main h1[tabindex='-1']:focus { outline: none; }
 .plain-list li:last-child { border-bottom: 0; }
 .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .chips li { border: 1px solid var(--outline); border-radius: 999px; padding: 4px 12px; font-size: 13px; background: var(--surface-raised); }
+/* chips with a remove button (authors named in the New book form) */
+.chips-removable { margin-top: 6px; }
+.chips-removable li { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 12px; }
+.chips-removable .btn { padding: 0 8px; }
 
 .timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--outline); }
 .timeline li { position: relative; padding: 0 0 14px 14px; display: flex; flex-direction: column; }
@@ -765,6 +769,10 @@ main h1[tabindex='-1']:focus { outline: none; }
 .dl-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .dl-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .dl-contact { display: inline-flex; gap: 12px; flex-wrap: wrap; }
+.dl-run { margin-top: 12px; padding: 12px 16px; }
+.dl-run p { margin: 0 0 8px; }
+.dl-run .row { align-items: flex-end; }
+.dl-run .field { min-width: min(100%, 240px); }
 .map-pin { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 .map-pin .field { width: 100%; margin-bottom: 0; }
 .form-section { margin: 16px 0 8px; font-size: 15px; }

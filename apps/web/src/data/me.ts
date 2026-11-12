@@ -1,5 +1,5 @@
 import { call, command } from './api';
-import type { Delivery } from './delivery';
+import type { Delivery, DeliveryAddress } from './delivery';
 import type { AgeGroup, Duration } from './common';
 import type { SubscriptionUpgrade, UpgradeOption, UpgradeQuote } from './billing';
 
@@ -86,6 +86,8 @@ export interface Membership {
     phone: string | null;
     email: string | null;
     address: { line1: string; line2: string; city: string; state: string; postalCode: string } | null;
+    /** Where the last home delivery was booked to (with landmark and map pin): prefills the next booking. */
+    deliveryAddress?: DeliveryAddress | null;
     status: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
     guardian: { memberId: string; name: string; relationship: string } | null;
     activeSubscriptionId: string | null;

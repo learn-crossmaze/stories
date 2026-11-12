@@ -33,8 +33,10 @@ books kept, a pile of 31 in Quick return, passing several inspections at once) a
 in a browser with a real scanner.
 
 Members and billing at the counter have component tests too: `sellPlan.test.tsx` (plan and payment in one step,
-the remembered method, a changed total, the plan chooser opening by itself), `membersPage.test.tsx` (Enter or a
-scanned card opens the member, registering lands on the plan chooser), `memberSearch.test.ts` (search words and
-narrowing) and `depositApprovals.test.tsx` (approve without a note, several at once, a failed row). The one-step
-sale's money rules are in `functions/test/emulator/speedMembers.test.ts`. A browser walkthrough is still needed for
-a member with no deposit yet and for a branch-scoped librarian.
+the remembered method, a changed total, one request per open dialog after a lost answer, the plan chooser opening
+by itself), `membersPage.test.tsx` (Enter or a scanned card opens the member, registering lands on the plan
+chooser), `memberSearch.test.ts` (search words and narrowing, codes made of digits and dashes) and
+`depositApprovals.test.tsx` (approve without a note, several at once, a failed row, one decided by someone else
+first, focus while a batch runs). The one-step sale's money rules are in
+`functions/test/emulator/speedMembers.test.ts`. A browser walkthrough is still needed for a member with no deposit
+yet and for a branch-scoped librarian.

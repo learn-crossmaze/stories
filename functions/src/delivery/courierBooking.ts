@@ -8,7 +8,7 @@ import { AppError, errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { id } from '../core/schemas.js';
 import { queueWhatsApp } from '../messaging/whatsapp.js';
-import { type CourierStatus, CourierError, courierFor, type Stop, type Tracking } from './couriers.js';
+import { type Connection, type CourierStatus, CourierError, courierFor, type Stop, type Tracking } from './couriers.js';
 import { queueOut, summary } from './messages.js';
 import { branchRef, courierConnection, type Delivery, deliveriesCol, isCourier, loadDelivery, settingsOf } from './model.js';
 
@@ -169,15 +169,28 @@ export async function applyTracking(orgId: string, deliveryId: string, t: Tracki
   });
 }
 
-/** Asks the courier where an order is (Porter allows one track call per order per minute). */
-export async function syncOne(orgId: string, deliveryId: string, minAgeMs = 60_000): Promise<CourierStatus | null> {
-  const snap = await deliveriesCol(orgId).doc(deliveryId).get();
+/**
+ * Asks the courier where an order is (Porter allows one track call per order per minute). A caller that has the
+ * delivery in hand passes it as `known`; one that refreshes several orders shares `connections`, so the branch's
+ * courier settings are read once for all of them.
+ */
+export async function syncOne(
+  orgId: string,
+  deliveryId: string,
+  minAgeMs = 60_000,
+  known?: DocumentSnapshot,
+  connections = new Map<string, Promise<Connection>>(),
+): Promise<CourierStatus | null> {
+  const snap = known ?? (await deliveriesCol(orgId).doc(deliveryId).get());
   const d = snap.data() as (Delivery & { provider: { syncedAt?: Timestamp } }) | undefined;
   if (!d?.provider?.orderId || !['OUT', 'RETURNING'].includes(d.status)) return null;
   if (d.provider.syncedAt && Date.now() - d.provider.syncedAt.toMillis() < minAgeMs) return null;
   const c = courierFor(d.provider.key)!;
-  const conn = await courierConnection(orgId, d.branchId, c.key);
-  const t = await c.track(conn, d.provider.orderId);
+  // Keyed by the delivery's own branch (never the caller's): each branch has its own courier account.
+  const key = `${d.branchId}:${c.key}`;
+  let conn = connections.get(key);
+  if (!conn) connections.set(key, (conn = courierConnection(orgId, d.branchId, c.key)));
+  const t = await c.track(await conn, d.provider.orderId);
   await applyTracking(orgId, deliveryId, t);
   return t.status;
 }
@@ -185,22 +198,25 @@ export async function syncOne(orgId: string, deliveryId: string, minAgeMs = 60_0
 /** Refreshes the branch's courier orders on the board (or one delivery), skipping those checked in the last minute. */
 export const sync = query('deliveries-sync', z.strictObject({ orgId: id, branchId: id, deliveryId: id.nullable().default(null) }), async ({ actor, input }) => {
   await actor.require('delivery.manage', input.orgId, input.branchId);
-  const ids = input.deliveryId
-    ? [input.deliveryId]
-    : (await deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('status', '==', 'OUT').limit(30).get()).docs
-        .filter((d) => d.get('provider.orderId'))
-        .slice(0, 10)
-        .map((d) => d.id);
+  let docs: DocumentSnapshot[];
+  if (input.deliveryId) {
+    const one = await deliveriesCol(input.orgId).doc(input.deliveryId).get();
+    // The permission above is for this branch only: another branch's delivery reads as not there.
+    if (!one.exists || one.get('branchId') !== input.branchId) throw errors.notFound('Delivery');
+    docs = [one];
+  } else {
+    const out = await deliveriesCol(input.orgId).where('branchId', '==', input.branchId).where('status', '==', 'OUT').limit(30).get();
+    docs = out.docs.filter((d) => d.get('provider.orderId')).slice(0, 10);
+  }
+  // All at once (ten at most): one slow order no longer holds up the rest. Each order is still its own update.
+  const connections = new Map<string, Promise<Connection>>();
+  const results = await Promise.allSettled(docs.map((doc) => syncOne(input.orgId, doc.id, 60_000, doc, connections)));
   const updated: Record<string, string> = {};
   const failed: string[] = [];
-  for (const deliveryId of ids) {
-    try {
-      const s = await syncOne(input.orgId, deliveryId);
-      if (s) updated[deliveryId] = s;
-    } catch (e) {
-      failed.push(e instanceof Error ? e.message : String(e));
-    }
-  }
+  results.forEach((r, i) => {
+    if (r.status === 'rejected') failed.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+    else if (r.value) updated[docs[i].id] = r.value;
+  });
   if (input.deliveryId && failed.length) throw errors.conflict('COURIER_ERROR', failed[0]);
   return { updated, failed: failed.length };
 });

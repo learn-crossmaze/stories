@@ -60,6 +60,9 @@ export function DepositApprovalsPage() {
   // Approving several: how far it is, and why a row could not be approved (the server's words).
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [failed, setFailed] = useState<Record<string, string>>({});
+  // Decided by someone else first: the row goes, and the person is told their own decision was not used.
+  const [elsewhere, setElsewhere] = useState<Adjustment[]>([]);
+  const heading = useRef<HTMLHeadingElement>(null);
   const running = useRef(false);
   const live = useRef(true);
   useEffect(() => {
@@ -68,9 +71,6 @@ export function DepositApprovalsPage() {
       live.current = false;
     };
   }, []);
-  if (!org) return null;
-  const orgId = org.id;
-
   const rows = (list.data ?? []).filter((a) => !decided.has(a.id));
   // A convenience only: the server decides who may approve what (a different person, above the limit it is set to).
   const own = (a: Adjustment) => a.proposedBy === user?.uid;
@@ -79,6 +79,19 @@ export function DepositApprovalsPage() {
   const chosen = approvable.filter((a) => selected.has(a.id));
   const busy = progress !== null;
   const notDone = rows.filter((a) => failed[a.id]).length;
+  // The confirmation for several has nothing left to confirm (a reload took its rows away): close it for good,
+  // or it would open by itself at the next tick of a box.
+  const emptied = dialog?.kind === 'many' && !chosen.length;
+  useEffect(() => {
+    if (emptied) setDialog(null);
+  }, [emptied]);
+  // The confirmation hands focus back to "Approve selected", which is switched off while the batch runs:
+  // the heading takes it, so the keyboard stays on this page's content.
+  useEffect(() => {
+    if (busy && (!document.activeElement || document.activeElement === document.body)) heading.current?.focus();
+  }, [busy]);
+  if (!org) return null;
+  const orgId = org.id;
 
   const hide = (id: string) => setDecided((s) => new Set(s).add(id));
   const toggle = (id: string, on: boolean) =>
@@ -92,10 +105,13 @@ export function DepositApprovalsPage() {
 
   /** One decision from its dialog: the row goes at once; the dialog shows a failure. */
   const decideOne = async (adj: Adjustment, decision: 'APPROVE' | 'REJECT', note: string) => {
+    setElsewhere([]);
     try {
       await decide(adj, decision, note);
     } catch (e) {
       if (!alreadyDecided(e)) throw e;
+      // The other person may have decided the opposite: say so on the page, never close as if this went through.
+      setElsewhere([adj]);
     }
     hide(adj.id);
     setFailed(({ [adj.id]: _gone, ...rest }) => rest);
@@ -107,6 +123,7 @@ export function DepositApprovalsPage() {
     if (running.current || !batch.length) return;
     running.current = true;
     setFailed({});
+    setElsewhere([]);
     setProgress({ done: 0, total: batch.length });
     await approveInOrder(
       batch,
@@ -117,6 +134,7 @@ export function DepositApprovalsPage() {
         if (!failure || alreadyDecided(failure)) hide(a.id);
         // Kept, with the reason, and still selected for another try.
         else setFailed((f) => ({ ...f, [a.id]: errorText(failure) }));
+        if (alreadyDecided(failure)) setElsewhere((others) => [...others, a]);
       },
     );
     running.current = false;
@@ -128,9 +146,18 @@ export function DepositApprovalsPage() {
   return (
     <>
       <header className="page-header">
-        <h1>{lt.approvalsTitle}</h1>
+        <h1 ref={heading} tabIndex={-1}>
+          {lt.approvalsTitle}
+        </h1>
       </header>
       {list.error && list.data && <Notice tone="error">{list.error}</Notice>}
+      {elsewhere.length > 0 && (
+        <Notice tone="warn">
+          {elsewhere.length === 1
+            ? lt.decidedElsewhere(money(elsewhere[0].deltaMinor), elsewhere[0].memberName)
+            : lt.decidedElsewhereMany(elsewhere.map((a) => `${money(a.deltaMinor)} · ${a.memberName}`))}
+        </Notice>
+      )}
       {progress && <Notice tone="ok">{lt.approvingProgress(progress.done, progress.total)}</Notice>}
       {!progress && notDone > 0 && <Notice tone="error">{lt.approvalsNotDone(notDone)}</Notice>}
       {list.loading ? (
@@ -235,7 +262,7 @@ export function DepositApprovalsPage() {
           onConfirm={(note) => decideOne(dialog.adj, 'REJECT', note)}
         />
       )}
-      {dialog?.kind === 'many' && chosen.length > 0 && (
+      {dialog?.kind === 'many' && !emptied && (
         <ApproveDialog
           title={lt.approveManyTitle(chosen.length)}
           noteLabel={lt.approveManyNote}

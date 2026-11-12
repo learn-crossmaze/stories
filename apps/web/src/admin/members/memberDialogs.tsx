@@ -131,6 +131,10 @@ export function SubscribeDialog({
   const [method, setMethod] = useState<Method>(() => remember.get(methodKey, 'OFFLINE_UPI', oneOf(METHODS)));
   const [reference, setReference] = useState('');
   const [touched, setTouched] = useState(false);
+  // One paid sale for as long as this dialog is open. If the answer to "Take payment" was lost, pressing it again
+  // gets the result of the first try, also after the method or the reference was corrected: a new request would be
+  // taken as the member renewing early and a second payment would go on the books.
+  const [saleRequestId] = useState(() => crypto.randomUUID());
   const loading = plans.loading || (canTakePayment && deposit.loading);
   // Taking the payment here needs the deposit balance (the total includes the top-up); without it the plan is saved unpaid.
   const paying = canTakePayment && !deposit.error;
@@ -153,7 +157,7 @@ export function SubscribeDialog({
       setTouched(true);
       if (referenceMissing) return;
       try {
-        await command('subscriptions-create', { ...sale, payment: { method, amountMinor: total, reference: method === 'OFFLINE_CASH' ? '' : reference.trim() } });
+        await command('subscriptions-create', { ...sale, payment: { method, amountMinor: total, reference: method === 'OFFLINE_CASH' ? '' : reference.trim() } }, saleRequestId);
       } catch (e) {
         // The server works out the amount itself. If ours no longer matches (a discount began or ended, the plan or
         // the deposit changed), read both again so the new total shows, and say so.

@@ -227,7 +227,11 @@ export const update = command(
       ...(input.aadhaar ? { aadhaarLast4: input.aadhaar.slice(-4) } : {}),
       ...(input.whatsappOptOut !== undefined ? { whatsappOptOut: input.whatsappOptOut } : {}),
     };
-    tx.update(snap.ref, { ...changes, updatedAt: FieldValue.serverTimestamp() });
+    // The profile address changed (the member moved): forget the one remembered from their last home delivery,
+    // or the next booking would be prefilled with the old address and map pin.
+    const lines = (a: typeof input.address) => (a ? [a.line1, a.line2 ?? '', a.city, a.state, a.postalCode].join('\n') : null);
+    const moved = lines(snap.get('address') ?? null) !== lines(input.address);
+    tx.update(snap.ref, { ...changes, ...(moved ? { deliveryAddress: FieldValue.delete() } : {}), updatedAt: FieldValue.serverTimestamp() });
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'member.update', entityType: 'member', entityId: input.memberId, branchId: member.homeBranchId, memberId: input.memberId,
       before: { fullName: member.fullName, phone: member.phone, guardian: member.guardian?.memberId ?? null },

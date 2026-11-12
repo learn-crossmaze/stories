@@ -43,6 +43,18 @@ of the branch's, the reservations are the member's and ready at this branch, the
 member, and the member has **no other visit open**. Members may cancel until it is dispatched. Nothing moves until
 dispatch; the member gets the *Home delivery booked* WhatsApp message.
 
+The form does part of the work (the server rules above still decide):
+
+- **Address remembered**: a booking saves its address (landmark and map pin included) on the member as
+  `deliveryAddress`, in the same transaction. The next booking, at the branch or in the app, starts from it, else from
+  the profile address. It is a prefill only, never treated as checked, and `members-update` removes it when the
+  profile address changes (the member moved).
+- **Told early**: at the branch, a member who already has a visit on the board is shown that visit instead of the
+  form. A PIN code outside the branch's list is flagged under the field as soon as it is complete; it does not stop
+  the booking, because the list on screen can be out of date.
+- **Pickup**: the books out start ticked (ten at most, what one visit can collect). An exchange starts unticked:
+  changing a pickup to an exchange takes the form's own ticks back and keeps only ticks the person made.
+
 ## 3. Dispatch, the visit, and returns
 
 ```
@@ -57,6 +69,19 @@ REQUESTED ──dispatch──▶ OUT ──visit reported──▶ RETURNING �
   desk's own rules (active plan, plan limit, a reserved copy only to its member; the loans carry `channel: DELIVERY`
   and the `deliveryId`). For an exchange, the books being collected count as already returned for the plan limit.
   The member gets *Books on the way* (or *Pickup on the way*) with who is coming.
+  The dialog opens at once from the board's row: the ready reservations are read behind it (`deliveries-get`) and
+  added to whatever was scanned meanwhile, and *Dispatch* waits for that read so that no ready book is left behind.
+  A pickup sends no books and reads nothing. The method, rider and courier name of the branch's last dispatch are
+  the starting choices (kept in the browser, per branch); a courier app is never a remembered default, and a rider
+  who no longer works at the branch falls back to the first on the list.
+- **Several visits with one rider**: on *To dispatch*, staff with `delivery.assign` tick pickups and visits whose
+  books were all reserved, choose the rider and press *Send N with …*; one confirmation names the rider and the
+  members (a visit can't be moved to another rider afterwards). Each visit is still its own `deliveries-dispatch`
+  (own transaction, audit entry and WhatsApp message), three at a time. For a visit that sends books, the member's
+  ready reservations are read just before: they must be exactly the ones the visit was booked with, each with its
+  copy set aside; otherwise the visit is left out with a note on its card to open *Dispatch*. A refused visit never
+  holds up the others, and the board is read again once at the end. A request by note, another courier, a courier
+  app, a fee waiver or extra books need the single dialog.
 - **The visit**: the rider (only the one assigned, or anyone with `delivery.manage`) reports **Delivered** — who
   received it, which borrowed books they collected, and the fee if collected — or **Couldn't deliver** with the
   reason. The member gets *Delivery completed* or *Delivery not completed*.
@@ -64,6 +89,10 @@ REQUESTED ──dispatch──▶ OUT ──visit reported──▶ RETURNING �
   waits in *Coming back*. **Receive books** returns them through the desk's return code: loans close, copies go to
   inspection, the member's count drops. Books from a failed delivery are marked `returnReason: DELIVERY_FAILED`.
   A reservation filled by a failed delivery is not restored: the member reserves again.
+  When one rider or courier has two or more bags waiting, **Receive all N bags** lists each bag with its books,
+  ticked; staff untick a bag that is not back. Each ticked bag is its own `deliveries-receive` (three at a time). A
+  bag that fails stays in the dialog with the reason, to be tried again; one that someone else received meanwhile
+  counts as done.
 - **Cancel**: before dispatch the visit just closes. Once out, the books sent come back to be received, and a booked
   courier is cancelled through its API (if that fails, the board says to cancel it in the courier's app too). A fee
   still due is waived (`fee: FREE, method: WAIVED`): the visit didn't happen.
@@ -72,7 +101,14 @@ REQUESTED ──dispatch──▶ OUT ──visit reported──▶ RETURNING �
   visit can't be charged (`NOT_DELIVERED`). Waiving is always possible. The fee payment is written by one helper
   (`delivery/fees.ts`) whether it is taken at the door or at the counter.
 
-The Operations dashboard lists visits to dispatch and bags to receive.
+The Operations dashboard and the menu show how many visits wait to be dispatched and how many bags wait to be
+received; `deliveries-counts` gives those two numbers from two count queries, without reading the visits. The board
+reads the open visits
+(`deliveries-list`) and reads what closed in the last 14 days only while the *Done* tab is showing, afresh each
+time it is opened. It opens on *To dispatch*, or on *Coming back* when nothing waits to go out; `?tab=RETURNING`
+(or any other tab's name) in the address opens that tab. From the report of a plain delivery nothing is read; for
+a pickup or exchange the form opens at once and the member's books arrive behind it (*Delivered* can be saved
+once they have).
 
 ## 4. Courier apps (Porter)
 
@@ -83,7 +119,8 @@ Porter's business API books two-wheelers within its cities. Ask Porter for API a
    the **API key**, choose **Live** (or **Test** for Porter's UAT environment), Save.
 2. Open **Status updates (webhook)** and send the URL to Porter's API team so rider updates reach Stories instantly.
    Without it, Stories asks Porter when the Deliveries board is opened (at most once a minute per order, Porter's limit)
-   and when staff press *Refresh status*.
+   and when staff press *Refresh status*. The board asks only when it shows a courier order that is out; up to ten
+   orders are asked about together, each updated on its own, so one slow order does not hold up the rest.
 3. Members' addresses need a **map pin** (they can use *Use my current location* in the app; staff can paste a Google
    Maps link).
 
@@ -142,10 +179,12 @@ child), `kind`, `status`, `address` (lines, landmark, city, state, PIN, `geo`), 
 `dispatchedAt`, `reportedAt`, `receivedAt`, `cancelledAt`, `closedAt`). Indexes: member + status, member +
 requestedAt, branch + status + requestedAt, branch + closedAt, rider + status.
 
-Callables: `deliveries-*` on the `circulation` router (settings, saveSettings, create, list, get, mine, dispatch, quote,
-book, sync, report, receive, cancel, recordFee); `me-requestDelivery` and `me-cancelDelivery` on the `members` router.
+The member document carries `deliveryAddress` (the address of the member's last booking, §2).
+
+Callables: `deliveries-*` on the `circulation` router (settings, saveSettings, create, list, counts, get, mine, dispatch,
+quote, book, sync, report, receive, cancel, recordFee); `me-requestDelivery` and `me-cancelDelivery` on the `members` router.
 Code (`functions/src/delivery/`): `orders.ts` (request, dispatch, report, receive, cancel), `courierBooking.ts`
-(book, quote, track, sync, cancel at the courier), `fees.ts` (the fee), `orderQueries.ts` (board, rider's run, one
+(book, quote, track, sync, cancel at the courier), `fees.ts` (the fee), `orderQueries.ts` (board, counts, rider's run, one
 delivery), `messages.ts` (what the member is told), `model.ts` (types, settings and shared helpers), `couriers.ts`
 (courier adapters), `member.ts` (member app), `webhook.ts`.
 HTTP: `deliveryWebhook`. WhatsApp events (docs/WHATSAPP.md): *Home delivery booked*, *Books on the way*, *Pickup on

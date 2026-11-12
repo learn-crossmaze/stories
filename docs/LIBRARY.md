@@ -29,17 +29,43 @@ member code, mobile). A dedicated search service can replace it later behind the
 Member search (`searchMembers` in `apps/web/src/data/members.ts`) narrows by **every** typed word: the database is
 asked for the longest word (up to 50 members; the next word as well when that page is full) and the rest are matched
 against each member's own `searchTokens`. A mobile number is one word however it is typed (spaces, `+91`, a leading
-0), and a number that itself starts with 91 is found. On the Members page, Enter (a scanned member card ends with
+0), and a number that itself starts with 91 is found. Digits with dashes or spaces may also be a member code (a
+branch can number members `{YYYY}-{SEQ:6}`), so they are looked up both ways at once: as one number and as the
+code's separate words. On the Members page, Enter (a scanned member card ends with
 one) opens the member whose code was typed in full, or the only match.
 
 **Find book details (new books):** type a title (optionally with the author) or an ISBN at the top of the *New book*
-form and press *Search*. `books-lookup` searches **Open Library** (no key) and **Google Books** (needs an API key in
-production, see DEPLOYMENT.md) at the same time and returns up to 10 matches, one per ISBN; titles already in the
-catalogue are marked and link to the existing record. *Use this* fills title, subtitle, ISBN, authors and publisher
-(reusing ones with the same name, otherwise adding them), language, year, synopsis, suggested genres and keywords;
-staff check everything before saving. The match's cover is imported when the book is saved (`books-setCover` with
-`imageUrl`, allowed only from Google Books / Open Library hosts). If both sources are unreachable, the form says so and
-works as before.
+form and press *Search*. An ISBN is looked for in **our own catalogue first** (one read, no outside lookup): a title
+we already have is shown at once with a link to its record, also when the public catalogues are down. Otherwise
+`books-lookup` searches **Open Library** (no key) and **Google Books** (needs an API key in production, see
+DEPLOYMENT.md) at the same time and returns up to 10 matches, one per ISBN; titles already in the catalogue are
+marked and link to the existing record. A caller that wants one ISBN only can send `exact: true`: the answer then
+goes out as soon as Google Books has that very ISBN (the record the merge would put first anyway) and Open Library
+is not waited for (`sources` reports it as `skipped`); in every other case both are waited for. Each match carries
+suggested genres and, when its subject headings name the audience ("Juvenile Fiction", "Young Adult Fiction",
+"Children's stories", "Picture books"), a suggested `ageGroup` (the older group when both are named, otherwise
+`null`; never from a bare "children" or "teen", which also head books about them). *Use this* fills title, subtitle,
+ISBN, authors and publisher, language, year, synopsis, suggested genres, age group and keywords; staff check
+everything before saving. A suggested age group belongs to its match: using another match that suggests none puts
+back the age group the form had before, unless someone has chosen one in the select meanwhile. When an ISBN search
+has exactly one match with that ISBN, the title is not ours and nothing has been typed into the form yet, that match is filled in without a click (the other matches stay listed). Filling
+the form sends nothing: authors and a publisher we have are chosen from the loaded lists (names compared as the
+server compares them, so case and accents don't count), the others stay in the form **by name** (so do authors
+typed with *+ name*) and `books-create` matches or adds them in the same transaction as the book (`newAuthors`,
+`newPublisher`; the names it added are listed in the `book.create` audit entry). A complete ISBN typed or scanned
+into the form's own ISBN field is checked against our catalogue too, and a title we have is linked under the field
+(saving would be refused with `DUPLICATE_ISBN`). If both sources are unreachable, the form says so and works as
+before.
+
+**After Create (new books):** someone who can add copies at the branch in use (`copies.manage`) gets *Create and add
+copies*, which saves the title and opens its page with *Add copies* ready (`?acquire=1`, dropped from the address
+once used; the page opens the dialog only for someone who may add copies to that title; closing it leaves focus on
+the page's *Add copies* button), and *Create only*, which stays on the catalogue. Everyone else, and anyone with no
+branch in use, gets plain *Create*. The match's cover is
+imported after the book is saved, without anyone waiting for it (`books-setCover` with `imageUrl`, allowed only from
+Google Books / Open Library hosts): the list or the book page shows it when it lands, and one that can't be fetched
+can be added from a photo. A new book starts from the age group and reading level last chosen in this browser
+(genres always start empty so that someone chooses them).
 
 **Receive books (a delivery):** *Collection → Receive books* (`/ops/books/bulk`, or the button on Inventory and on
 the catalogue) takes a delivery in one pass, for staff who look after copies at the branch in use (`copies.manage`):
@@ -102,6 +128,19 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   puts them all there: one transaction per 100 copies, all or none, with a `SHELVED` event per copy. Copies on loan,
   in transit, lost or retired, or at another branch, are refused; copies already on that shelf are left alone.
   Inventory shows these copies as *Not on a shelf*, and its **Shelve books (N)** button opens the page.
+  - **Usual shelf:** a returned book shows the shelf it was last issued from (`lastLocationId`, kept on issue), and
+    the list is in the order of those shelves. **Put N back on their usual shelves** sends the ticked books that
+    have one, one `copies-shelve` per shelf, all at once: each shelf is all or none on its own, with its own audit
+    entry; a refused shelf is named with the reason and its books stay ticked. A usual shelf is offered only when it
+    is an active shelf of this branch (not one since archived, not one of the branch the book was lent at), and only
+    for a copy that is off the shelf; new stock, and books issued before shelves were remembered, have none and go
+    through the shelf picker. The picker's button puts every ticked book on the picked shelf, whatever its usual one.
+  - **Scan-ready:** the scan field has the keyboard on arrival, after each save and after a shelf is picked with the
+    mouse. Scanning or typing an active shelf's code picks that shelf (a book in the list is matched first; a copy
+    already shelved whose pre-printed barcode equals a shelf code would be read as the shelf, so the page always
+    says which shelf it chose). The list is read once: shelved books are hidden on the page, and it is read again
+    only when it was cut at 300, when nothing is left to show, when a save of more than 100 was refused part-way,
+    or with **Check for more books** (books inspected while the page is open show only then).
 - **Condition:** NEW, GOOD, FAIR, POOR (changes are recorded as events). DAMAGED/LOST/RETIRED are *statuses*.
 - **State machine** — see [CIRCULATION.md](CIRCULATION.md). Retired copies are never deleted and never return.
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
@@ -113,7 +152,10 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   in Inventory says which branch has it and its status (`copies-locate`).
 - **Finding copies:** Inventory's *Find a copy* takes a scanned or typed copy code or barcode; *Search by title*
   lists the branch's copies of every title matching the word typed (the catalogue's title search), with the status
-  filter still applied.
+  filter still applied. A scan asks for the barcode and the code together (a barcode match wins). The copy page
+  opened from a scan or a list row shows the copy just read while it reads it afresh (never once that read has
+  answered), so its shelves and book load alongside. Its *Record condition* and *Inspect* dialogs start from the
+  copy's condition (*Repaired* from Good), and *Move* starts on the copy's shelf and saves only a real move.
 - **Labels:** the console prints A4 sheets (3 × 8). Stories prints **QR codes only** (no 1-D barcodes): each label
   has the QR code of the copy code with the copy code and the book title (small type) beside it; the copy page shows
   the same QR tag, and member ID cards carry a QR code of the member code. Older labels with Code 128 bars and books'

@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { call, command } from '../../data/api';
-import { type Book, getBook } from '../../data/catalogue';
+import { type Book, coverImportOf, getBook } from '../../data/catalogue';
 import { CONDITIONS, type Condition, label, LANGUAGES } from '../../data/common';
 import { copiesOfBook, listLocations } from '../../data/inventory';
 import { useAsync } from '../../shared/useAsync';
@@ -68,7 +68,7 @@ interface Availability {
 export function BookDetailPage() {
   const { bookId = '' } = useParams();
   const { claims } = useAuth();
-  const { org, branch } = useWorkspace();
+  const { org, branch, orgsLoading, branchesLoading } = useWorkspace();
   const canEdit = useCanEditCatalogue();
   const canDelete = useCanDeleteBooks();
   const canAdd = useCanAddBooks();
@@ -89,12 +89,43 @@ export function BookDetailPage() {
     [bookId, archived, canDelete],
   );
   const inUse = !!usage.data?.summary;
+  const canAcquire = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id) && book.data?.status === 'ACTIVE';
+
+  // "Create and add copies" on the New book form lands here with ?acquire=1: open Add copies once the title and
+  // the branch are known, and only for someone who may add copies to it. The flag is then dropped from the
+  // address (replacing the entry), so a refresh or Back does not open the dialog again.
+  const [search, setSearch] = useSearchParams();
+  const wantsCopies = search.get('acquire') === '1';
+  useEffect(() => {
+    if (!wantsCopies || book.loading || book.error || orgsLoading || branchesLoading) return;
+    if (canAcquire) setDialog('acquire');
+    setSearch(
+      (now) => {
+        const rest = new URLSearchParams(now);
+        rest.delete('acquire');
+        return rest;
+      },
+      { replace: true },
+    );
+  }, [wantsCopies, book.loading, book.error, orgsLoading, branchesLoading, canAcquire, setSearch]);
+  // Opened that way, Add copies has no button behind it to hand focus back to (the form that led here is gone):
+  // closing it puts focus on the page's own Add copies button, where it lands when the dialog is opened by hand.
+  const addCopies = useRef<HTMLButtonElement>(null);
+
+  // A cover still being fetched for this title (it was created a moment ago): show it when it lands.
+  const reloadBook = book.reload;
+  useEffect(() => {
+    let live = true;
+    void coverImportOf(bookId)?.then((added) => added && live && reloadBook());
+    return () => {
+      live = false;
+    };
+  }, [bookId, reloadBook]);
 
   if (book.loading) return <SkeletonRows rows={4} />;
   if (book.error) return <ErrorState message={book.error} onRetry={book.reload} />;
   const b = book.data;
   if (!b) return <EmptyState page icon="book" title={t.notFoundTitle} message="" />;
-  const canAcquire = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id) && b.status === 'ACTIVE';
 
   return (
     <>
@@ -214,7 +245,7 @@ export function BookDetailPage() {
                 </Link>
               )}
               {canAcquire && (
-                <button type="button" className="btn btn-filled" onClick={() => setDialog('acquire')}>
+                <button type="button" className="btn btn-filled" ref={addCopies} onClick={() => setDialog('acquire')}>
                   <Icon name="plus" /> {lt.addCopies}
                 </button>
               )}
@@ -261,12 +292,15 @@ export function BookDetailPage() {
       )}
 
       {dialog === 'edit' && <BookDialog book={b} onClose={() => setDialog(null)} onSaved={() => book.reload()} />}
-      {dialog === 'acquire' && org && branch && (
+      {dialog === 'acquire' && canAcquire && org && branch && (
         <AcquireDialog
           orgId={org.id}
           branchId={branch.id}
           book={b}
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            setDialog(null);
+            addCopies.current?.focus();
+          }}
           onDone={(n) => {
             setNotice(lt.added(n));
             copies.reload();

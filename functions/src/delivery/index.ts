@@ -14,6 +14,7 @@ export const routes = {
   'deliveries-saveSettings': settings.saveSettings,
   'deliveries-create': orders.create,
   'deliveries-list': lists.list,
+  'deliveries-counts': lists.counts,
   'deliveries-get': lists.get,
   'deliveries-mine': lists.mine,
   'deliveries-dispatch': orders.dispatch,
