@@ -79,6 +79,8 @@ export const coversBranch = (scope: BranchScope, branchId: string) =>
  */
 export class Actor {
   private memberships = new Map<string, Membership | null>();
+  /** The membership the command pipeline read through the transaction attempt now running (see `prime`). */
+  private primed: { tx: Transaction; orgId: string; membership: Membership | null } | null = null;
 
   constructor(
     readonly uid: string,
@@ -92,10 +94,32 @@ export class Actor {
   }
 
   /**
-   * Reads through `tx` when given (never cached: a retried transaction must
-   * re-read), so permission checks and writes see one consistent snapshot.
+   * Hands over the membership document the command pipeline (core/callable.ts) has just read through `tx`, in the
+   * transaction's first read, so the handler's permission check needs no read of its own. The pipeline calls this on
+   * every attempt of the transaction with that attempt's own read (a retry reuses the same `tx` object, so nothing
+   * may be remembered from one attempt to the next) and clears it when the transaction ends.
+   */
+  prime(tx: Transaction, orgId: string, snap: FirebaseFirestore.DocumentSnapshot): void {
+    this.primed = { tx, orgId, membership: active(snap) };
+  }
+
+  clearPrime(): void {
+    this.primed = null;
+  }
+
+  /** A membership document read at the start of a query, for permission checks outside a transaction. */
+  seed(orgId: string, snap: FirebaseFirestore.DocumentSnapshot): void {
+    this.memberships.set(orgId, active(snap));
+  }
+
+  /**
+   * Reads through `tx` when given, so permission checks and writes see one
+   * consistent snapshot. Nothing read through a transaction is kept beyond the
+   * attempt: either the pipeline has just read it in this attempt (`prime`), or
+   * it is read here, and a retried transaction reads it again.
    */
   async membership(orgId: string, tx?: Transaction): Promise<Membership | null> {
+    if (tx && this.primed && this.primed.tx === tx && this.primed.orgId === orgId) return this.primed.membership;
     const ref = db.doc(`users/${this.uid}/memberships/${orgId}`);
     if (tx) return active(await tx.get(ref));
     if (!this.memberships.has(orgId)) this.memberships.set(orgId, active(await ref.get()));

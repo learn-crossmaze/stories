@@ -66,12 +66,14 @@ export const receive = command(
     }
     const createdIds = new Set(books.created.map((c) => c.bookId));
     const existingSnaps = new Map<string, DocumentSnapshot>();
-    for (const bookId of lines.keys()) {
-      if (createdIds.has(bookId)) continue;
-      const snap = await tx.get(db.doc(`books/${bookId}`));
+    // One read for all of them (getAll refuses an empty list: a delivery may be new titles only).
+    const existingIds = [...lines.keys()].filter((bookId) => !createdIds.has(bookId));
+    const snaps = existingIds.length ? await tx.getAll(...existingIds.map((bookId) => db.doc(`books/${bookId}`))) : [];
+    existingIds.forEach((bookId, i) => {
+      const snap = snaps[i];
       if (!snap.exists || snap.get('status') !== 'ACTIVE') throw errors.notFound(`Active catalogue title ${snap.get('title') ?? bookId}`);
       existingSnaps.set(bookId, snap);
-    }
+    });
     const acquisition: AcquisitionLine[] = [...lines.entries()].map(([bookId, l]) => {
       const made = books.created.find((c) => c.bookId === bookId);
       const snap = existingSnaps.get(bookId);

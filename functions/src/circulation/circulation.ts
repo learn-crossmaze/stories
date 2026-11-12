@@ -3,10 +3,11 @@ import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
 import { command } from '../core/callable.js';
-import { errors } from '../core/errors.js';
+import { AppError, errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { inOrder, readAll } from '../core/reads.js';
 import { id, reason } from '../core/schemas.js';
-import { type Copy, findByBarcode, loadCopy, transition } from '../inventory/copyOps.js';
+import { type Copy, findManyByBarcode, loadCopy, transition } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { balanceOf, depositRef } from '../billing/ledger.js';
@@ -29,14 +30,39 @@ export interface IssuePlan {
   copies: { snap: DocumentSnapshot; copy: Copy; reservation: DocumentSnapshot | null }[];
 }
 
+// The read phases fetch every copy together (three reads however many books:
+// the barcodes, the copies, then their holds or loans) and only then check
+// them one by one in the order scanned, so the problem reported is always that
+// of the first copy in the list that has one.
+
+/** Two scanned strings can name one copy (its own barcode and its copy code): it is issued or returned once. */
+function once(seen: Set<string>, snap: DocumentSnapshot) {
+  if (seen.has(snap.id)) throw errors.invalid('The same copy is listed twice.');
+  seen.add(snap.id);
+}
+
+/** The member and the term they borrow under; throws the reason borrowing is blocked, if any. */
+export async function readBorrower(tx: Transaction, orgId: string, memberId: string): Promise<{ member: Member; term: Term }> {
+  const { member } = await loadMember(tx, orgId, memberId);
+  return { member, term: await requireActiveTerm(tx, orgId, member) };
+}
+
 export async function readIssue(tx: Transaction, orgId: string, branchId: string, memberId: string, codes: string[]): Promise<IssuePlan> {
-  const copies = [];
-  for (const code of codes) {
-    const { snap, copy } = await findByBarcode(tx, orgId, code);
+  const found = await findManyByBarcode(tx, orgId, codes);
+  // A held copy's reservation. (A held copy with none on record reads `reservations/null`, which is nobody's.)
+  const held = found.flatMap((f) => (!(f instanceof AppError) && f.copy.status === 'RESERVED' ? [`${f.copy.activeReservationId}`] : []));
+  const reservations = new Map((await readAll(tx, held.map((r) => db.doc(`orgs/${orgId}/reservations/${r}`)))).map((r) => [r.id, r]));
+
+  const copies: IssuePlan['copies'] = [];
+  const seen = new Set<string>();
+  for (const f of found) {
+    if (f instanceof AppError) throw f;
+    const { snap, copy } = f;
+    once(seen, snap);
     if (copy.currentBranchId !== branchId) throw errors.conflict('WRONG_BRANCH', `Copy ${copy.code} belongs on another branch's shelf.`);
     let reservation: DocumentSnapshot | null = null;
     if (copy.status === 'RESERVED') {
-      reservation = await tx.get(db.doc(`orgs/${orgId}/reservations/${copy.activeReservationId}`));
+      reservation = reservations.get(`${copy.activeReservationId}`)!;
       if (reservation.get('memberId') !== memberId || reservation.get('status') !== 'ALLOCATED') {
         throw errors.conflict('RESERVED_FOR_OTHER', `Copy ${copy.code} is being held for another member.`);
       }
@@ -126,14 +152,25 @@ export interface ReturnItem {
   loan: DocumentSnapshot;
 }
 
+/** A copy coming back on `loan`: it must be out on that very loan and, when a member is named, be theirs. */
+export function returnItem(snap: DocumentSnapshot, loan: DocumentSnapshot | undefined, memberId?: string): ReturnItem {
+  const copy = snap.data() as Copy;
+  if (copy.status !== 'ISSUED' || !loan || copy.activeLoanId !== loan.id) throw errors.conflict('NOT_ON_LOAN', `Copy ${copy.code} is not on loan.`);
+  if (memberId && loan.get('memberId') !== memberId) throw errors.conflict('OTHER_MEMBER', `Copy ${copy.code} is on loan to another member.`);
+  return { snap, copy, loan };
+}
+
 export async function readReturns(tx: Transaction, orgId: string, codes: string[], memberId?: string): Promise<ReturnItem[]> {
-  const items = [];
-  for (const code of codes) {
-    const { snap, copy } = await findByBarcode(tx, orgId, code);
-    if (copy.status !== 'ISSUED' || !copy.activeLoanId) throw errors.conflict('NOT_ON_LOAN', `Copy ${copy.code} is not on loan.`);
-    const loan = await tx.get(db.doc(`orgs/${orgId}/loans/${copy.activeLoanId}`));
-    if (memberId && loan.get('memberId') !== memberId) throw errors.conflict('OTHER_MEMBER', `Copy ${copy.code} is on loan to another member.`);
-    items.push({ snap, copy, loan });
+  const found = await findManyByBarcode(tx, orgId, codes);
+  const out = found.flatMap((f) => (!(f instanceof AppError) && f.copy.status === 'ISSUED' && f.copy.activeLoanId ? [f.copy.activeLoanId] : []));
+  const loans = new Map((await readAll(tx, out.map((l) => db.doc(`orgs/${orgId}/loans/${l}`)))).map((l) => [l.id, l]));
+
+  const items: ReturnItem[] = [];
+  const seen = new Set<string>();
+  for (const f of found) {
+    if (f instanceof AppError) throw f;
+    once(seen, f.snap);
+    items.push(returnItem(f.snap, loans.get(f.copy.activeLoanId ?? ''), memberId));
   }
   return items;
 }
@@ -165,10 +202,12 @@ export const issue = command(
   'circulation-issue',
   z.strictObject({ orgId: id, branchId: id, memberId: id, barcodes }),
   async ({ actor, input, requestId }, tx) => {
-    await actor.require('loans.issue', input.orgId, input.branchId, tx);
-    const { member } = await loadMember(tx, input.orgId, input.memberId);
-    const term = await requireActiveTerm(tx, input.orgId, member);
-    const plan = await readIssue(tx, input.orgId, input.branchId, input.memberId, input.barcodes);
+    // Read together; a refusal is reported in the order listed (permission, then the member, then the books).
+    const [, { member, term }, plan] = await inOrder([
+      actor.require('loans.issue', input.orgId, input.branchId, tx),
+      readBorrower(tx, input.orgId, input.memberId),
+      readIssue(tx, input.orgId, input.branchId, input.memberId, input.barcodes),
+    ]);
     checkLimit(member, term, 0, plan);
 
     const loanIds = writeIssue(tx, input.orgId, input.branchId, member, input.memberId, term, plan, actor.uid, null);
@@ -185,8 +224,10 @@ export const returnCopies = command(
   'circulation-return',
   z.strictObject({ orgId: id, branchId: id, barcodes }),
   async ({ actor, input, requestId }, tx) => {
-    await actor.require('loans.return', input.orgId, input.branchId, tx);
-    const items = await readReturns(tx, input.orgId, input.barcodes);
+    const [, items] = await inOrder([
+      actor.require('loans.return', input.orgId, input.branchId, tx),
+      readReturns(tx, input.orgId, input.barcodes),
+    ]);
     const perMember = new Map<string, number>();
     for (const i of items) perMember.set(i.loan.get('memberId'), (perMember.get(i.loan.get('memberId')) ?? 0) + 1);
 
@@ -214,11 +255,13 @@ export const exchange = command(
   'circulation-exchange',
   z.strictObject({ orgId: id, branchId: id, memberId: id, returnBarcodes: barcodes, issueBarcodes: barcodes }),
   async ({ actor, input, requestId }, tx) => {
-    await actor.require('exchanges.process', input.orgId, input.branchId, tx);
-    const { member } = await loadMember(tx, input.orgId, input.memberId);
-    const term = await requireActiveTerm(tx, input.orgId, member);
-    const returns = await readReturns(tx, input.orgId, input.returnBarcodes, input.memberId);
-    const plan = await readIssue(tx, input.orgId, input.branchId, input.memberId, input.issueBarcodes);
+    // Read together; a refusal is reported in the order listed (permission, the member, the books back, the books out).
+    const [, { member, term }, returns, plan] = await inOrder([
+      actor.require('exchanges.process', input.orgId, input.branchId, tx),
+      readBorrower(tx, input.orgId, input.memberId),
+      readReturns(tx, input.orgId, input.returnBarcodes, input.memberId),
+      readIssue(tx, input.orgId, input.branchId, input.memberId, input.issueBarcodes),
+    ]);
     checkLimit(member, term, returns.length, plan);
 
     const exRef = db.collection(`orgs/${input.orgId}/exchanges`).doc();

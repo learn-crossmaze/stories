@@ -242,6 +242,129 @@ describe('own rider', () => {
   });
 });
 
+// Booking, dispatch and receiving read their documents together: what they report must not depend on which read lands first.
+describe('several things wrong at once', () => {
+  const UNKNOWN = 'COPY-999999-01';
+  const refusal = (p: Promise<unknown>) =>
+    p.then(
+      () => { throw new Error('expected the call to fail'); },
+      (e: { details?: { reason?: string }; message: string }) => ({ reason: e.details?.reason, message: e.message }),
+    );
+  const loanOf = async (copyCode: string) => (await db.collection(`orgs/${org}/loans`).where('copyCode', '==', copyCode).where('status', '==', 'ACTIVE').get()).docs[0].id;
+  const copyByCode = async (code: string) => (await db.collection(`orgs/${org}/copies`).where('code', '==', code).get()).docs[0];
+
+  it('dispatch reports the permission, then who carries it, then the member, then the first book in the order scanned', async () => {
+    await settings({ feeMinor: 0 });
+    const [memberId, other, lapsed] = [await register('Asha Rao'), await register('Ravi Kumar'), await register('Nita Shah')];
+    await subscribe(memberId);
+    await subscribe(other);
+    const [a, b, taken] = await acquire('Angry River', 3);
+    await call(circ.issue, lib, { orgId: org, branchId: central, memberId: other, barcodes: [taken] });
+    const { deliveryId } = await request(memberId);
+    const dispatch = (input: Record<string, unknown>, by = lib, id = deliveryId) => call(orders.dispatch, by, { orgId: org, deliveryId: id, method: 'OWN', riderUid: rider.uid, ...input });
+
+    expect(await failure(dispatch({ riderUid: sa.uid, barcodes: [UNKNOWN] }, rider))).toBe('FORBIDDEN');
+    expect(await failure(dispatch({ riderUid: sa.uid, barcodes: [a, UNKNOWN, taken] }))).toBe('RIDER_NOT_AT_BRANCH');
+    expect(await refusal(dispatch({ barcodes: [a, UNKNOWN, taken] }))).toMatchObject({ reason: 'UNKNOWN_BARCODE', message: expect.stringContaining(UNKNOWN) });
+    expect(await refusal(dispatch({ barcodes: [a, taken, UNKNOWN] }))).toMatchObject({ reason: 'COPY_NOT_AVAILABLE', message: expect.stringContaining(taken) });
+    // The books come before the plan's limit; a member who may not borrow comes before the books.
+    await call(circ.issue, lib, { orgId: org, branchId: central, memberId, barcodes: [a] });
+    expect(await failure(dispatch({ barcodes: [b, taken] }))).toBe('COPY_NOT_AVAILABLE');
+    const [c, e] = await acquire('The Night Train', 2);
+    expect(await failure(dispatch({ barcodes: [b, c] }))).toBe('LIMIT_REACHED');
+    await call(circ.returnCopies, lib, { orgId: org, branchId: central, barcodes: [a] });
+    const unpaid = (await request(lapsed)).deliveryId;
+    expect(await failure(dispatch({ barcodes: [UNKNOWN] }, lib, unpaid))).toBe('NO_ACTIVE_SUBSCRIPTION');
+    expect(await failure(dispatch({ riderUid: sa.uid, barcodes: [UNKNOWN] }, lib, unpaid))).toBe('RIDER_NOT_AT_BRANCH');
+    expect(await get(`members/${memberId}`)).toMatchObject({ activeLoanCount: 0 });
+
+    // Nothing above went out. Books keep the order scanned: each one is listed with its own loan.
+    await dispatch({ barcodes: [e, b] });
+    const { sent } = await delivery(deliveryId);
+    expect(sent.map((s: { copyCode: string }) => s.copyCode)).toEqual([e, b]);
+    for (const s of sent) expect(await get(`loans/${s.loanId}`)).toMatchObject({ copyCode: s.copyCode, copyId: s.copyId, status: 'ACTIVE', deliveryId });
+    expect(await get(`members/${memberId}`)).toMatchObject({ activeLoanCount: 2 });
+  });
+
+  it('a booking checks the reserved books and loans it names, in the order the checks always ran', async () => {
+    await settings({ feeMinor: 0 });
+    const [memberId, other] = [await register('Asha Rao'), await register('Ravi Kumar')];
+    await subscribe(memberId);
+    await subscribe(other);
+    const [x] = await acquire('Angry River');
+    const [y] = await acquire('The Night Train');
+    const [z] = await acquire('Cherry Tree');
+    await call(circ.issue, lib, { orgId: org, branchId: central, memberId, barcodes: [x, y] });
+    await call(circ.issue, lib, { orgId: org, branchId: central, memberId: other, barcodes: [z] });
+    const [lx, ly, lz] = [await loanOf(x), await loanOf(y), await loanOf(z)];
+    const { bookId } = await stock('Rusty Runs Away');
+    const theirHold = (await call<{ reservationId: string }>(res.place, lib, { orgId: org, branchId: central, memberId: other, bookId })).reservationId;
+
+    // Who may book comes first; then the member; then what the booking names.
+    expect(await failure(request(memberId, { kind: 'EXCHANGE', collectLoanIds: [lz] }, rider))).toBe('FORBIDDEN');
+    expect(await failure(request('nomember0000', { kind: 'EXCHANGE', collectLoanIds: [lz] }))).toBe('NOT_FOUND');
+    expect(await failure(request(memberId, { kind: 'EXCHANGE', holdIds: [theirHold], collectLoanIds: [lz] }))).toBe('HOLD_NOT_READY');
+    expect(await failure(request(memberId, { kind: 'EXCHANGE', collectLoanIds: [lx, lz] }))).toBe('NOT_ON_LOAN');
+    expect(await failure(request(memberId, { kind: 'EXCHANGE', collectLoanIds: [] }))).toBe('INVALID_INPUT');
+    expect((await db.collection(`orgs/${org}/deliveries`).get()).size).toBe(0);
+
+    const { deliveryId } = await request(memberId, { kind: 'EXCHANGE', collectLoanIds: [ly, lx] });
+    expect(await delivery(deliveryId)).toMatchObject({ status: 'REQUESTED', collectLoanIds: [ly, lx], collectTitles: ['The Night Train', 'Angry River'], holdTitles: [] });
+    // One open delivery at a time is said before anything about the new booking's books.
+    expect(await failure(request(memberId, { kind: 'EXCHANGE', collectLoanIds: [lz] }))).toBe('DELIVERY_OPEN');
+  });
+
+  it('receiving takes each book by its own record: a custom barcode, and a book already back at the counter is skipped', async () => {
+    await settings({ feeMinor: 0 });
+    const memberId = await register('Asha Rao');
+    await subscribe(memberId);
+    const bookId = await newBook('Panther’s Moon');
+    const { codes: [labelled] } = await call<{ codes: string[] }>(copies.acquire, lib, { orgId: org, branchId: central, bookId, quantity: 1, acquisitionCostMinor: 30000, barcodes: ['LBL-5001'] });
+    const [plain] = await acquire('The Night Train');
+    await call(circ.issue, lib, { orgId: org, branchId: central, memberId, barcodes: ['LBL-5001', plain] });
+    const [labelledLoan, plainLoan] = [await loanOf(labelled), await loanOf(plain)];
+    const { deliveryId } = await request(memberId, { kind: 'PICKUP', collectLoanIds: [labelledLoan, plainLoan] });
+    await call(orders.dispatch, lib, { orgId: org, deliveryId, method: 'OWN', riderUid: rider.uid });
+    await call(orders.report, rider, { orgId: org, deliveryId, outcome: 'DELIVERED', collectedLoanIds: [labelledLoan, plainLoan] });
+    // The member hands one book in at the counter before the bag is back.
+    await call(circ.returnCopies, lib, { orgId: org, branchId: central, barcodes: [plain] });
+
+    expect(await failure(call(orders.receive, rider, { orgId: org, deliveryId }))).toBe('FORBIDDEN');
+    expect(await call(orders.receive, lib, { orgId: org, deliveryId })).toEqual({ status: 'COMPLETED', returned: 1 });
+    expect(await get(`loans/${labelledLoan}`)).toMatchObject({ status: 'RETURNED', returnBranchId: central });
+    expect((await copyByCode(labelled)).data()).toMatchObject({ status: 'UNDER_INSPECTION', activeLoanId: null });
+    expect(await get(`members/${memberId}`)).toMatchObject({ activeLoanCount: 0 });
+    const audit = await db.collection(`orgs/${org}/auditLogs`).where('action', '==', 'delivery.receive').get();
+    expect(audit.docs.map((a) => a.get('after'))).toEqual([{ status: 'COMPLETED', returned: [labelled] }]);
+    expect(await failure(call(orders.receive, lib, { orgId: org, deliveryId }))).toBe('NOT_RETURNING');
+  });
+
+  it('receiving refuses a book that is no longer out on the loan the delivery recorded', async () => {
+    await settings({ feeMinor: 0 });
+    const memberId = await register('Asha Rao');
+    await subscribe(memberId);
+    const [a, b] = await acquire('Room on the Roof', 2);
+    const { deliveryId } = await request(memberId);
+    await call(orders.dispatch, lib, { orgId: org, deliveryId, method: 'OWN', riderUid: rider.uid, barcodes: [a, b] });
+    await call(orders.report, rider, { orgId: org, deliveryId, outcome: 'FAILED', failReason: 'Nobody at home' });
+    const copy = (await copyByCode(b)).ref;
+    const loanId = (await copy.get()).get('activeLoanId') as string;
+
+    // The record says the second copy is out on some other loan (it cannot happen through the app): nothing is taken back.
+    await copy.update({ activeLoanId: 'anotherloan' });
+    expect(await refusal(call(orders.receive, lib, { orgId: org, deliveryId }))).toMatchObject({ reason: 'NOT_ON_LOAN', message: expect.stringContaining(b) });
+    await copy.update({ activeLoanId: loanId });
+    await db.doc(`orgs/${org}/loans/${loanId}`).update({ memberId: 'someoneelse' });
+    expect(await refusal(call(orders.receive, lib, { orgId: org, deliveryId }))).toMatchObject({ reason: 'OTHER_MEMBER', message: expect.stringContaining(b) });
+    expect((await copyByCode(a)).get('status')).toBe('ISSUED');
+    await db.doc(`orgs/${org}/loans/${loanId}`).update({ memberId });
+
+    expect(await call(orders.receive, lib, { orgId: org, deliveryId })).toEqual({ status: 'FAILED', returned: 2 });
+    expect(await get(`loans/${loanId}`)).toMatchObject({ status: 'RETURNED', returnReason: 'DELIVERY_FAILED' });
+    expect(await get(`members/${memberId}`)).toMatchObject({ activeLoanCount: 0 });
+  });
+});
+
 describe('courier apps (Porter)', () => {
   it('quotes, books with the API key and both map points, tracks to delivered, and takes webhooks', async () => {
     await settings({ couriers: { PORTER: { enabled: true, environment: 'TEST', apiKey: 'porter-key-123' } } });

@@ -1,19 +1,30 @@
 # Stories — Cloud Functions API conventions
 
 All app operations are **actions** named `<group>-<name>` (e.g. `branches-create`), implemented in
-`functions/src/core/callable.ts`. They are deployed through **seven router functions** in `asia-south1` —
-`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr` (`functions/src/index.ts`) — plus the
-scheduled jobs listed at the end. The client calls a router with `{ action, ...data }` (`apps/web/src/data/api.ts` picks the router from the
-action prefix). Each Cloud Function is its own Cloud Run service reserving CPU; ~60 separate functions exceeded the
-project's regional CPU quota; the 17 services listed in docs/DEPLOYMENT.md stay well inside it. Routing doesn't change behaviour: the router
-passes the request to the action's own handler, so every check below applies unchanged; unknown actions are rejected.
+`functions/src/core/callable.ts`. They are all served by **one function, `api`**, in `asia-south1`
+(`functions/src/index.ts`), plus the scheduled jobs listed at the end. The client calls it with
+`{ action, ...data }` (`apps/web/src/data/api.ts`). Each Cloud Function is its own Cloud Run service that reserves CPU
+and goes to sleep on its own when idle, so one function for everything means any call from any screen keeps the whole
+backend awake (the services are listed in docs/DEPLOYMENT.md). Routing doesn't change behaviour: the router
+(`core/router.ts`) passes the request to the action's own handler, so every check below applies unchanged; unknown
+actions are rejected (`not-found`, "Unknown action.").
+
+- **The seven older routers** (`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr`) still
+  serve the actions they always served, **for one release**: browser tabs still open on the older app keep working,
+  and so does a web build that reaches people before the backend is deployed (the web falls back to them, with the
+  same `requestId`, while `api` is not there yet). Remove them, and the web's fallback, in a later release.
+- **`{ action: 'ping' }`** is the router's own: a signed-in caller gets `{ ok: true }`, nothing is written. The
+  console and the member area send it when they open and when their tab comes back into view (at most once in
+  10 minutes), so the first real action does not wait for the function to start.
+- **The CORS preflight is cached for 2 hours** (`Access-Control-Max-Age: 7200`), so a call is one HTTP round trip,
+  not two.
 
 ## Two kinds of callable
 
 | Kind | Helper | Pipeline |
 |---|---|---|
-| **Command** (changes data) | `command(name, schema, handler, after?, { prepare? })` | auth → zod validation (strict: unknown fields rejected) → optional `prepare` (network calls, outside the transaction; skipped on a replay) → **one Firestore transaction**: idempotency lookup → handler (permission check via `actor.require`, business rules, writes, `recordAudit`) → store result under `idempotency/{name}:{uid}:{requestId}` → commit → `after` side effects (e.g. claims sync) |
-| **Query / idempotent op** | `query(name, schema, handler)` | auth → validation → handler |
+| **Command** (changes data) | `command(name, schema, handler, after?, { prepare? })` | signed in → zod validation (strict: unknown fields rejected) → optional `prepare` (network calls, outside the transaction; skipped on a replay) → **one Firestore transaction**: idempotency lookup, read together with the caller's membership of `input.orgId`, while their profile loads (a disabled account is refused, also on a replay) → handler (permission check via `actor.require`, business rules, writes, `recordAudit`) → store result under `idempotency/{name}:{uid}:{requestId}` → commit → `after` side effects (e.g. claims sync) |
+| **Query / idempotent op** | `query(name, schema, handler)` | signed in → validation → load the caller (with their membership of `input.orgId`, in the same read) → handler |
 
 - **`requestId`** (UUID, required on commands): the web client generates one per user action (`data/api.ts`
   `command()`); a retry with the same id returns the stored result instead of repeating the change. Records expire
@@ -95,10 +106,10 @@ line per failed document (`path`). Useful Cloud Logging filters: `jsonPayload.fn
 | | `deliveries-create` (`branchId, memberId, kind DELIVER\|PICKUP\|EXCHANGE, date, slot, address{…, geo}, note, holdIds, collectLoanIds`), `deliveries-list`/`-get` (queries), `deliveries-receive`, `deliveries-cancel` (`reason`), `deliveries-recordFee` (`method` OFFLINE_* or WAIVED), `deliveries-sync` (query: courier statuses) | `delivery.manage` at the branch |
 | | `deliveries-dispatch` (`barcodes, method OWN\|MANUAL\|PORTER, riderUid, courier{name, reference, trackingUrl}, waiveFee`; books are issued, a courier app is booked after commit), `deliveries-quote` (query: `courier`), `deliveries-book` (query: book the courier again) | `delivery.assign` at the branch |
 | | `deliveries-mine` (query), `deliveries-report` (`outcome DELIVERED\|FAILED, collectedLoanIds, failReason, handedTo, fee{method, reference}`) | the assigned rider (`delivery.execute`), or `delivery.manage` |
-| | `me-requestDelivery`, `me-cancelDelivery` (members router) | the member's account holder or guardian; plan must include home delivery |
+| | `me-requestDelivery`, `me-cancelDelivery` (member self-service) | the member's account holder or guardian; plan must include home delivery |
 | | `deliveryWebhook` (HTTPS, courier status updates) | the branch's token in `?o=&b=&t=` |
 
-## HRMS callables (`hr` router, docs/HRMS.md)
+## HRMS callables (docs/HRMS.md)
 
 | Group | Callables | Permission |
 |---|---|---|
@@ -135,6 +146,6 @@ line per failed document (`path`). Useful Cloud Logging filters: `jsonPayload.fn
 
 No action may take an input named `action`: the router uses that field for the action name (`test/unit/routers.test.ts` checks it).
 
-`staff-setRoles` (admin router) links or creates the person's employee record, so nobody has two.
+`staff-setRoles` links or creates the person's employee record, so nobody has two.
 
 Scheduled: `scheduled-expireSubscriptions` (hourly), `scheduled-expireHolds` (every 15 minutes), `scheduled-expireDocuments` (daily 00:30 IST), `scheduled-accrueLeave` (daily 00:45 IST), all idempotent.

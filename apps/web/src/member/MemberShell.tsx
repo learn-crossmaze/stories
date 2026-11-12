@@ -7,6 +7,7 @@ import { env } from '../config/env';
 import { paths } from '../paths';
 import { Icon, type IconName, SkeletonRows } from '../shared/ui';
 import { useRouteFocus } from '../shared/useRouteFocus';
+import { useWarmBackend } from '../shared/useWarmBackend';
 import { t } from '../strings';
 import { MemberDataProvider } from './memberData';
 
@@ -59,6 +60,7 @@ function ThemeSwitch() {
 export function MemberShell() {
   const { claims, repo } = useAuth();
   useRouteFocus(MAIN_ID, t.memberAreaAccount);
+  useWarmBackend();
   return (
     <div className="m-site">
       <a className="skip-link" href={`#${MAIN_ID}`}>

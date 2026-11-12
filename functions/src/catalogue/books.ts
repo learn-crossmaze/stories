@@ -232,10 +232,9 @@ export async function planNewBooks(tx: Transaction, input: BulkBook[]) {
     }
     return ids;
   };
-  const [authorIds, publisherIds] = await Promise.all([resolve('authors'), resolve('publishers')]);
-  const counter = fresh.length
-    ? await reserveCodes(tx, { kind: 'book', pattern: await bookPattern(tx), values: {}, base: 'counters', count: fresh.length, taken: (c) => existingCodes(tx, 'books', c) })
-    : null;
+  const [authorIds, publisherIds, pattern] = await Promise.all([resolve('authors'), resolve('publishers'), fresh.length ? bookPattern(tx) : null]);
+  const counter =
+    pattern === null ? null : await reserveCodes(tx, { kind: 'book', pattern, values: {}, base: 'counters', count: fresh.length, taken: (c) => existingCodes(tx, 'books', c) });
   const created = fresh.map((it, i) => ({ isbn: it.isbn, bookId: db.collection('books').doc().id, code: counter!.codes[i], number: counter!.number + i, title: it.title }));
   const newRefs = [...authorIds.values(), ...publisherIds.values()].filter((r) => r.isNew).map((r) => r.name);
   /** The title each input ends up as (new or already in the catalogue), in input order. */

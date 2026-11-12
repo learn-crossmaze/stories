@@ -18,4 +18,25 @@ export async function reserveCounter(tx: Transaction, path: string) {
   };
 }
 
+/**
+ * The same for several counters, in one read: a counter per distinct path
+ * (a path listed twice is read once, so its numbers are handed out once).
+ */
+export async function reserveCounters(tx: Transaction, paths: string[]) {
+  const unique = [...new Set(paths)];
+  const refs = unique.map((p) => db.doc(p));
+  const snaps = refs.length ? await tx.getAll(...refs) : [];
+  const counters = new Map<string, Awaited<ReturnType<typeof reserveCounter>>>();
+  unique.forEach((path, i) => {
+    const value = ((snaps[i].exists ? snaps[i].get('next') : 1) as number) ?? 1;
+    counters.set(path, {
+      value,
+      commit(count = 1) {
+        tx.set(refs[i], { next: value + count }, { merge: true });
+      },
+    });
+  });
+  return counters;
+}
+
 export const pad = (n: number, width: number) => String(n).padStart(width, '0');

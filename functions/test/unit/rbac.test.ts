@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import type { Transaction } from 'firebase-admin/firestore';
+import { describe, expect, it, vi } from 'vitest';
 
 import { buildClaims } from '../../src/core/claims.js';
-import { coversBranch, grantableBy, permissionsOf, rolesGrant } from '../../src/core/rbac.js';
+import { Actor, coversBranch, grantableBy, permissionsOf, rolesGrant } from '../../src/core/rbac.js';
 import type { Membership } from '../../src/core/rbac.js';
 import { PERMISSION_CODES } from '../../src/generated/rbac.js';
 
@@ -67,5 +68,51 @@ describe('permissions', () => {
     expect([...grantableBy(['SENIOR_LIBRARIAN'])].sort()).toEqual(['DELIVERY_PERSON', 'EMPLOYEE', 'LIBRARIAN']);
     expect(grantableBy(['BRANCH_OWNER']).has('BRANCH_OWNER')).toBe(false);
     expect(grantableBy(['LIBRARIAN']).size).toBe(0);
+  });
+});
+
+describe('the membership the command pipeline has already read', () => {
+  const snap = (data: Membership | null) => ({ exists: !!data, data: () => data ?? undefined }) as unknown as FirebaseFirestore.DocumentSnapshot;
+  /** A transaction whose reads are counted; any read it serves finds no membership. */
+  const fakeTx = () => {
+    const get = vi.fn(async () => snap(null));
+    return { tx: { get } as unknown as Transaction, get };
+  };
+  const actor = () => new Actor('u', null, true, { uid: 'u', email: null, displayName: null, status: 'ACTIVE', platformRoles: [], claimsVersion: 0 });
+
+  it('serves the permission check of that organization in that transaction without another read', async () => {
+    const a = actor();
+    const { tx, get } = fakeTx();
+    a.prime(tx, 'orgA', snap(m('orgA', ['LIBRARIAN'], ['b1'])));
+    expect(await a.can('loans.issue', 'orgA', 'b1', tx)).toBe(true);
+    expect(await a.can('loans.issue', 'orgA', 'b2', tx)).toBe(false);
+    expect((await a.permissions('orgA', tx)).branchIds).toEqual(['b1']);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('is ignored for another organization and for another transaction', async () => {
+    const a = actor();
+    const { tx, get } = fakeTx();
+    const other = fakeTx();
+    a.prime(tx, 'orgA', snap(m('orgA', ['LIBRARIAN'], ['*'])));
+    expect(await a.can('loans.issue', 'orgB', undefined, tx)).toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(await a.can('loans.issue', 'orgA', undefined, other.tx)).toBe(false);
+    expect(other.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a revoked or missing membership as none, and is gone once cleared', async () => {
+    const a = actor();
+    const { tx, get } = fakeTx();
+    a.prime(tx, 'orgA', snap(m('orgA', ['LIBRARIAN'], ['*'], 'REVOKED')));
+    expect(await a.can('loans.issue', 'orgA', undefined, tx)).toBe(false);
+    a.prime(tx, 'orgA', snap(null));
+    expect(await a.membership('orgA', tx)).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+
+    a.prime(tx, 'orgA', snap(m('orgA', ['LIBRARIAN'], ['*'])));
+    a.clearPrime();
+    expect(await a.can('loans.issue', 'orgA', undefined, tx)).toBe(false); // read again through the transaction
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

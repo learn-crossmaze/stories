@@ -59,17 +59,21 @@ changes money, stock or membership state runs in **Cloud Functions inside Firest
 ### 0.3 Core backend pipeline (`functions/src/core`)
 
 - `query(name, schema, handler)` for reads and `command(name, schema, handler, after?)` for writes. Command
-  pipeline: auth → load `Actor` (uid, email, emailVerified, profile) → zod validate (+ `requestId: uuid`) → **one
-  Firestore transaction** running the handler (permission checks, rules, writes, audit) → result stored in
+  pipeline: signed in → zod validate (+ `requestId: uuid`) → load `Actor` (uid, email, emailVerified, profile; a
+  disabled account is refused) in parallel with the transaction's first read → **one Firestore transaction** (that
+  first read fetches the idempotency record and the caller's membership of `input.orgId` together, so the handler's
+  permission check needs no read of its own) running the handler (permission checks, rules, writes, audit) → result stored in
   `idempotency/{name}:{uid}:{requestId}` (TTL 30 days) so a retry returns the stored result → optional `after`
   side effect post-commit (idempotent; retried with the same requestId until it succeeds). An optional `prepare`
   step does network work before the transaction (`discard` undoes it if the transaction doesn't commit). The web
   `command()` retries transient failures with the same requestId. App Check enforcement behind `ENFORCE_APP_CHECK`.
-- **Routers:** actions are grouped into a few deployed callables to stay within the Cloud Run CPU quota —
-  `admin` (platform, organization, `whatsapp-*`), `catalogue`, `inventory`, `members`, `billing`, `circulation`,
-  `hr` — called as `{ action: 'books-create', ...data }`. The web maps action prefixes to routers
-  (`apps/web/src/data/api.ts`, kept equal to `functions/src/routes.ts` by a unit test); `me-*` actions go to
-  `members`. Unknown action → 404, which the web reports as "backend outdated, deploy".
+- **Router:** every action is served by one deployed callable, `api` (512 MiB), called as
+  `{ action: 'books-create', ...data }`, so any call keeps the whole backend awake (separate functions each go
+  cold on their own). `routes.ts` joins the domains' action tables and refuses a duplicate name. The router also
+  answers `{ action: 'ping' }` for signed-in callers (the app sends it on open, at most once in 10 minutes) and lets
+  browsers cache the CORS preflight for 2 hours. Unknown action → 404, which the web reports as "backend outdated,
+  deploy". The seven older routers (`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr`)
+  are kept for one release, and the web falls back to them (same requestId) while `api` is not deployed yet.
 - Scheduled (all idempotent): `scheduled-expireHolds` (every 15 min: expired reservation holds pass on),
   `scheduled-expireSubscriptions` (hourly: ended terms EXPIRED, pre-paid renewals take over, WhatsApp renewal
   reminders 7 and 1 days ahead), `scheduled-expireDocuments` (employee document expiry reminders) and

@@ -1,14 +1,16 @@
 import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
-import { currentTerm, requireActiveTerm } from '../billing/term.js';
-import { checkLimit, readIssue, readReturns, writeIssue, writeReturns } from '../circulation/circulation.js';
+import { currentTerm } from '../billing/term.js';
+import { checkLimit, readBorrower, readIssue, type ReturnItem, returnItem, writeIssue, writeReturns } from '../circulation/circulation.js';
 import { recordAudit } from '../core/audit.js';
 import { type CallContext, command } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import type { Actor } from '../core/rbac.js';
+import { inOrder, readAll } from '../core/reads.js';
 import { id, reason } from '../core/schemas.js';
+import { copyRef } from '../inventory/copyOps.js';
 import { loadMember } from '../members/members.js';
 import type { Member } from '../members/model.js';
 import { queueWhatsApp } from '../messaging/whatsapp.js';
@@ -83,14 +85,26 @@ export async function createDelivery(
   who: 'MEMBER' | 'STAFF',
   authorize: (member: Member) => Promise<void>,
 ) {
-  const branch = await tx.get(branchRef(input.orgId, input.branchId));
+  // Everything the checks below look at, read together (none of these reads can refuse). The checks then run in
+  // the order they always have, so the caller is told the same thing, and nothing about the member before `authorize`.
+  const [[branch, memberSnap, ...named], open] = await inOrder([
+    tx.getAll(
+      branchRef(input.orgId, input.branchId),
+      db.doc(`orgs/${input.orgId}/members/${input.memberId}`),
+      ...input.holdIds.map((h) => db.doc(`orgs/${input.orgId}/reservations/${h}`)),
+      ...input.collectLoanIds.map((l) => db.doc(`orgs/${input.orgId}/loans/${l}`)),
+    ),
+    tx.get(deliveriesCol(input.orgId).where('memberId', '==', input.memberId).where('status', 'in', [...OPEN_STATUSES]).limit(1)),
+  ]);
+  const holds = named.slice(0, input.holdIds.length);
+  const loans = named.slice(input.holdIds.length);
   if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
   const s = settingsOf(branch);
   if (!s.enabled) throw errors.conflict('DELIVERY_OFF', `${branch.get('name')} does not offer home delivery yet.`);
-  const { member } = await loadMember(tx, input.orgId, input.memberId);
+  if (!memberSnap.exists) throw errors.notFound('Member');
+  const member = memberSnap.data() as Member;
   await authorize(member);
   if (member.status !== 'ACTIVE') throw errors.conflict('MEMBER_INACTIVE', `This membership is ${member.status.toLowerCase()}.`);
-  const open = await tx.get(deliveriesCol(input.orgId).where('memberId', '==', input.memberId).where('status', 'in', [...OPEN_STATUSES]).limit(1));
   if (!open.empty) throw errors.conflict('DELIVERY_OPEN', `${member.fullName} already has a home delivery booked. Change or cancel that one first.`);
   if (s.pincodes.length && !s.pincodes.includes(input.address.postalCode)) {
     throw errors.conflict('NOT_SERVICEABLE', `${branch.get('name')} does not deliver to PIN code ${input.address.postalCode} yet.`);
@@ -103,13 +117,11 @@ export async function createDelivery(
   if (sends(input.kind) && !input.holdIds.length && input.note.length < 3) {
     throw errors.invalid('Choose reserved books that are ready, or write which books you would like in the note.');
   }
-  const holds = await Promise.all(input.holdIds.map((h) => tx.get(db.doc(`orgs/${input.orgId}/reservations/${h}`))));
   for (const h of holds) {
     if (!h.exists || h.get('memberId') !== input.memberId || h.get('status') !== 'ALLOCATED' || h.get('branchId') !== input.branchId) {
       throw errors.conflict('HOLD_NOT_READY', 'One of the reserved books is no longer waiting for you at this branch.');
     }
   }
-  const loans = await Promise.all(input.collectLoanIds.map((l) => tx.get(db.doc(`orgs/${input.orgId}/loans/${l}`))));
   for (const l of loans) {
     if (!l.exists || l.get('memberId') !== input.memberId || l.get('status') !== 'ACTIVE') throw errors.conflict('NOT_ON_LOAN', 'One of the books to collect is not on loan to you any more.');
   }
@@ -203,51 +215,56 @@ export const dispatch = command(
   }),
   async ({ actor, input, requestId }, tx) => {
     const { ref, d } = await loadDelivery(tx, input.orgId, input.deliveryId);
-    await actor.require('delivery.assign', input.orgId, d.branchId, tx);
+    const [, branch] = await inOrder([actor.require('delivery.assign', input.orgId, d.branchId, tx), tx.get(branchRef(input.orgId, d.branchId))]);
     if (d.status !== 'REQUESTED') throw errors.conflict('NOT_REQUESTED', 'This delivery has already been dispatched or closed.');
-    const branch = await tx.get(branchRef(input.orgId, d.branchId));
     const s = settingsOf(branch);
     if (!s.enabled) throw errors.conflict('DELIVERY_OFF', 'Home delivery is switched off for this branch.');
     if (new Set(input.barcodes).size !== input.barcodes.length) throw errors.invalid('The same copy is listed twice.');
     if (sends(d.kind) && !input.barcodes.length) throw errors.invalid('Scan the books going out.');
     if (!sends(d.kind) && input.barcodes.length) throw errors.invalid('A pickup sends no books.');
 
-    let rider: Delivery['rider'] = null;
-    let courier: Delivery['courier'] = null;
-    let provider: Delivery['provider'] = null;
     const method = input.method as Method;
-    if (method === 'OWN') {
-      if (!s.methods.OWN) throw errors.conflict('METHOD_OFF', 'Delivery by the branch’s own staff is switched off in Settings → Delivery.');
-      if (!input.riderUid) throw errors.invalid('Choose who is delivering.');
-      rider = await loadRider(tx, input.orgId, d.branchId, input.riderUid);
-    } else if (method === 'MANUAL') {
-      if (!s.methods.MANUAL) throw errors.conflict('METHOD_OFF', 'Other couriers are switched off in Settings → Delivery.');
-      if (!input.courier) throw errors.invalid('Enter the courier’s name.');
-      courier = { name: input.courier.name, reference: input.courier.reference, trackingUrl: input.courier.trackingUrl || null };
-    } else {
+    // Who carries it: the rider, the courier entered by hand, or a courier app to book.
+    const readCarrier = async (): Promise<Pick<Delivery, 'rider' | 'courier' | 'provider'>> => {
+      if (method === 'OWN') {
+        if (!s.methods.OWN) throw errors.conflict('METHOD_OFF', 'Delivery by the branch’s own staff is switched off in Settings → Delivery.');
+        if (!input.riderUid) throw errors.invalid('Choose who is delivering.');
+        return { rider: await loadRider(tx, input.orgId, d.branchId, input.riderUid), courier: null, provider: null };
+      }
+      if (method === 'MANUAL') {
+        if (!s.methods.MANUAL) throw errors.conflict('METHOD_OFF', 'Other couriers are switched off in Settings → Delivery.');
+        if (!input.courier) throw errors.invalid('Enter the courier’s name.');
+        return { rider: null, courier: { name: input.courier.name, reference: input.courier.reference, trackingUrl: input.courier.trackingUrl || null }, provider: null };
+      }
       const c = courierFor(method)!;
       await courierConnection(input.orgId, d.branchId, method, tx);
       if (!(c.kinds as readonly string[]).includes(d.kind)) throw errors.conflict('COURIER_ONE_WAY', `${c.label} carries one way: send an exchange with your own staff, or as a delivery and a pickup.`);
       if (!s.location) throw errors.conflict('NO_BRANCH_LOCATION', `Set the branch’s map location in Settings → Delivery before booking ${c.label}.`);
       if (!d.address.geo) throw errors.conflict('NO_MEMBER_LOCATION', `${c.label} needs the member’s map location. Add it to the delivery address first.`);
-      provider = { key: method as never, orderId: null, status: 'BOOKING', raw: null, trackingUrl: null, fareMinor: null, partner: null, error: null };
-    }
-
+      return { rider: null, courier: null, provider: { key: method as never, orderId: null, status: 'BOOKING', raw: null, trackingUrl: null, fareMinor: null, partner: null, error: null } };
+    };
     // Books going out are issued now (same rules and member counters as the desk).
-    let issue: (() => Item[]) | null = null;
-    if (sends(d.kind)) {
-      const { member } = await loadMember(tx, input.orgId, d.memberId);
-      const term = await requireActiveTerm(tx, input.orgId, member);
-      const plan = await readIssue(tx, input.orgId, d.branchId, d.memberId, input.barcodes);
+    const readBooks = async () => {
+      if (!sends(d.kind)) return null;
+      const [{ member, term }, plan, collecting] = await inOrder([
+        readBorrower(tx, input.orgId, d.memberId),
+        readIssue(tx, input.orgId, d.branchId, d.memberId, input.barcodes),
+        readAll(tx, d.kind === 'EXCHANGE' ? d.collectLoanIds.map((l) => db.doc(`orgs/${input.orgId}/loans/${l}`)) : []),
+      ]);
       // An exchange hands over the new books as it takes the old ones: those count as coming back.
-      const coming = d.kind === 'EXCHANGE' ? (await Promise.all(d.collectLoanIds.map((l) => tx.get(db.doc(`orgs/${input.orgId}/loans/${l}`))))).filter((l) => l.get('status') === 'ACTIVE').length : 0;
-      checkLimit(member, term, coming, plan);
-      issue = () => {
-        const loanIds = writeIssue(tx, input.orgId, d.branchId, member, d.memberId, term, plan, actor.uid, null, { channel: 'DELIVERY', deliveryId: input.deliveryId, notify: false });
-        return plan.copies.map((c, i) => ({ loanId: loanIds[i], copyId: c.snap.id, copyCode: c.copy.code, bookTitle: c.copy.bookTitle }));
-      };
+      checkLimit(member, term, collecting.filter((l) => l.get('status') === 'ACTIVE').length, plan);
+      return { member, term, plan };
+    };
+    // Read together; a refusal is reported in the order listed (who carries it, then the member, then the books).
+    const [{ rider, courier, provider }, books] = await inOrder([readCarrier(), readBooks()]);
+
+    const sent: Item[] = [];
+    if (books) {
+      const { member, term, plan } = books;
+      const loanIds = writeIssue(tx, input.orgId, d.branchId, member, d.memberId, term, plan, actor.uid, null, { channel: 'DELIVERY', deliveryId: input.deliveryId, notify: false });
+      // Loan i is copy i: both follow the order the books were scanned in.
+      plan.copies.forEach((c, i) => sent.push({ loanId: loanIds[i], copyId: c.snap.id, copyCode: c.copy.code, bookTitle: c.copy.bookTitle }));
     }
-    const sent: Item[] = issue?.() ?? [];
     const fee = input.waiveFee ? { amountMinor: 0, status: 'FREE' as const } : d.fee;
     const next: Delivery = { ...d, status: 'OUT', method, rider, courier, provider, sent, fee };
     tx.update(ref, {
@@ -330,19 +347,30 @@ export const report = command(
  */
 export const receive = command('deliveries-receive', z.strictObject({ orgId: id, deliveryId: id }), async ({ actor, input, requestId }, tx) => {
   const { ref, d } = await loadDelivery(tx, input.orgId, input.deliveryId);
-  await actor.require('delivery.manage', input.orgId, d.branchId, tx);
-  if (d.status !== 'RETURNING') throw errors.conflict('NOT_RETURNING', 'There is nothing to receive for this delivery.');
   const failed = d.outcome === 'FAILED';
   const groups = [
     { items: d.collected, notify: true },
     { items: failed ? d.sent : [], notify: false },
   ];
-  const read = await Promise.all(groups.map(async (g) => {
-    const loans = await Promise.all(g.items.map((i) => tx.get(db.doc(`orgs/${input.orgId}/loans/${i.loanId}`))));
-    const codes = g.items.filter((_, k) => loans[k].get('status') === 'ACTIVE').map((i) => i.copyCode);
-    return { ...g, items: codes.length ? await readReturns(tx, input.orgId, codes, d.memberId) : [] };
-  }));
-  const member = await tx.get(db.doc(`orgs/${input.orgId}/members/${d.memberId}`));
+  // One read, by id: the member, and each book's copy and loan (the delivery recorded both when the book left or was collected).
+  const all = groups.flatMap((g) => g.items);
+  const refs = [
+    db.doc(`orgs/${input.orgId}/members/${d.memberId}`),
+    ...all.map((i) => copyRef(input.orgId, i.copyId)),
+    ...all.map((i) => db.doc(`orgs/${input.orgId}/loans/${i.loanId}`)),
+  ];
+  const [, [member, ...docs]] = await inOrder([actor.require('delivery.manage', input.orgId, d.branchId, tx), tx.getAll(...refs)]);
+  if (d.status !== 'RETURNING') throw errors.conflict('NOT_RETURNING', 'There is nothing to receive for this delivery.');
+  const copies = new Map(docs.slice(0, all.length).map((c) => [c.id, c]));
+  const loans = new Map(docs.slice(all.length).map((l) => [l.id, l]));
+  // The book as a return, or nothing when its loan is over already (returned at the counter, or declared lost).
+  const back = (item: Item): ReturnItem[] => {
+    const [snap, loan] = [copies.get(item.copyId)!, loans.get(item.loanId)!];
+    if (loan.get('status') !== 'ACTIVE') return [];
+    if (!snap.exists) throw errors.notFound('Copy');
+    return [returnItem(snap, loan, d.memberId)];
+  };
+  const read = groups.map((g) => ({ ...g, items: g.items.flatMap(back) }));
   const total = read.reduce((n, g) => n + g.items.length, 0);
   for (const g of read) writeReturns(tx, input.orgId, d.branchId, g.items, actor.uid, null, { notify: g.notify });
   for (const i of read[1].items) tx.update(i.loan.ref, { returnReason: 'DELIVERY_FAILED' });

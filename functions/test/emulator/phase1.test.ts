@@ -662,6 +662,80 @@ describe('M1.5 circulation', () => {
     expect((await get(`members/${m}`)).activeLoanCount).toBe(2);
   });
 
+  // The desk reads the member and all the books together: what it reports must not depend on which read lands first.
+  const refusal = (p: Promise<unknown>) =>
+    p.then(
+      () => { throw new Error('expected the call to fail'); },
+      (e: { details?: { reason?: string }; message: string }) => ({ reason: e.details?.reason, message: e.message }),
+    );
+  const UNKNOWN = 'COPY-999999-01';
+
+  it('with several things wrong, reports the first problem in the order scanned (and changes nothing)', async () => {
+    const [m, other, lapsed] = [await register('Asha'), await register('Ben Das'), await register('Nita')];
+    await subscribe(m);
+    await subscribe(other);
+    const [a, b, c] = await acquire(bookId, 3);
+    await issue(other, [b]);
+    const swap = (returnBarcodes: string[], issueBarcodes: string[], memberId = m) =>
+      call(circ.exchange, lib, { orgId: org, branchId: central, memberId, returnBarcodes, issueBarcodes });
+
+    // Issue: the second barcode is unknown and the third copy is out.
+    expect(await refusal(issue(m, [a, UNKNOWN, b]))).toMatchObject({ reason: 'UNKNOWN_BARCODE', message: expect.stringContaining(UNKNOWN) });
+    expect(await refusal(issue(m, [a, b, UNKNOWN]))).toMatchObject({ reason: 'COPY_NOT_AVAILABLE', message: expect.stringContaining(b) });
+    // The member comes before the books, and the plan's limit after them.
+    expect(await failure(issue('nomember0000', [UNKNOWN]))).toBe('NOT_FOUND');
+    expect(await failure(issue(lapsed, [UNKNOWN, b]))).toBe('NO_ACTIVE_SUBSCRIPTION');
+    expect(await failure(issue(other, [a, c, UNKNOWN]))).toBe('UNKNOWN_BARCODE');
+    expect(await failure(issue(other, [a, c]))).toBe('LIMIT_REACHED');
+    expect((await db.collection(`orgs/${org}/loans`).get()).size).toBe(1);
+
+    // Return: one book is fine, the next is on the shelf, the last is unknown.
+    await issue(m, [a]);
+    expect(await refusal(giveBack([a, c, UNKNOWN]))).toMatchObject({ reason: 'NOT_ON_LOAN', message: expect.stringContaining(c) });
+    expect(await failure(giveBack([a, UNKNOWN, c]))).toBe('UNKNOWN_BARCODE');
+    expect((await get(`members/${m}`)).activeLoanCount).toBe(1);
+
+    // Exchange: the member, then the books coming back, then the books going out.
+    expect(await failure(swap([a], [UNKNOWN], lapsed))).toBe('NO_ACTIVE_SUBSCRIPTION');
+    expect(await refusal(swap([c], [UNKNOWN]))).toMatchObject({ reason: 'NOT_ON_LOAN', message: expect.stringContaining(c) });
+    expect(await refusal(swap([a, b], [UNKNOWN]))).toMatchObject({ reason: 'OTHER_MEMBER', message: expect.stringContaining(b) });
+    expect(await refusal(swap([a], [b, UNKNOWN]))).toMatchObject({ reason: 'COPY_NOT_AVAILABLE', message: expect.stringContaining(b) });
+    expect(await get(`members/${m}`)).toMatchObject({ activeLoanCount: 1, lifetimeExchanges: 0 });
+
+    // Several books at once keep the order scanned: loan i is barcode i.
+    const { loanIds } = await swap([a], [c]) as { loanIds: string[] };
+    expect((await get(`loans/${loanIds[0]}`)).copyCode).toBe(c);
+    const back = await giveBack([b, c]) as { loanIds: string[] };
+    expect(await Promise.all(back.loanIds.map(async (l) => (await get(`loans/${l}`)).copyCode))).toEqual([b, c]);
+  });
+
+  it('refuses a caller without the permission before saying anything about the member or the books', async () => {
+    const outsider = await createUser('outsider@stories.test');
+    const m = await register('Asha');
+    for (const by of [outsider, fin]) {
+      for (const memberId of ['nomember0000', m]) {
+        expect(await failure(call(circ.issue, by, { orgId: org, branchId: central, memberId, barcodes: [UNKNOWN] }))).toBe('FORBIDDEN');
+        expect(await failure(call(circ.exchange, by, { orgId: org, branchId: central, memberId, returnBarcodes: [UNKNOWN], issueBarcodes: ['COPY-999999-02'] }))).toBe('FORBIDDEN');
+      }
+      expect(await failure(call(circ.returnCopies, by, { orgId: org, branchId: central, barcodes: [UNKNOWN] }))).toBe('FORBIDDEN');
+    }
+    // A librarian of another branch only: the branch is part of the permission.
+    expect(await failure(call(circ.issue, lib2, { orgId: org, branchId: north, memberId: 'nomember0000', barcodes: [UNKNOWN] }))).toBe('FORBIDDEN');
+  });
+
+  it('a copy scanned twice (by its own barcode and by its copy code) is refused, not issued or returned twice', async () => {
+    const m = await register('Asha');
+    await subscribe(m);
+    const { codes: [code] } = await call<{ codes: string[] }>(copies.acquire, lib, { orgId: org, branchId: central, bookId, quantity: 1, acquisitionCostMinor: 0, barcodes: ['LBL-7001'] });
+    expect(await failure(issue(m, ['LBL-7001', code]))).toBe('INVALID_INPUT');
+    expect((await db.collection(`orgs/${org}/loans`).get()).size).toBe(0);
+    await issue(m, ['LBL-7001']);
+    expect(await failure(giveBack([code, 'LBL-7001']))).toBe('INVALID_INPUT');
+    expect((await get(`members/${m}`)).activeLoanCount).toBe(1);
+    await giveBack([code]);
+    expect((await get(`members/${m}`)).activeLoanCount).toBe(0);
+  });
+
   it('allows unlimited exchanges (100 in a row) and never computes a due date', async () => {
     const m = await register('Asha');
     const sub = await subscribe(m);
@@ -906,6 +980,16 @@ describe('numbering settings', () => {
     await register('Asha'); // CEN-M000001
     await setNumbering(central, { member: 'CEN-M00000{SEQ}' });
     expect(await failure(register('Ravi'))).toBe('CODE_TAKEN');
+  });
+
+  it('refuses a copy pattern that would repeat a copy code, whatever the barcodes, and uses up no numbers', async () => {
+    expect(await acquire(bookId, 2)).toEqual(['BK000001-CP01', 'BK000001-CP02']);
+    await setNumbering(central, { copy: 'BK{BOOK}-CP0{SEQ}' });
+    // BK000001-CP01 is taken both as a code and as a barcode: the pattern is what staff are told about.
+    expect(await failure(acquire(bookId, 1))).toBe('CODE_TAKEN');
+    expect(await failure(call(copies.acquire, lib, { orgId: org, branchId: central, bookId, quantity: 1, acquisitionCostMinor: 0, barcodes: ['PRINTED-0001'] }))).toBe('CODE_TAKEN');
+    await setNumbering(central, { copy: '' });
+    expect(await acquire(bookId, 1)).toEqual(['BK000001-CP03']);
   });
 
   it('numbers shelves per branch when the code is left blank', async () => {

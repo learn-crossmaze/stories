@@ -1,7 +1,8 @@
 import { FieldValue, type DocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 
-import { errors } from '../core/errors.js';
+import { type AppError, errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
+import { inOrder, readAll } from '../core/reads.js';
 import { canTransition, type CopyStatus, describeStatus } from './copyState.js';
 
 export interface Copy {
@@ -38,8 +39,46 @@ export async function findByBarcode(tx: Transaction, orgId: string, barcode: str
   if (index.exists) return loadCopy(tx, orgId, index.get('copyId') as string);
   // Custom barcodes differ from the copy code, which staff also type or pick.
   const byCode = await tx.get(db.collection(`orgs/${orgId}/copies`).where('code', '==', key).limit(1));
-  if (byCode.empty) throw errors.conflict('UNKNOWN_BARCODE', `No copy with barcode ${barcode} in this organization.`);
+  if (byCode.empty) throw unknownBarcode(barcode);
   return { snap: byCode.docs[0], copy: byCode.docs[0].data() as Copy };
+}
+
+const unknownBarcode = (barcode: string) => errors.conflict('UNKNOWN_BARCODE', `No copy with barcode ${barcode} in this organization.`);
+
+export interface FoundCopy {
+  snap: DocumentSnapshot;
+  copy: Copy;
+}
+
+/**
+ * `findByBarcode` for several barcodes at once: two reads for the whole list,
+ * instead of two for each barcode one after another. The answers are in the
+ * order of `barcodes`. Nothing is thrown for a barcode that does not resolve:
+ * its place holds the error `findByBarcode` would have thrown, for the caller
+ * to throw when it reaches that barcode, so the first problem in scan order is
+ * the one reported.
+ */
+export async function findManyByBarcode(tx: Transaction, orgId: string, barcodes: string[]): Promise<(FoundCopy | AppError)[]> {
+  const keys = barcodes.map((b) => b.trim().toUpperCase());
+  // A code with a slash can't be an index document's name: it skips the index and, like any miss, is looked up by copy code.
+  const indexed = keys.map((key) => !key.includes('/'));
+  const found = await readAll(tx, keys.filter((_, n) => indexed[n]).map((key) => db.doc(`orgs/${orgId}/barcodes/${key}`)));
+  let at = 0;
+  const index = keys.map((_, n) => (indexed[n] ? found[at++] : null));
+  // The copies the index names, together with (for custom barcodes, which miss the index) the lookups by copy code.
+  const [copies, byCode] = await inOrder([
+    readAll(tx, index.flatMap((i) => (i?.exists ? [copyRef(orgId, i.get('copyId') as string)] : []))),
+    Promise.all(index.map((i, n) => (i?.exists ? null : tx.get(db.collection(`orgs/${orgId}/copies`).where('code', '==', keys[n]).limit(1))))),
+  ]);
+  const byId = new Map(copies.map((c) => [c.id, c]));
+  return index.map((i, n) => {
+    if (!i?.exists) {
+      const snap = byCode[n]!.docs.at(0);
+      return snap ? { snap, copy: snap.data() as Copy } : unknownBarcode(barcodes[n]);
+    }
+    const snap = byId.get(i.get('copyId') as string)!;
+    return snap.exists ? { snap, copy: snap.data() as Copy } : errors.notFound('Copy');
+  });
 }
 
 export interface CopyEvent {

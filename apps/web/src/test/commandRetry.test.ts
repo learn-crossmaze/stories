@@ -1,5 +1,5 @@
 import { FirebaseError } from 'firebase/app';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const calls: { name: string; data: Record<string, unknown> }[] = [];
 let outcomes: (Error | unknown)[] = [];
@@ -14,9 +14,16 @@ vi.mock('firebase/functions', () => ({
 }));
 vi.mock('../data/services', () => ({ services: () => ({ fns: {}, db: {} }) }));
 
-const { command, isRetryable } = await import('../data/api');
+const { call, command, isRetryable } = await import('../data/api');
 
 const fail = (code: string, message = code) => new FirebaseError(`functions/${code}`, message);
+
+// The backend has answered once, as in any running session, so no failure below is taken for a backend that is
+// older than the app (that fallback is covered in apiBackend.test.ts).
+beforeAll(async () => {
+  outcomes = [{}];
+  await call('users-ensureProfile', {});
+});
 
 beforeEach(() => {
   calls.length = 0;
@@ -60,6 +67,8 @@ describe('command', () => {
 
   it('treats only server-silent internal errors as a dropped connection', () => {
     expect(isRetryable(fail('internal', 'internal'))).toBe(true);
+    expect(isRetryable(fail('internal', 'internal [0]'))).toBe(true); // as the SDK words it: the status it appends is 0, no answer
+    expect(isRetryable(fail('internal', 'internal [500]'))).toBe(false);
     expect(isRetryable(fail('internal', 'Something went wrong on our side. Please try again.'))).toBe(false);
     expect(isRetryable(new Error('x'))).toBe(false);
   });

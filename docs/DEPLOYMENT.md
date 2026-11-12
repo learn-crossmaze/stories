@@ -80,15 +80,26 @@ Later deploys need only `git pull` and `npm run deploy:backend`: the functions p
 installs any new function dependencies before building.
 
 The first deploy enables the Cloud Functions, Cloud Build, Artifact Registry and Cloud Run APIs (a few minutes).
-Scheduled functions also enable Cloud Scheduler. The backend deploys as **18 services** (`maxInstances: 5` each) to
-stay inside the project's Cloud Run CPU quota: 7 routers (`admin`, `catalogue`, `inventory`, `members`, `billing`,
-`circulation`, `hr`), 3 webhooks (`razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`), the public website's
+Scheduled functions also enable Cloud Scheduler. The backend deploys as **19 services** (`maxInstances: 5` each),
+well inside the project's Cloud Run CPU quota: `api`, which serves every action of the app (512 MiB); the 7 older
+routers (`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr`), kept for one release so
+that open browser tabs and a web build that goes out before or after the backend keep working (remove them from
+`functions/src/index.ts` in a later release; the deploy then asks to delete them, and 12 services remain);
+3 webhooks (`razorpayWebhook`, `whatsappWebhook`, `deliveryWebhook`), the public website's
 data endpoint `sitePublic` and its server-rendered pages `sitePages` (blog, branch pages, About, sitemap), the `whatsapp-send`
 trigger and 5 scheduled jobs (`expireSubscriptions` hourly, `expireHolds` and `maintenance` every 15 minutes,
 `expireDocuments` and `accrueLeave` daily). `maintenance` finishes interrupted work: token updates after role changes
 (users marked `claimsStale`), WhatsApp messages whose send never ran or was cut off, and the website's book shelves
-(rebuilt every 6 hours). Don't split actions back into separate exported functions: add them to a router
-(`functions/src/routes.ts`). When a deploy removes
+(rebuilt every 6 hours). Don't split actions back into separate exported functions: a new action in its domain's
+`index.ts` is served by `api` (`functions/src/routes.ts`).
+
+`api` goes to sleep when nobody has called it for about 15 minutes, and the first call after that waits a few
+seconds while it starts. The app softens this by pinging it when someone opens the console or the member area.
+To remove the wait altogether, keep one instance always running: add `minInstances: 1` next to `memory` on the
+`api` line in `functions/src/index.ts` and deploy once by hand (`npm run deploy:backend`, answering **yes** to the
+question about the higher minimum bill; the automatic deploy refuses it). That costs roughly USD 13-14 a month.
+
+When a deploy removes
 functions that no longer exist in the code, the CLI asks to delete them: answer **yes**. New Firestore indexes build in the background for a few minutes after deploy; until then the affected
 screens show "couldn't load" and recover on their own.
 

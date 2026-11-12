@@ -10,6 +10,7 @@ import { paths } from '../paths';
 import { Icon, SkeletonRows } from '../shared/ui';
 import { useAsync } from '../shared/useAsync';
 import { setWaitingInTitle, useRouteFocus } from '../shared/useRouteFocus';
+import { useWarmBackend } from '../shared/useWarmBackend';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
 import { type Attention, useAttention } from './attention';
@@ -246,6 +247,7 @@ function Shell() {
   const menuButton = useRef<HTMLButtonElement>(null);
   const drawer = useRef<HTMLElement>(null);
   useRouteFocus(MAIN_ID, t.staffConsole);
+  useWarmBackend();
 
   // The phone menu closes after choosing a page, and on Escape.
   useEffect(() => setMenuOpen(false), [pathname]);

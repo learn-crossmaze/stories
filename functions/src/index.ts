@@ -3,11 +3,10 @@
 //
 // Code is organized by domain, one folder each: platform, organization,
 // catalogue, inventory, members, billing, circulation, hr. Each domain's
-// index.ts lists its actions, and routes.ts maps them to a few deployed
-// routers (core/router.ts) to stay within the project's Cloud Run CPU quota.
-// The app calls a router with `{ action: 'books-create', ... }`. The deployed
-// names below never change. apps/web/src/data/api.ts ROUTERS must match
-// (test/unit/routers.test.ts checks it).
+// index.ts lists its actions, and routes.ts joins them into the one deployed
+// function `api` (core/router.ts): one Cloud Run service that any call from any
+// screen keeps warm, instead of several that each go cold on their own.
+// The app calls it with `{ action: 'books-create', ... }`.
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { onRequest } from 'firebase-functions/v2/https';
 
@@ -19,12 +18,18 @@ import { router } from './core/router.js';
 import { accrueLeave, expireDocuments } from './hr/index.js';
 import { handleWhatsAppWebhook, sendWhatsApp } from './messaging/index.js';
 import { maintenance } from './platform/maintenance.js';
-import { ROUTES } from './routes.js';
+import { API_ROUTES, ROUTES } from './routes.js';
 import { handleSitePages } from './site/pages.js';
 import { handleSitePublic } from './site/public.js';
 
 setGlobalOptions({ region: REGION, maxInstances: 5 });
 
+/** Every action of every domain. 512MiB because one instance now holds all of them (the default 256MiB is tight). */
+export const api = router(API_ROUTES, { memory: '512MiB' });
+
+// The seven routers the app called before `api`. Kept for one release, serving exactly what they always served, so
+// browser tabs still open on the older app and a web build that is ahead of or behind the backend keep working
+// (apps/web/src/data/api.ts ROUTERS names them; test/unit/routers.test.ts checks it). Remove them in a later release.
 /** Platform and organization administration. */
 export const admin = router(ROUTES.admin);
 /** Shared catalogue (head office). */

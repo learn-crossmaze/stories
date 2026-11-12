@@ -1,7 +1,7 @@
 import type { DocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
-import { reserveCounter, pad } from './counters.js';
+import { reserveCounter, reserveCounters, pad } from './counters.js';
 import { errors } from './errors.js';
 import { db } from './firebase.js';
 import { dateKeyIST } from './time.js';
@@ -202,8 +202,7 @@ export async function reserveCodeBatch(
 ) {
   const now = new Date();
   const paths = opts.requests.map((r) => counterPath(opts.kind, opts.pattern, r.values, opts.base, now, r.bookCode));
-  const counters = new Map<string, Awaited<ReturnType<typeof reserveCounter>>>();
-  for (const p of new Set(paths)) counters.set(p, await reserveCounter(tx, p));
+  const counters = await reserveCounters(tx, paths);
   const used = new Map<string, number>();
   const codes = opts.requests.map((r, i) => {
     const start = counters.get(paths[i])!.value + (used.get(paths[i]) ?? 0);
@@ -223,10 +222,9 @@ export async function reserveCodeBatch(
 
 /** Finds which of `codes` already exist in `collection` (field `code`). */
 export async function existingCodes(tx: Transaction, collection: string, codes: string[]) {
-  const found: string[] = [];
-  for (let i = 0; i < codes.length; i += 30) {
-    const snap = await tx.get(db.collection(collection).where('code', 'in', codes.slice(i, i + 30)));
-    found.push(...snap.docs.map((d) => d.get('code') as string));
-  }
-  return found;
+  const chunks: string[][] = [];
+  for (let i = 0; i < codes.length; i += 30) chunks.push(codes.slice(i, i + 30));
+  // Read together; kept in the order asked, so the first clash reported is always the same one.
+  const snaps = await Promise.all(chunks.map((c) => tx.get(db.collection(collection).where('code', 'in', c))));
+  return snaps.flatMap((snap) => snap.docs.map((d) => d.get('code') as string));
 }

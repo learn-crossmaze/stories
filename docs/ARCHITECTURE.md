@@ -141,8 +141,8 @@ helper), and makes concurrency testable.
 ## 3. Repository layout
 
 Code is organized **by domain**, and the same domain names are used in the backend, the web app and the docs.
-Each domain on the server is one folder whose `index.ts` lists its actions; `functions/src/routes.ts` maps
-them to the deployed routers.
+Each domain on the server is one folder whose `index.ts` lists its actions; `functions/src/routes.ts` joins
+them into the one deployed function, `api`.
 
 ```text
 stories/
@@ -152,7 +152,7 @@ stories/
 │     ├─ auth/                      # Firebase Auth context, claims, repository
 │     ├─ config/                    # environment and Firebase bootstrap
 │     ├─ data/                      # Firestore reads and server calls, one file per domain
-│     │    api.ts (routers; command/call)  files.ts (PDFs and uploads)  services.ts  common.ts (vocabularies, query helpers)
+│     │    api.ts (command/call/warm)  files.ts (PDFs and uploads)  services.ts  common.ts (vocabularies, query helpers)
 │     │    catalogue.ts  inventory.ts  members.ts  billing.ts  circulation.ts  org.ts  hr.ts  me.ts
 │     ├─ shared/                    # UI used by both apps: ui.tsx, format.ts, dates.ts (IST), useAsync, useDebounced,
 │     │                             # appearance, BookCover, QrCode, IdCard
@@ -167,17 +167,17 @@ stories/
 │     └─ test/
 ├─ functions/                       # Cloud Functions v2, TypeScript, Node 22
 │  ├─ src/
-│  │  ├─ index.ts                   # deployed functions only (routers, webhook, scheduled jobs)
-│  │  ├─ routes.ts                  # router → actions
+│  │  ├─ index.ts                   # deployed functions only (api, webhooks, scheduled jobs)
+│  │  ├─ routes.ts                  # every domain's actions joined for `api` (and the older routers, kept one release)
 │  │  ├─ core/                      # callable pipeline, router, RBAC actor, audit, errors, numbering, counters
-│  │  ├─ platform/                  # user profiles, Super Admin bootstrap            → admin router
-│  │  ├─ organization/              # orgs, branches, numbering, departments, staff   → admin router
-│  │  ├─ catalogue/                 # books, covers, ISBN lookup, search tokens       → catalogue router
-│  │  ├─ inventory/                 # copies, copy state machine, locations           → inventory router
-│  │  ├─ members/                   # members, member self-service (me-*)             → members router
-│  │  ├─ billing/                   # plans, subscriptions, payments, Razorpay, deposits, expiry sweep → billing router
-│  │  ├─ circulation/               # issue/return/exchange, reservations, transfers  → circulation router
-│  │  ├─ hr/                        # employees, lifecycle, HR settings               → hr router
+│  │  ├─ platform/                  # user profiles, Super Admin bootstrap
+│  │  ├─ organization/              # orgs, branches, numbering, departments, staff
+│  │  ├─ catalogue/                 # books, covers, ISBN lookup, search tokens
+│  │  ├─ inventory/                 # copies, copy state machine, locations
+│  │  ├─ members/                   # members, member self-service (me-*)
+│  │  ├─ billing/                   # plans, subscriptions, payments, Razorpay, deposits, expiry sweep
+│  │  ├─ circulation/               # issue/return/exchange, reservations, transfers
+│  │  ├─ hr/                        # employees, lifecycle, HR settings
 │  │  ├─ generated/rbac.ts
 │  │  └─ tools/seed.ts              # emulator demo data
 │  └─ test/  unit/  emulator/
@@ -188,11 +188,13 @@ stories/
 
 **Conventions**
 
-- A new action goes in its domain's `index.ts` (`'<prefix>-<verb>': handler`). A new prefix also goes in the web
-  `ROUTERS` table (`apps/web/src/data/api.ts`). `functions/test/unit/routers.test.ts` fails if the two disagree
-  or if a prefix is split across routers.
-- The deployed function names (`admin`, `catalogue`, `inventory`, `members`, `billing`, `circulation`, `hr`,
-  `razorpayWebhook`, `scheduled-*`) never change; moving code between folders does not change them.
+- A new action goes in its domain's `index.ts` (`'<prefix>-<verb>': handler`); `api` then serves it. Two domains
+  may not define the same action (`routes.ts` refuses to start, and `functions/test/unit/routers.test.ts` fails).
+  While the seven older routers are kept (one release, see docs/API.md), a new prefix also goes in the web `ROUTERS`
+  table (`apps/web/src/data/api.ts`), which the same test checks against them.
+- The deployed function names (`api`, `razorpayWebhook`, `scheduled-*`, …) do not change; moving code between
+  folders does not change them. The older router names (`admin`, `catalogue`, `inventory`, `members`, `billing`,
+  `circulation`, `hr`) go away in a later release.
 - Cross-domain calls go through exported functions (for example, member self-service calls the billing and
   circulation cores with an ownership check); a domain never writes another domain's collections except inside
   those shared cores.
@@ -228,6 +230,18 @@ stories/
   title becomes the heading); `shared/useRouteFocus.ts` names the browser tab after it and moves focus to it after
   navigation. Both shells have a "Skip to content" link. Dialogs keep focus inside and return
   it on close. Every interactive element shows a focus outline, and text meets WCAG AA contrast (checked with axe).
+  - **Pages that open ready to scan or type** mark that one field with `data-autofocus` (`ScanInput autoFocus`
+    does it): focus then goes to the field instead of the heading, on the first load too, and the tab is still
+    named after the heading. A dialog starts on its marked field the same way, otherwise on its first control. A
+    plain `autoFocus` is not enough on a page: the heading takes focus after it.
+  - **Scan fields** (`ScanInput` in `admin/components/kit.tsx`) hold one lookup at a time. Screens where a stack is
+    scanned use `queue` (later scans wait their turn under a "Looking up N scans" line; failures are listed as
+    "CODE: message"), `focusSignal` to take focus back after a save, and `onEmptyEnter` to confirm with Enter. A
+    scanner's own Enter never confirms. A page that confirms what was scanned listens to `onPendingChange` and
+    holds its confirm button, and keeps the field on screen, until the count is back to 0: codes still waiting
+    when the field goes away are dropped. The field never takes focus from a dialog that has opened over it.
+  - **Remembered choices** (last shelf, last rider) go through `shared/remember.ts`: kept in the browser per
+    organization and branch, checked against what is still on offer when read, never anything personal.
 - Web pages live with their feature; anything used by two features moves to `shared/` (UI), `admin/components/`
   (console-only UI) or `data/` (reads and calls).
 - **Shared helpers:** server calls go through `command` (replay-safe writes) or `call` (reads and jobs) in
@@ -278,13 +292,17 @@ stories/
 ## 5. Cloud Functions architecture
 
 - **Runtime:** 2nd-gen functions, Node 22, TypeScript strict, region `asia-south1` (Mumbai), `maxInstances: 5`.
-  Actions are grouped behind 7 router functions (docs/API.md); 17 services in all (docs/DEPLOYMENT.md).
+  Every action is served by one function, `api` (docs/API.md), so any call keeps the whole backend awake; the app
+  also pings it when it opens, and browsers may cache its CORS preflight for 2 hours. With the seven older routers
+  kept for one release there are 19 services in all, 12 once they are removed (docs/DEPLOYMENT.md).
 - **Every command follows one pipeline** (`core/callable.ts`, details in docs/API.md):
 
 ```text
-App Check (when enforced) → authenticated → load actor → zod-validate input (+ requestId)
+App Check (when enforced) → authenticated → zod-validate input (+ requestId)
+→ load actor (profile; a disabled account is refused), in parallel with the transaction's first read below
 → prepare (optional: calls to other services, outside the transaction; skipped on a replay)
-→ db.runTransaction(idempotency lookup → permission checks → business rules → writes → audit → idempotency record)
+→ db.runTransaction(idempotency lookup + the caller's membership of input.orgId, in one read
+   → permission checks (from that read) → business rules → writes → audit → idempotency record)
 → after (optional, idempotent: claims sync, notifications; retried with the same requestId until it succeeds)
 → result, plus one structured log line (fn, uid, orgId, requestId, phase, ms)
 ```

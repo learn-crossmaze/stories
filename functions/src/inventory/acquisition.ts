@@ -30,21 +30,27 @@ export async function planAcquisition(
   opts: { orgId: string; branch: DocumentSnapshot; locationId: string | null; condition: string; actorUid: string; lines: AcquisitionLine[] },
 ) {
   const { orgId, branch } = opts;
-  const batch = await reserveCodeBatch(tx, {
-    kind: 'copy',
-    pattern: branchPatterns(branch).copy,
-    base: `orgs/${orgId}/counters`,
-    requests: opts.lines.map((l) => ({ values: { BRANCH: branch.get('code') as string, BOOK: l.bookNumber }, count: l.quantity, bookCode: l.bookCode })),
-    taken: (c) => existingCodes(tx, `orgs/${orgId}/copies`, c),
-  });
+  // The codes and the waiting members don't depend on each other, so they are read together. Only the
+  // codes can refuse (CODE_TAKEN), and the barcodes are checked after them, so that refusal still comes first.
+  const [batch, waiting] = await Promise.all([
+    reserveCodeBatch(tx, {
+      kind: 'copy',
+      pattern: branchPatterns(branch).copy,
+      base: `orgs/${orgId}/counters`,
+      requests: opts.lines.map((l) => ({ values: { BRANCH: branch.get('code') as string, BOOK: l.bookNumber }, count: l.quantity, bookCode: l.bookCode })),
+      taken: (c) => existingCodes(tx, `orgs/${orgId}/copies`, c),
+    }),
+    Promise.all(opts.lines.map((l) => (l.isNew ? Promise.resolve([]) : nextWaiting(tx, orgId, branch.id, l.bookId, l.quantity)))),
+  ]);
   const barcodes = opts.lines.map((l, i) => (l.barcodes?.length ? l.barcodes : batch.codes[i]));
   const all = barcodes.flat();
   if (new Set(all).size !== all.length) throw errors.invalid('The same barcode is listed twice.');
-  const barcodeSnaps = await Promise.all(all.map((b) => tx.get(db.doc(`orgs/${orgId}/barcodes/${b}`))));
+  const [barcodeSnaps, { holdHours }] = await Promise.all([
+    all.length ? tx.getAll(...all.map((b) => db.doc(`orgs/${orgId}/barcodes/${b}`))) : [],
+    waiting.some((w) => w.length) ? readCirculationConfig(tx, orgId) : { holdHours: 0 },
+  ]);
   const taken = barcodeSnaps.find((s) => s.exists);
   if (taken) throw errors.conflict('DUPLICATE_BARCODE', `Barcode ${taken.id} is already used by another copy.`);
-  const waiting = await Promise.all(opts.lines.map((l) => (l.isNew ? Promise.resolve([]) : nextWaiting(tx, orgId, branch.id, l.bookId, l.quantity))));
-  const { holdHours } = waiting.some((w) => w.length) ? await readCirculationConfig(tx, orgId) : { holdHours: 0 };
 
   const results = opts.lines.map((l, i) => ({ bookId: l.bookId, codes: batch.codes[i], copyIds: batch.codes[i].map(() => db.collection(`orgs/${orgId}/copies`).doc().id) }));
 

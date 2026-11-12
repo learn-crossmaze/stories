@@ -128,4 +128,85 @@ describe('receiving a delivery', () => {
     const half = await receiveAs(lib, items.slice(0, 12));
     expect(half.copies).toBe(48);
   });
+
+  it('gives every title its own run of copy numbers, carrying on from the copies it already has', async () => {
+    const cost = { acquisitionCostMinor: 100 };
+    expect((await receiveAs(lib, [{ bookId: existingId, quantity: 2, ...cost }])).received[0].codes).toEqual(['BK000001-CP01', 'BK000001-CP02']);
+    const res = await receiveAs(lib, [
+      { book: item(B, 'The Blue Umbrella', ['Ruskin Bond']), quantity: 3, ...cost },
+      { bookId: existingId, quantity: 2, ...cost },
+      { book: item(C, 'Rusty Runs Away', ['Ruskin Bond']), quantity: 1, ...cost },
+      { bookId: existingId, quantity: 1, ...cost },
+    ]);
+    expect(res.newTitles.map((t) => t.code)).toEqual(['BOOK-000002', 'BOOK-000003']);
+    expect(res.received.map((r) => [r.title, r.codes])).toEqual([
+      ['The Blue Umbrella', ['BK000002-CP01', 'BK000002-CP02', 'BK000002-CP03']],
+      ['Already here', ['BK000001-CP03', 'BK000001-CP04', 'BK000001-CP05']],
+      ['Rusty Runs Away', ['BK000003-CP01']],
+    ]);
+    expect((await db.doc(`orgs/${org}/counters/copies-BOOK-000001`).get()).get('next')).toBe(6);
+    // New titles only: there is no existing title to read.
+    const fresh = await receiveAs(lib, [{ book: item(D, 'Gitanjali', ['Rabindranath Tagore']), quantity: 2, ...cost }]);
+    expect(fresh.received.map((r) => r.codes)).toEqual([['BK000004-CP01', 'BK000004-CP02']]);
+  });
+
+  it('numbers many titles from one shared counter in the order they are listed', async () => {
+    await db.doc(`orgs/${org}/branches/${central}`).update({ 'numbering.copy': '{BRANCH}-C{SEQ:4}' });
+    const cost = { acquisitionCostMinor: 100 };
+    const res = await receiveAs(lib, [
+      { book: item(B, 'The Blue Umbrella', ['Ruskin Bond']), quantity: 2, ...cost },
+      { bookId: existingId, quantity: 1, ...cost },
+      { book: item(C, 'Rusty Runs Away', ['Ruskin Bond']), quantity: 3, ...cost },
+      { book: item(D, 'Gitanjali', ['Rabindranath Tagore']), quantity: 1, ...cost },
+      { bookId: existingId, quantity: 2, ...cost },
+    ]);
+    expect(res.received.map((r) => [r.title, r.codes])).toEqual([
+      ['The Blue Umbrella', ['CEN-C0001', 'CEN-C0002']],
+      ['Already here', ['CEN-C0003', 'CEN-C0004', 'CEN-C0005']],
+      ['Rusty Runs Away', ['CEN-C0006', 'CEN-C0007', 'CEN-C0008']],
+      ['Gitanjali', ['CEN-C0009']],
+    ]);
+    expect((await db.doc(`orgs/${org}/counters/copy:CEN-C#`).get()).get('next')).toBe(10);
+  });
+
+  it('receives 25 catalogue titles at once, each numbered on its own, and names the first title it cannot take', async () => {
+    const added = await call<{ created: { bookId: string; code: string }[] }>(catalog.bulkCreate, bm, {
+      items: Array.from({ length: 24 }, (_, i) => item(isbn(`97830000${String(i).padStart(4, '0')}`), `Title ${i + 2}`, ['Ruskin Bond'])),
+    });
+    const titles = [{ bookId: existingId, code: 'BOOK-000001' }, ...added.created];
+    expect(titles.map((t) => t.code)).toEqual(Array.from({ length: 25 }, (_, i) => `BOOK-${String(i + 1).padStart(6, '0')}`));
+    const delivery = (quantity: number) => titles.map((t) => ({ bookId: t.bookId, quantity, acquisitionCostMinor: 100 }));
+    const numbered = (from: number, count: number) => titles.map((t) => Array.from({ length: count }, (_, k) => `BK${t.code.slice(5)}-CP0${from + k}`));
+
+    // 50 copies: more than one lookup of 30 codes, and 25 counters.
+    const first = await receiveAs(lib, delivery(2));
+    expect(first.received.map((r) => r.bookId)).toEqual(titles.map((t) => t.bookId));
+    expect(first.received.map((r) => r.codes)).toEqual(numbered(1, 2));
+    expect((await receiveAs(lib, delivery(1))).received.map((r) => r.codes)).toEqual(numbered(3, 1));
+
+    await call(catalog.archive, sa, { bookId: titles[10].bookId, reason: 'Out of print' });
+    await call(catalog.archive, sa, { bookId: titles[3].bookId, reason: 'Out of print' });
+    await expect(receiveAs(lib, delivery(1))).rejects.toMatchObject({ details: { reason: 'NOT_FOUND' }, message: 'Active catalogue title Title 4 was not found.' });
+    expect(await copiesOf(titles[0].bookId)).toHaveLength(3);
+  });
+
+  it('refuses a pattern that repeats a code anywhere in a big delivery, and uses up no numbers', async () => {
+    await db.doc(`orgs/${org}/branches/${central}`).update({ 'numbering.copy': '{BRANCH}-C{SEQ:4}' });
+    // A copy numbered earlier that the 35th new code would repeat (beyond the first 30 looked up).
+    const earlier = db.doc(`orgs/${org}/copies/earlier`);
+    await earlier.set({ code: 'CEN-C0035' });
+    const delivery = [{ bookId: existingId, quantity: 40, acquisitionCostMinor: 100 }];
+    await expect(receiveAs(lib, delivery)).rejects.toMatchObject({ details: { reason: 'CODE_TAKEN' }, message: expect.stringContaining('produced CEN-C0035,') });
+    expect(await copiesOf(existingId)).toHaveLength(0);
+    await earlier.delete();
+    const res = await receiveAs(lib, delivery);
+    expect(res.received[0].codes).toEqual(Array.from({ length: 40 }, (_, i) => `CEN-C${String(i + 1).padStart(4, '0')}`));
+  });
+
+  it('two deliveries of the same title saved at the same moment never share a code', async () => {
+    const delivery = [{ bookId: existingId, quantity: 2, acquisitionCostMinor: 100 }];
+    const both = await Promise.all([receiveAs(lib, delivery), receiveAs(bm, delivery)]);
+    expect(both.flatMap((r) => r.received[0].codes).sort()).toEqual(['BK000001-CP01', 'BK000001-CP02', 'BK000001-CP03', 'BK000001-CP04']);
+    expect(await copiesOf(existingId)).toHaveLength(4);
+  });
 });
