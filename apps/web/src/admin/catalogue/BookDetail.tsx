@@ -17,6 +17,7 @@ import { CoverEditor } from './CoverEditor';
 import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+import { ReserveDialog } from '../members/memberDialogs';
 import { BookDialog, useCanAddBooks, useCanDeleteBooks, useCanEditCatalogue } from './Catalogue';
 import { CopyStatusBadge, labelsLink } from '../inventory/Inventory';
 
@@ -78,7 +79,7 @@ export function BookDetailPage() {
     [org?.id, bookId],
   );
   const copies = useAsync(() => (org && branch ? copiesOfBook(org.id, branch.id, bookId) : Promise.resolve([])), [org?.id, branch?.id, bookId]);
-  const [dialog, setDialog] = useState<'edit' | 'acquire' | 'archive' | 'delete' | null>(null);
+  const [dialog, setDialog] = useState<'edit' | 'acquire' | 'reserve' | 'archive' | 'delete' | null>(null);
   const restore = useAction();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
@@ -90,6 +91,10 @@ export function BookDetailPage() {
   );
   const inUse = !!usage.data?.summary;
   const canAcquire = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id) && book.data?.status === 'ACTIVE';
+  // Reserving from here starts by finding the member at the branch being worked at, so it needs the right to see members too.
+  const canReserve =
+    !!org && !!branch && can(claims, 'reservations.manage', org.id, branch.id) && can(claims, 'members.view', org.id, branch.id) && book.data?.status === 'ACTIVE';
+  const [reserved, setReserved] = useState<string | null>(null);
 
   // "Create and add copies" on the New book form lands here with ?acquire=1: open Add copies once the title and
   // the branch are known, and only for someone who may add copies to it. The flag is then dropped from the
@@ -215,7 +220,15 @@ export function BookDetailPage() {
       </section>
 
       <section className="section">
-        <h2>{lt.availability}</h2>
+        <div className="page-header-row">
+          <h2>{lt.availability}</h2>
+          {canReserve && (
+            <button type="button" className="btn btn-outlined" onClick={() => setDialog('reserve')}>
+              {lt.reserveForMember}
+            </button>
+          )}
+        </div>
+        {reserved && <Notice tone="ok">{reserved}</Notice>}
         {availability.loading ? (
           <SkeletonRows rows={2} />
         ) : !availability.data?.branches.length ? (
@@ -292,6 +305,20 @@ export function BookDetailPage() {
       )}
 
       {dialog === 'edit' && <BookDialog book={b} onClose={() => setDialog(null)} onSaved={() => book.reload()} />}
+      {dialog === 'reserve' && canReserve && org && branch && (
+        <ReserveDialog
+          orgId={org.id}
+          branchId={branch.id}
+          book={b}
+          onClose={() => setDialog(null)}
+          onDone={(msg) => {
+            setReserved(msg);
+            // A copy held for the member is off the shelf.
+            availability.reload();
+            copies.reload();
+          }}
+        />
+      )}
       {dialog === 'acquire' && canAcquire && org && branch && (
         <AcquireDialog
           orgId={org.id}

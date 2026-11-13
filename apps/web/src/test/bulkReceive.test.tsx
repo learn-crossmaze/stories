@@ -83,14 +83,22 @@ const found = (isbn: string, over: Record<string, unknown> = {}) => ({
   language: 'en', synopsis: '', genres: [], subjects: [], coverUrl: `https://books.google.com/${isbn}.jpg`, existingBookId: null, ...over,
 });
 
+/** Copies made of each title so far: a later delivery of the same title makes the next ones. */
+const made = new Map<string, number>();
+
 /** What copies-receive answers for the items it was sent. */
 const received = (items: Item[]) => {
-  const lines = items.map((it) => ({ bookId: it.bookId ?? `new${it.book!.isbn}`, quantity: it.quantity, isNew: !it.bookId }));
+  const lines = items.map((it) => {
+    const bookId = it.bookId ?? `new${it.book!.isbn}`;
+    const from = made.get(bookId) ?? 0;
+    made.set(bookId, from + it.quantity);
+    return { bookId, from, quantity: it.quantity, isNew: !it.bookId };
+  });
   return {
     received: lines.map((l) => ({
       bookId: l.bookId, title: l.bookId, isNew: l.isNew,
-      codes: Array.from({ length: l.quantity }, (_, k) => `C-${l.bookId}-${k + 1}`),
-      copyIds: Array.from({ length: l.quantity }, (_, k) => `cp-${l.bookId}-${k + 1}`),
+      codes: Array.from({ length: l.quantity }, (_, k) => `C-${l.bookId}-${l.from + k + 1}`),
+      copyIds: Array.from({ length: l.quantity }, (_, k) => `cp-${l.bookId}-${l.from + k + 1}`),
     })),
     newTitles: items.flatMap((it) => (it.book ? [{ isbn: it.book.isbn, bookId: `new${it.book.isbn}`, code: `B-${it.book.isbn}` }] : [])),
     copies: lines.reduce((n, l) => n + l.quantity, 0),
@@ -118,6 +126,7 @@ const receiveCalls = () => calls.filter((c) => c.action === 'copies-receive');
 
 beforeEach(() => {
   calls.length = 0;
+  made.clear();
   respond = (data) => received(data.items);
   lookup.of = inCatalogue;
   reads.listLocations.mockReset().mockResolvedValue([]);

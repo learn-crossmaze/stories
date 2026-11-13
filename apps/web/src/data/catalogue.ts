@@ -1,9 +1,10 @@
 // Shared catalogue: titles, reference data, book numbering.
 import { collection, doc, type DocumentSnapshot, getCountFromServer, getDoc, getDocs, limit, orderBy, query, type QueryConstraint, Timestamp, where } from 'firebase/firestore';
 
+import { normalizeIsbn } from '../shared/isbn';
 import { oneOf, remember } from '../shared/remember';
 import { importCover } from './bulkBooks';
-import { AGE_GROUPS, AgeGroup, db, Genre, GENRES, LANGUAGES, page, queryToken, READING_LEVELS, withId } from './common';
+import { AGE_GROUPS, AgeGroup, db, Genre, GENRES, LANGUAGES, matchesAll, normalizeText, type Page, page, primaryWord, queryWords, READING_LEVELS, withId } from './common';
 
 export interface RefItem {
   id: string;
@@ -36,6 +37,10 @@ export interface Book {
   replacementPriceMinor: number;
   status: 'ACTIVE' | 'ARCHIVED';
   coverUrl?: string | null;
+  /** The title as the list is ordered by it (written by the server). */
+  titleNormalized?: string;
+  /** What search matches: the words of the title, subtitle, authors, ISBN, code and keywords, and the starts of each (written by the server). */
+  searchTokens?: string[];
 }
 
 export async function listRefs(kind: 'authors' | 'publishers' | 'categories'): Promise<RefItem[]> {
@@ -48,12 +53,7 @@ export async function listRefs(kind: 'authors' | 'publishers' | 'categories'): P
  * case, accents, spacing and punctuation don't count, so "García" is "Garcia". Empty for a name of punctuation only.
  */
 export function normalizeName(s: string): string {
-  return s
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
+  return normalizeText(s);
 }
 
 /** What a new title starts as until someone says otherwise. */
@@ -103,15 +103,66 @@ export const coverImportOf = (bookId: string): Promise<boolean> | undefined => c
 
 export const BOOK_PAGE = 25;
 
-/** Catalogue search: one token (prefix) + optional age group, ordered by title. */
-export function searchBooks(q: string, ageGroup: AgeGroup | '', after?: DocumentSnapshot, status: Book['status'] | '' = '') {
-  const token = queryToken(q);
+/** How many pages one search reads while narrowing by further words; twice as many while nothing has matched yet. */
+const SCAN_PAGES = 4;
+const SCAN_PAGES_EMPTY = 8;
+
+/** The title with this ISBN-13, if we have it (one exact read; ISBNs are unique). */
+export async function bookByIsbn(isbn13: string): Promise<Book | null> {
+  // No ordering and no other filter: this is served by the automatic index on `isbn`.
+  const snap = await getDocs(query(collection(db(), 'books'), where('isbn', '==', isbn13), limit(1)));
+  return snap.empty ? null : withId<Book>(snap.docs[0]);
+}
+
+/**
+ * Catalogue search, a page at a time, ordered by title: every typed word must match (as a word or the start of
+ * one), optionally within an age group and a status. An ISBN in any form (ISBN-10, hyphens, spaces) finds its
+ * title with one exact read.
+ *
+ * The database is asked for one word (`primaryWord`); the other words are checked against each title's own
+ * `searchTokens`. A search of several words therefore reads on, page after page, until it has a page of matches
+ * or has read `SCAN_PAGES` pages, and returns every match it met: fewer or more than `BOOK_PAGE`, even none
+ * with a `cursor` when there is more to look through. The cursor is the last title read, not the last one
+ * returned.
+ */
+export async function searchBooks(q: string, ageGroup: AgeGroup | '', after?: DocumentSnapshot, status: Book['status'] | '' = ''): Promise<Page<Book>> {
+  if (!after) {
+    const isbn = normalizeIsbn(q);
+    const hit = isbn ? await bookByIsbn(isbn) : null;
+    if (hit && (!status || hit.status === status) && (!ageGroup || hit.ageGroup === ageGroup)) return { items: [hit] };
+    // Not an ISBN of ours (ten digits can be something else): search by its words as usual.
+  }
+  const words = queryWords(q);
+  const primary = primaryWord(words);
   const c: QueryConstraint[] = [];
   if (status) c.push(where('status', '==', status));
-  if (token) c.push(where('searchTokens', 'array-contains', token));
+  if (primary) c.push(where('searchTokens', 'array-contains', primary));
   if (ageGroup) c.push(where('ageGroup', '==', ageGroup));
   c.push(orderBy('titleNormalized'));
-  return page<Book>('books', c, BOOK_PAGE, after);
+  const others = words.filter((w) => w !== primary);
+  if (!others.length) return page<Book>('books', c, BOOK_PAGE, after);
+
+  const items: Book[] = [];
+  let cursor = after;
+  for (let read = 1; ; read++) {
+    const next = await page<Book>('books', c, BOOK_PAGE, cursor);
+    items.push(...next.items.filter((b) => matchesAll(b.searchTokens, others)));
+    cursor = next.cursor;
+    if (!cursor || items.length >= BOOK_PAGE || read >= (items.length ? SCAN_PAGES : SCAN_PAGES_EMPTY)) break;
+  }
+  return { items, cursor };
+}
+
+/**
+ * The best few titles for a search box that has no "Load more" (pickers, the find box): what `searchBooks`
+ * finds first, with the titles that start with the typed text ahead of the others, each group by title.
+ */
+export async function findBooks(q: string, max: number, status: Book['status'] | '' = ''): Promise<Book[]> {
+  const typed = normalizeText(q);
+  const startsWithTyped = (b: Book) => Number((b.titleNormalized ?? normalizeText(b.title)).startsWith(typed));
+  const { items } = await searchBooks(q, '', undefined, status);
+  // The sort keeps the order of equals, so each group stays alphabetical.
+  return [...items].sort((a, b) => startsWithTyped(b) - startsWithTyped(a)).slice(0, max);
 }
 
 export async function getBook(id: string): Promise<Book | null> {

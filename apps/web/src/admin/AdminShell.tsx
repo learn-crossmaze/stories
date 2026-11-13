@@ -17,6 +17,7 @@ import { clear as dropKept, keepFor } from '../shared/asyncCache';
 import { type Attention, AttentionProvider, useAttention } from './attention';
 import { groupFor, isGroup, type NavEntry, navItemFor, visibleMenu } from './nav';
 import { NotificationBell } from './NotificationBell';
+import { QuickFind } from './QuickFind';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
 import { OnboardingProvider, OnboardingReminder } from './people/OnboardingReminder';
 
@@ -317,6 +318,7 @@ function Shell() {
                 <PublishButton />
               </Suspense>
             )}
+            <QuickFind />
             <NotificationBell />
             <AccountMenu />
           </header>

@@ -402,6 +402,9 @@ export const t = {
   auditOneRecordHint: 'These are the changes saved against this record itself. A member’s loans and payments are on the member’s page, under History.',
   auditShowAll: 'Show all records',
   loadMore: 'Load more',
+  searchNoneYet: 'Nothing found yet',
+  searchNoneYetHint: 'There are more titles to look through. Keep looking, or try fewer words.',
+  keepLooking: 'Keep looking',
 
   setupTitle: 'Set up administration',
   setupBody: 'The owner account can claim the first Super Admin role once. Other people get their roles from an administrator.',

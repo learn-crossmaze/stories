@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { ApiError, command } from '../../data/api';
+import { ApiError, call, command } from '../../data/api';
 import { depositAccount, listPlans, type Plan, pricesFor, startUpgrade, type Subscription, upgradeQuote } from '../../data/billing';
 import { PendingUpgrade, UpgradeChooser } from '../../shared/Upgrade';
 import { type Book } from '../../data/catalogue';
@@ -15,6 +15,7 @@ import { Dialog, DialogActions, FormError, SelectField, TextField, useAction, us
 import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
 import { BookPicker } from '../catalogue/BookPicker';
+import { MemberPicker } from './Members';
 
 // Dialogs on the member page: payments, subscriptions, deposit adjustments, refunds, reservations.
 
@@ -371,41 +372,108 @@ export function RefundDialog({
   );
 }
 
+interface Stock {
+  branches: { branchId: string; branchName: string; available: number; total: number }[];
+}
+
+/**
+ * Reserves titles for a member at their branch. Opened for a member already known (their page, the desk) or
+ * without one (a book's page, the Reservations page: the member is found here first; `book` is the title to
+ * start with). It stays open after each title, so several can be reserved in one go.
+ */
 export function ReserveDialog({
   orgId,
-  memberId,
   branchId,
+  member: known,
+  book: first,
   onClose,
   onDone,
 }: {
   orgId: string;
-  memberId: string;
   branchId: string;
+  member?: Pick<Member, 'id' | 'fullName'>;
+  book?: Pick<Book, 'id' | 'title'>;
   onClose: () => void;
+  /** After each title reserved; the dialog stays open. */
   onDone: (msg: string) => void;
 }) {
-  const [book, setBook] = useState<Book | null>(null);
+  const [member, setMember] = useState(known ?? null);
+  const [book, setBook] = useState(first ?? null);
+  const [placed, setPlaced] = useState<string[]>([]);
+  const form = useRef<HTMLFormElement>(null);
+  // Counts only, from the server: says before saving whether a copy will be held or the member will wait.
+  const stock = useAsync(() => (book ? call<Stock>('copies-availability', { orgId, bookId: book.id }) : Promise.resolve(null)), [orgId, book?.id]);
+  const here = stock.data?.branches.find((b) => b.branchId === branchId)?.available ?? 0;
+  const elsewhere = (stock.data?.branches ?? []).filter((b) => b.branchId !== branchId && b.available > 0);
   const { busy, error, submit } = useSubmit(async () => {
-    if (!book) return;
-    const r = await command<{ status: string; copyCode: string | null }>('reservations-place', { orgId, memberId, bookId: book.id, branchId });
-    onDone(r.status === 'ALLOCATED' ? `${book.title}: copy ${r.copyCode} is held for pickup.` : `${book.title}: added to the waiting list.`);
-    onClose();
+    if (!book || !member) return;
+    // Each title is its own request.
+    const r = await command<{ status: string; copyCode: string | null }>('reservations-place', { orgId, memberId: member.id, bookId: book.id, branchId });
+    const msg = r.status === 'ALLOCATED' ? lt.reserveHeld(book.title, r.copyCode) : lt.reserveWaiting(book.title);
+    setPlaced((list) => [...list, msg]);
+    setBook(null);
+    onDone(msg);
   });
+  // A step is done (member found, title picked or reserved) and the control used for it has gone: the keyboard
+  // moves to the next one. Not on opening, where the dialog places focus itself.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!opened.current) {
+      opened.current = true;
+      return;
+    }
+    form.current?.querySelector<HTMLElement>(member && book ? 'button[type="submit"]' : 'input[type="search"]')?.focus();
+  }, [member, book, placed.length]);
   return (
-    <Dialog title={lt.placeReservation} onClose={onClose}>
-      <form onSubmit={submit} noValidate>
-        {book ? (
-          <p>
-            <strong>{book.title}</strong>{' '}
-            <button type="button" className="btn btn-text" onClick={() => setBook(null)}>
-              {t.edit}
-            </button>
-          </p>
+    <Dialog title={member ? lt.reserveTitleFor(member.fullName) : lt.placeReservation} onClose={onClose}>
+      <form onSubmit={submit} noValidate ref={form}>
+        {!member ? (
+          <MemberPicker orgId={orgId} branchId={branchId} label={lt.reserveFor} onPick={setMember} />
         ) : (
-          <BookPicker label={lt.reserveBook} onPick={setBook} />
+          !known && (
+            <p>
+              {lt.reserveFor}: <strong>{member.fullName}</strong>{' '}
+              <button type="button" className="btn btn-text" disabled={busy} onClick={() => setMember(null)}>
+                {lt.reserveChange}
+              </button>
+            </p>
+          )
+        )}
+        {placed.map((msg, n) => (
+          <Notice key={n} tone="ok">
+            {msg}
+          </Notice>
+        ))}
+        {book ? (
+          <>
+            <p>
+              <strong>{book.title}</strong>{' '}
+              <button type="button" className="btn btn-text" disabled={busy} onClick={() => setBook(null)}>
+                {lt.reserveChange}
+              </button>
+            </p>
+            {stock.data && (
+              <p className="muted small">
+                {here > 0 ? lt.reserveStockHere(here) : lt.reserveStockNone}
+                {elsewhere.length > 0 && ` ${lt.reserveStockElsewhere(elsewhere.map((b) => `${b.branchName} (${b.available})`).join(', '))}`}
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            {placed.length > 0 && <p className="muted small">{lt.reserveNext}</p>}
+            <BookPicker label={lt.reserveBook} onPick={setBook} />
+          </>
         )}
         <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={lt.placeReservation} onCancel={onClose} />
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-text" onClick={onClose} disabled={busy}>
+            {placed.length ? lt.finished : t.cancel}
+          </button>
+          <button type="submit" className="btn btn-filled" disabled={busy || !book || !member} data-autofocus={first && known ? true : undefined}>
+            {busy ? t.saving : lt.placeReservation}
+          </button>
+        </div>
       </form>
     </Dialog>
   );

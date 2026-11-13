@@ -71,7 +71,7 @@ No deviations from the required stack are proposed.
 | R3 | Scheduled functions retry / overlap | Deterministic document IDs for generated records (tasks, attendance, reminders) make generation idempotent |
 | R4 | Hot documents (global counters, per-branch daily stats) | Per-scope counters, sharded counters for high-write aggregates, human-readable codes allocated per scope |
 | R5 | Clients writing financial/inventory state directly | Rules **deny client writes** on every invariant-bearing collection; only the Admin SDK (functions) writes them |
-| R6 | Offline cache showing stale availability or unconfirmed operations as done | Critical operations are callables (online-only); UI shows `Syncing / Confirmed / Failed` states; no optimistic success |
+| R6 | Offline cache showing stale availability or unconfirmed operations as done | Critical operations are callables (online-only); UI shows `Syncing / Confirmed / Failed` states; no optimistic success. Lists a page kept from an earlier visit are session memory only, always read again, and never used for availability, limits or money (§3, Loading) |
 | R7 | Cost blow-ups from listeners and dashboard aggregation | Listeners only where real-time matters (librarian queue, delivery status, my tasks); dashboards read pre-aggregated summary docs |
 | R8 | Firestore search is weak (no full-text) | `SearchService` abstraction; Phase 1 uses normalized prefix tokens + exact ISBN/barcode lookups; can be swapped for Typesense/Algolia extension later without UI changes |
 | R9 | Time zones (attendance, task due times, subscription end) | All instants stored as UTC `Timestamp`; every branch has an IANA `timeZone`; calendar keys (`2026-09-27`) computed in branch-local time |
@@ -214,8 +214,34 @@ stories/
   inspect or shelve, incoming transfers, deliveries, deposit approvals, renewals due, documents to verify,
   attendance corrections and the month to finalize, leave and payroll to approve, website changes to publish, posts
   to review, new enquiries, the person's own missing profile items); a closed group shows its total, and the browser
-  tab the overall total ("(5) Dashboard · Stories"). The same checks as the Dashboard's list (`admin/attention.ts`),
-  refreshed when moving between pages (at most every 30 seconds) and every 2 minutes.
+  tab the overall total ("(5) Dashboard · Stories"). The same checks as the Dashboard's list (`admin/attention.ts`).
+  - **When they are read:** once the organization's branches are known (one run at the start), then on moving
+    between pages (at most every 30 seconds), every 2 minutes while the tab is in view, every 10 minutes while it
+    is not (the total is in the tab's title), and straight away when the tab comes back into view. Each count shows
+    as soon as its own read answers; a run under way is never dropped because the person moved to another page,
+    only replaced by a newer run or a new organization or branch.
+  - **Only what the menu shows is asked for:** three branch counts, one renewals count, two delivery counts
+    (`deliveries-counts`), two document counts. The Website counts come from the shared 30-second read of the
+    overview (`siteOverview(uid)`, docs/WEBSITE_ADMIN.md) and are asked only for people who manage the website or
+    a branch's pages in some organization (`countsWebsite`); they are read again, alone, when something in the
+    Website section is saved or published. The person's own missing profile items come from the shell's one
+    shared read (`OnboardingProvider`, docs/HRMS.md §14), not from a read of the menu's own.
+  - **Shared with the Dashboard:** what both read goes through `waiting` in `admin/attention.ts`
+    (`sharedLoad` in `data/shared.ts`: one read for askers at the same moment, its answer kept 5 seconds, a
+    failure never kept, the person's uid in every key), so opening the console asks once, not once each.
+  - **Master control counts** show only where something there is missing or broken and needs the person to act:
+    Shifts & holidays (no holiday entered for this year in India; from December also next year), Leave types (none
+    active), Letter templates (drafts never published), Payroll settings (never saved although a salary exists),
+    WhatsApp at the chosen branch (notifications Meta rejected, paused or disabled, plus, while WhatsApp is switched
+    on there, ones switched on but never sent to Meta), Delivery at the chosen branch (a courier app still on its
+    test account while home delivery is on) and Connections (nobody on the enquiry alerts list). Roles, Library
+    rules, Job titles & checklists and Document types have none. Each is asked only of people who see its menu
+    item, and one that cannot be read shows no count. They have their own slow cycle: a new organization or branch,
+    leaving a Master control page (so a fix shows at once), and otherwise at most every 10 minutes. The reads are
+    one row or one count each (`data/setupCounts.ts`); WhatsApp is one `whatsapp-overview` call, made only when the
+    branch is connected; Delivery is read from the branch document the workspace already holds. The Dashboard
+    lists the same items from the same answer (`useWaiting`). The rules are small pure functions in
+    `admin/attention.ts`, covered by `test/attention.test.ts`.
 
   The menu only arranges screens; the rules and functions still check every read and write.
 - **Menus and page access:** the menu is defined once in `apps/web/src/admin/nav.ts` (`MENU`): pages and groups of
@@ -253,6 +279,21 @@ stories/
 - **Loading:** every page is loaded on first visit (`lazyPage` in `AdminApp.tsx`, `lazy` in `routes.tsx`); the
   shells show a skeleton meanwhile. Firebase and React are built into their own files (`vite.config.ts`) so they
   stay cached across deploys. The barcode decoder (ZXing) loads only inside its Web Worker.
+  - **First screen:** the console's code (`AdminApp`) starts downloading when `routes.tsx` loads, while sign-in is
+    still being checked; `index.html` opens the connections to sign-in and the database early (`preconnect`).
+    Later pages are not fetched ahead: a speculative fetch that fails in a tab from before a deploy would reload
+    the page.
+  - **Organization and branches** are read side by side (`admin/Workspace.tsx`): the branches of the remembered
+    organization, or the first by id in the person's claims, are asked for while the organizations load (a Super
+    Admin's list is not in the claims, so only a remembered one is). The rows carry their organization and are
+    used only once that organization is the one resolved; `branchesLoading` stays true from the moment the
+    organization is known until its own branches are in, so nothing runs once without the branch and again with it.
+  - **Coming back to a page** (`useAsync`'s `cache` option, `shared/asyncCache.ts`): a read that opts in paints
+    what it showed last time with the same inputs, marked `cached`, while it reads again; if that read fails the
+    old data goes and the error shows. Memory only (never the disk), at most 5 minutes old and 100 answers, and
+    emptied when another person signs in, permissions change or the console is left. Always read again, and never
+    used for forms, availability, limits or money; one-click actions stay disabled while `cached` is true. The
+    Dashboard uses it today.
 - **Dashboards** never say "all clear" while loading, and say so when part of them could not be loaded (with a
   retry) instead of hiding the items that failed.
 

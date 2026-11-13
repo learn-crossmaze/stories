@@ -561,7 +561,8 @@ export function CataloguePage() {
         )}
       </header>
       <div className="toolbar">
-        <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={lt.searchBooks} aria-label={lt.searchBooks} />
+        {/* Arriving on the page lands here, ready to type (useRouteFocus). */}
+        <input className="search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={lt.searchBooks} aria-label={lt.searchBooks} data-autofocus />
         <select value={age} onChange={(e) => setAge(e.target.value as AgeGroup | '')} aria-label={lt.ageGroup}>
           <option value="">{lt.allAges}</option>
           {AGE_GROUPS.map((a) => (
@@ -578,8 +579,16 @@ export function CataloguePage() {
       </div>
       {list.error && books.length === 0 ? (
         <ErrorState message={list.error} onRetry={reload} />
-      ) : list.loading && books.length === 0 ? (
+      ) : list.loading && books.length === 0 && !list.hasMore ? (
         <SkeletonRows rows={6} />
+      ) : books.length === 0 && list.hasMore ? (
+        // A search of several words stops after a few pages: none matched so far, and there are more to read.
+        <>
+          <EmptyState icon="book" title={t.searchNoneYet} message={t.searchNoneYetHint} />
+          <button type="button" className="btn btn-outlined load-more" disabled={list.loading} onClick={list.loadMore}>
+            {list.loading ? t.loading : t.keepLooking}
+          </button>
+        </>
       ) : books.length === 0 ? (
         <EmptyState icon="book" title={lt.booksEmpty} message={lt.booksEmptyHint} />
       ) : (

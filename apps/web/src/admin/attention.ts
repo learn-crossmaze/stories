@@ -244,6 +244,7 @@ export function useAttention(): AttentionState {
   const slowLast = useRef(0);
   const slowRun = useRef(0);
   const setupPage = useRef<string | null>(null);
+  const place = useRef<string | null>(null);
   const siteVersion = useRef(0);
   const now = useRef({ claims, org, user });
   now.current = { claims, org, user };
@@ -268,6 +269,11 @@ export function useAttention(): AttentionState {
   // A new organization or branch: forget the old counts and count afresh straight away. (Declared before the
   // effects that load, so it has run by the time they look at `last`.)
   useEffect(() => {
+    // Only for a real change of place: an effect that merely runs again (React's development double run) must
+    // not throw away the run that has just started.
+    const here = `${org?.id ?? ''}|${branch?.id ?? ''}`;
+    if (place.current === here) return;
+    place.current = here;
     last.current = 0;
     slowLast.current = 0;
     run.current += 1;

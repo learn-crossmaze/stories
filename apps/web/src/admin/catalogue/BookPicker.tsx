@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { type Book, searchBooks } from '../../data/catalogue';
+import { type Book, findBooks } from '../../data/catalogue';
 import { useAsync } from '../../shared/useAsync';
 import { useDebounced } from '../../shared/useDebounced';
 import { BookCover } from '../components/kit';
@@ -10,7 +10,8 @@ import { lt } from '../../strings/library';
 export function BookPicker({ onPick, label }: { onPick: (b: Book) => void; label: string }) {
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
-  const results = useAsync(() => (debounced.trim().length >= 2 ? searchBooks(debounced, '').then((p) => p.items.slice(0, 8)) : Promise.resolve([])), [debounced]);
+  // Titles that can be picked only (archived ones would take places in the short list), the closest first.
+  const results = useAsync(() => (debounced.trim().length >= 2 ? findBooks(debounced, 8, 'ACTIVE') : Promise.resolve([])), [debounced]);
   return (
     <div className="field picker">
       <label>
@@ -19,7 +20,7 @@ export function BookPicker({ onPick, label }: { onPick: (b: Book) => void; label
       </label>
       {!!results.data?.length && (
         <ul className="picker-list">
-          {results.data.filter((b) => b.status === 'ACTIVE').map((b) => (
+          {results.data.map((b) => (
             <li key={b.id}>
               <button type="button" onClick={() => onPick(b)} className="picker-book">
                 <BookCover title={b.title} seed={b.id} url={b.coverUrl} size="sm" />

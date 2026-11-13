@@ -27,7 +27,7 @@ type DialogKind = 'idCard' | 'edit' | 'suspend' | 'reactivate' | 'close';
 export function MemberDetailPage() {
   const { memberId = '' } = useParams();
   const { claims } = useAuth();
-  const { org, branchName, branches } = useWorkspace();
+  const { org, branch, branchName, branches } = useWorkspace();
   const orgId = org?.id ?? '';
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const deps = [orgId, memberId, JSON.stringify(scope)];
@@ -106,6 +106,12 @@ export function MemberDetailPage() {
         </div>
         <div className="row">
           <StatusBadge status={m.status} />
+          {/* Straight to the desk with this member chosen. Only at their home branch: that is where members borrow. */}
+          {perm('loans.issue') && m.status !== 'CLOSED' && branch?.id === m.homeBranchId && (
+            <Link className="btn btn-outlined" to={paths.adminDeskFor(m.id)}>
+              {lt.deskIssueReturn}
+            </Link>
+          )}
           {m.status !== 'CLOSED' && (
             <button type="button" className="btn btn-outlined" onClick={() => setDialog('idCard')}>
               {t.idCardTitle}
@@ -164,7 +170,7 @@ export function MemberDetailPage() {
           <CurrentLoans orgId={orgId} memberId={m.id} scope={scope} reloadKey={reloadKey} onChanged={refresh} />
           <MemberReservations
             orgId={orgId}
-            memberId={m.id}
+            member={m}
             branchId={b}
             scope={scope}
             canPlace={perm('reservations.manage') && !!current}

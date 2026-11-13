@@ -8,6 +8,10 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- The first requests after the code loads go to these: open the connections while it downloads. -->
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin />
     <title>Stories</title>
     <script>
       // Personal appearance before the first paint (same rules as src/shared/appearance.ts, which takes over once loaded).

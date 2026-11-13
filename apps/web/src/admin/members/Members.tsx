@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { AGE_GROUPS, label } from '../../data/common';
-import { listMembers, type Member, memberCounts, type MemberFilters, RENEWAL_DUE_DAYS, type RenewalFilter, renewalState, searchMembers } from '../../data/members';
+import { indexMemberList, listMembers, type Member, memberCounts, type MemberFilters, RENEWAL_DUE_DAYS, type RenewalFilter, renewalState, searchMembers } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { useDebounced } from '../../shared/useDebounced';
 import { usePagedQuery } from '../../shared/usePagedQuery';
@@ -139,6 +139,8 @@ export function MemberDialog({ orgId, branchId, member, onClose, onSaved }: { or
 }
 
 const RENEWAL_FILTERS: RenewalFilter[] = ['ACTIVE', 'DUE', 'EXPIRED', 'NONE'];
+/** Branches whose older members were filled in (or are being) since the app was opened: asked once, not on every visit. */
+const listIndexed = new Set<string>();
 const RENEWAL_TONE: Record<Exclude<RenewalFilter, ''>, Tone> = { ACTIVE: 'ok', DUE: 'warn', EXPIRED: 'danger', NONE: 'muted' };
 
 /** Plan and renewal date, with how soon it is (text, never colour alone). */
@@ -160,6 +162,7 @@ function RenewalCell({ m }: { m: Member }) {
 function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string }) {
   const { claims } = useAuth();
   const navigate = useNavigate();
+  const { branch } = useWorkspace();
   const [q, setQ] = useState('');
   const debounced = useDebounced(q);
   // The dashboard links here with ?renewal=DUE (etc.).
@@ -170,6 +173,28 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
   const manage = can(claims, 'members.manage', orgId, branchId);
   const searching = debounced.trim().length >= 2;
   const set = <K extends keyof MemberFilters>(k: K) => (v: MemberFilters[K]) => setFilters((f) => ({ ...f, [k]: v }));
+
+  // Members registered before the list kept the plan and renewal date on the member are missing from the
+  // subscription chips until both are filled in: once per branch, behind the list, which shows at once and is
+  // read again (with its counts) only if something was filled in.
+  const showing = useRef('');
+  showing.current = `${orgId}/${branchId}`;
+  useEffect(() => {
+    const key = `${orgId}/${branchId}`;
+    if ((branch?.id === branchId && branch.memberListIndexedAt) || listIndexed.has(key)) return;
+    listIndexed.add(key);
+    indexMemberList(orgId, branchId).then(
+      (updated) => {
+        if (updated > 0 && showing.current === key) setAttempt((n) => n + 1);
+      },
+      (e: unknown) => {
+        // Tried again on the next visit.
+        listIndexed.delete(key);
+        console.warn('member list index', e);
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId, branchId]);
 
   const counts = useAsync(() => memberCounts(orgId, branchId), [orgId, branchId, attempt]);
 
@@ -236,6 +261,7 @@ function BranchMembers({ orgId, branchId }: { orgId: string; branchId: string })
           placeholder={lt.searchMembers}
           aria-label={lt.searchMembers}
           autoFocus
+          data-autofocus
         />
         {manage && (
           <button type="button" className="btn btn-filled" onClick={() => setRegistering(true)}>

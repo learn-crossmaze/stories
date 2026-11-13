@@ -2,13 +2,14 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { FirebaseError } from 'firebase/app';
 import { Timestamp } from 'firebase/firestore';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Plan, Subscription } from '../data/billing';
-import type { Loan } from '../data/circulation';
+import type { Loan, Reservation } from '../data/circulation';
 import type { Copy } from '../data/inventory';
 import type { Member } from '../data/members';
+import { paths } from '../paths';
 import { t } from '../strings';
 import { lt } from '../strings/library';
 
@@ -21,6 +22,9 @@ const world = vi.hoisted(() => ({
   respond: (() => undefined) as (data: never) => unknown,
   members: [] as unknown[],
   loans: [] as unknown[],
+  /** The member's books are read only once this lets them: a test holds it to scan while they are still loading. */
+  loansGate: Promise.resolve(),
+  holds: [] as unknown[],
   subs: [] as unknown[] | Error,
   copies: {} as Record<string, unknown>,
   inspection: [] as unknown[],
@@ -31,6 +35,7 @@ const calls = world.calls as Sent[];
 
 const reads = vi.hoisted(() => ({
   findCopy: vi.fn(),
+  getCopy: vi.fn(),
   listCopies: vi.fn(),
   getMember: vi.fn(),
   searchMembers: vi.fn(),
@@ -49,16 +54,35 @@ vi.mock('firebase/functions', () => ({
 vi.mock('../data/services', () => ({ services: () => ({ fns: {}, db: {} }) }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ claims: { v: 1, sa: true, o: {} } }) }));
 vi.mock('../admin/Workspace', () => ({
-  useWorkspace: () => ({ org: { id: 'o1', type: 'CORPORATE' }, branch: { id: 'b1', name: 'Central' }, branches: [{ id: 'b1', name: 'Central' }], branchesLoading: false }),
+  useWorkspace: () => ({
+    org: { id: 'o1', type: 'CORPORATE' },
+    branch: { id: 'b1', name: 'Central' },
+    branches: [{ id: 'b1', name: 'Central' }, { id: 'b2', name: 'North' }],
+    branchesLoading: false,
+  }),
 }));
-vi.mock('../data/inventory', async (importOriginal) => ({ ...(await importOriginal<typeof import('../data/inventory')>()), findCopy: reads.findCopy, listCopies: reads.listCopies }));
+vi.mock('../data/inventory', async (importOriginal) => ({ ...(await importOriginal<typeof import('../data/inventory')>()), findCopy: reads.findCopy, getCopy: reads.getCopy, listCopies: reads.listCopies }));
 vi.mock('../data/members', async (importOriginal) => ({ ...(await importOriginal<typeof import('../data/members')>()), searchMembers: reads.searchMembers, getMember: reads.getMember }));
 vi.mock('../data/circulation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../data/circulation')>()),
-  memberLoans: async () => world.loans,
-  memberReservations: async () => [],
+  memberLoans: async () => {
+    await world.loansGate;
+    return world.loans;
+  },
+  memberReservations: async () => world.holds,
 }));
-vi.mock('../data/billing', async (importOriginal) => ({ ...(await importOriginal<typeof import('../data/billing')>()), memberSubscriptions: reads.memberSubscriptions, listPlans: reads.listPlans }));
+vi.mock('../data/billing', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../data/billing')>()),
+  memberSubscriptions: reads.memberSubscriptions,
+  listPlans: reads.listPlans,
+  // No deposit yet: the plan chooser can work out the total to take.
+  depositAccount: async () => null,
+}));
+vi.mock('../data/catalogue', async (importOriginal) => {
+  // What the title picker finds, whatever is typed.
+  const found = [{ id: 'bk9', title: 'Kidnapped', authorNames: ['R. L. Stevenson'], status: 'ACTIVE', coverUrl: null }];
+  return { ...(await importOriginal<typeof import('../data/catalogue')>()), searchBooks: async () => ({ items: found }), findBooks: async () => found };
+});
 
 const { DeskPage } = await import('../admin/circulation/Desk');
 
@@ -97,13 +121,23 @@ function scan(box: HTMLElement, code: string) {
 /** A person's Enter: the scan box ignores one that comes right behind a scan. */
 const pause = () => new Promise((r) => setTimeout(r, 350));
 
-function open() {
+/** The address the desk is at, to see what is left of a link once it was used. */
+function Where() {
+  const at = useLocation();
+  return <output data-testid="where">{at.pathname + at.search}</output>;
+}
+function open(at: string = paths.adminDesk) {
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[at]}>
       <DeskPage />
+      <Where />
     </MemoryRouter>,
   );
 }
+const held = (n: number, over: Partial<Reservation> = {}): Reservation => ({
+  id: `r${n}`, memberId: 'm1', memberName: 'Asha Rao', memberCode: 'MEM-0001', bookId: `bk${n}`, bookTitle: `Book ${n}`, branchId: 'b1', status: 'ALLOCATED',
+  allocatedCopyId: `cp${n}`, allocatedCopyCode: `C-${n}`, holdUntil: null, queuedAt: null, ...over,
+});
 /** Opens the desk and the member, as scanning their card does. */
 async function openMember() {
   open();
@@ -116,6 +150,8 @@ beforeEach(() => {
   world.respond = () => ({});
   world.members = [member()];
   world.loans = [];
+  world.loansGate = Promise.resolve();
+  world.holds = [];
   world.subs = [sub()];
   world.copies = {};
   world.inspection = [];
@@ -125,6 +161,7 @@ beforeEach(() => {
     await world.gate;
     return world.copies[code.trim().toUpperCase()] ?? null;
   });
+  reads.getCopy.mockImplementation(async (_org: string, id: string) => Object.values(world.copies as Record<string, Copy>).find((c) => c.id === id) ?? null);
   reads.listCopies.mockImplementation(async () => ({ items: world.inspection, last: null }));
   reads.searchMembers.mockImplementation(async () => world.members);
   reads.getMember.mockImplementation(async (_org: string, id: string) => (world.members as Member[]).find((m) => m.id === id) ?? null);
@@ -193,12 +230,23 @@ describe('member desk', () => {
   it('a book scanned straight after the card waits for the member\'s books, and is ticked as a return', async () => {
     world.loans = [loan(1)];
     shelve(copy(1, { status: 'ISSUED' }));
+    let release = () => {};
+    world.loansGate = new Promise<void>((r) => (release = r));
     open();
     scan(await screen.findByLabelText(lt.findMember), 'MEM-0001');
-    // The scan lands while the member's books are still being read.
+    // The scan lands while the member's books are still being read: nothing is decided about it yet.
     scan(await screen.findByLabelText(lt.scanToIssue), 'C-1');
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: /Book 1/ })).toBeChecked());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole('checkbox', { name: /Book 1/ })).toBeNull();
+    expect(reads.findCopy).not.toHaveBeenCalled();
     expect(screen.queryByText(lt.onLoanElsewhere, { exact: false })).toBeNull();
+    expect(screen.getByRole('button', { name: lt.nothingStaged })).toBeDisabled();
+
+    release();
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: /Book 1/ })).toBeChecked());
+    expect(reads.findCopy).not.toHaveBeenCalled();
+    expect(screen.queryByText(lt.onLoanElsewhere, { exact: false })).toBeNull();
+    expect(screen.queryByText(`C-1: ${lt.onLoanElsewhere}`)).toBeNull();
   });
 
   it('loses no scan when books are scanned faster than they are looked up, and keeps every warning', async () => {
@@ -284,9 +332,10 @@ describe('member desk', () => {
       world.subs = [sub({ id: 's2', status: 'PENDING_PAYMENT' })];
       return { subscriptionId: 's2' };
     };
-    await user.click(await within(screen.getByRole('dialog')).findByRole('button', { name: t.create }));
+    await user.click(await within(screen.getByRole('dialog')).findByRole('button', { name: lt.saveUnpaid }));
     await waitFor(() => expect(calls.map((c) => c.action)).toEqual(['subscriptions-create']));
     expect(calls[0]).toMatchObject({ orgId: 'o1', memberId: 'm1', planId: 'p1', duration: 'MONTHLY' });
+    expect(calls[0]).not.toHaveProperty('payment');
     expect((await screen.findAllByRole('button', { name: new RegExp(`^${lt.recordPayment}`) })).length).toBeGreaterThan(0);
     expect(screen.getByText('Book 3')).toBeInTheDocument();
     expect(screen.getByText(lt.blockedNoPlan)).toBeInTheDocument();
@@ -318,6 +367,145 @@ describe('member desk', () => {
     expect(reads.getMember).toHaveBeenCalledWith('o1', 'm1');
     // Paid: the keyboard is back in the scan box, where Enter confirms.
     await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it('sends the keyboard back to the scan box after a payment taken while a term is still in force', async () => {
+    const user = userEvent.setup();
+    // An early renewal waiting for payment: the member can borrow, and the card is up for the payment only.
+    world.subs = [sub(), sub({ id: 's2', status: 'PENDING_PAYMENT', kind: 'RENEWAL' })];
+    shelve(copy(3));
+    const box = await openMember();
+    scan(box, 'C-3');
+    await screen.findByRole('button', { name: lt.pressEnter(lt.issueN(1)) });
+
+    await user.click(await screen.findByRole('button', { name: lt.recordPayment }));
+    world.respond = () => {
+      world.subs = [sub(), sub({ id: 's2', startAt: days(25), endAt: days(55) })];
+      world.members = [member({ nextSubscriptionId: 's2' })];
+      return {};
+    };
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: new RegExp(`^${lt.recordPayment} ·`) }));
+    await waitFor(() => expect(calls.map((c) => c.action)).toEqual(['payments-recordOffline']));
+    // The card has gone with its button; Enter in the scan box issues the book that was waiting.
+    await waitFor(() => expect(screen.queryByRole('button', { name: lt.recordPayment })).toBeNull());
+    await waitFor(() => expect(box).toHaveFocus());
+    await pause();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(calls.map((c) => c.action)).toEqual(['payments-recordOffline', 'circulation-issue']));
+  });
+
+  it('opens with the member a link names, and uses the link once', async () => {
+    const user = userEvent.setup();
+    open(paths.adminDeskFor('m1'));
+    expect(await screen.findByLabelText(lt.scanToIssue)).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'Asha Rao' })).toBeInTheDocument();
+    expect(reads.getMember).toHaveBeenCalledWith('o1', 'm1');
+    expect(reads.searchMembers).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(new RegExp(`^${paths.adminDesk}$`)));
+
+    // "Change member" goes to the find box and stays there.
+    await user.click(screen.getByRole('button', { name: lt.changeMember }));
+    expect(await screen.findByLabelText(lt.findMember)).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByLabelText(lt.scanToIssue)).toBeNull();
+    expect(reads.getMember).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not open another branch's member from a link, nor one that cannot be read", async () => {
+    world.members = [member({ homeBranchId: 'b2' })];
+    open(paths.adminDeskFor('m1'));
+    expect(await screen.findByText(lt.deskOtherBranch('Asha Rao', 'North'))).toBeInTheDocument();
+    expect(screen.getByLabelText(lt.findMember)).toBeInTheDocument();
+    expect(screen.queryByLabelText(lt.scanToIssue)).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(new RegExp(`^${paths.adminDesk}$`)));
+  });
+
+  it('lands on the find box with a notice when the linked member is missing or the read is refused', async () => {
+    reads.getMember.mockImplementation(async () => {
+      throw Object.assign(new Error('denied'), { code: 'permission-denied' });
+    });
+    open(paths.adminDeskFor('nobody'));
+    expect(await screen.findByText(lt.deskMemberMissing)).toBeInTheDocument();
+    expect(screen.getByLabelText(lt.findMember)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(new RegExp(`^${paths.adminDesk}$`)));
+  });
+
+  it('adds a book held for the member with one click, once, and only when it is held at this branch', async () => {
+    const user = userEvent.setup();
+    world.members = [member({ allocatedCount: 3 })];
+    world.subs = [sub({ planSnapshot: { ...sub().planSnapshot, maxSimultaneousBooks: 3 } })];
+    world.holds = [held(1), held(2, { branchId: 'b2' }), held(3)];
+    shelve(copy(1, { status: 'RESERVED', activeReservationId: 'r1' }), copy(3, { status: 'AVAILABLE' }));
+    const box = await openMember();
+    const list = await screen.findByRole('list', { name: lt.holdsHere });
+    expect(within(list).getByText('Book 2')).toBeInTheDocument();
+    expect(within(list).getByText(lt.holdAt('North'), { exact: false })).toBeInTheDocument();
+    // The hold at another branch has no button.
+    expect(screen.queryByRole('button', { name: lt.holdAddTitle('Book 2') })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: lt.holdAddTitle('Book 1') }));
+    expect(await screen.findByRole('button', { name: lt.pressEnter(lt.issueN(1)) })).toBeEnabled();
+    expect(reads.getCopy).toHaveBeenCalledWith('o1', 'cp1');
+    expect(reads.findCopy).not.toHaveBeenCalled();
+    // Staged once: its button is gone, and scanning the same book says it is already in the list.
+    expect(screen.queryByRole('button', { name: lt.holdAddTitle('Book 1') })).toBeNull();
+    await waitFor(() => expect(box).toHaveFocus());
+    scan(box, 'C-1');
+    expect(await screen.findByText(`C-1: ${lt.alreadyStaged}`)).toBeInTheDocument();
+
+    // A hold that ran out since the list was read is not staged; the holds are read again.
+    world.holds = [held(1), held(2, { branchId: 'b2' })];
+    await user.click(screen.getByRole('button', { name: lt.holdAddTitle('Book 3') }));
+    expect(await screen.findByText(`C-3: ${lt.holdGone}`)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: lt.holdAddTitle('Book 3') })).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: lt.pressEnter(lt.issueN(1)) }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toMatchObject({ action: 'circulation-issue', memberId: 'm1', barcodes: ['C-1'] });
+  });
+
+  it('reserves a title for the member without losing the scanned books', async () => {
+    const user = userEvent.setup();
+    world.loans = [loan(1)];
+    shelve(copy(3));
+    const box = await openMember();
+    scan(box, 'C-3');
+    await user.click(await screen.findByRole('checkbox', { name: /Book 1/ }));
+    await screen.findByRole('button', { name: lt.pressEnter(lt.exchangeN(1, 1)) });
+
+    await user.click(screen.getByRole('button', { name: lt.placeReservation }));
+    const dialog = await screen.findByRole('dialog', { name: lt.reserveTitleFor('Asha Rao') });
+    world.respond = (data: Sent) => {
+      if (data.action === 'copies-availability') return { branches: [{ branchId: 'b1', branchName: 'Central', available: 1, total: 2 }] };
+      world.holds = [held(9, { bookTitle: 'Kidnapped' })];
+      world.members = [member({ allocatedCount: 1 })];
+      return { reservationId: 'r9', status: 'ALLOCATED', copyCode: 'C-9' };
+    };
+    await user.type(within(dialog).getByRole('searchbox'), 'kidn');
+    await user.click(await within(dialog).findByRole('button', { name: /Kidnapped/ }));
+    await user.click(within(dialog).getByRole('button', { name: lt.placeReservation }));
+    await waitFor(() => expect(calls.some((c) => c.action === 'reservations-place')).toBe(true));
+    expect(calls.find((c) => c.action === 'reservations-place')).toMatchObject({ orgId: 'o1', memberId: 'm1', bookId: 'bk9', branchId: 'b1' });
+    await user.click(await within(dialog).findByRole('button', { name: lt.finished }));
+
+    // Back at the desk: the member, the ticked return and the scanned book are as they were; the hold counts.
+    expect(await screen.findByText(lt.reserveHeld('Kidnapped', 'C-9'))).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Book 1/ })).toBeChecked();
+    expect(screen.getByText('Book 3')).toBeInTheDocument();
+    expect(await within(await screen.findByRole('list', { name: lt.holdsHere })).findByText('Kidnapped')).toBeInTheDocument();
+    expect(reads.getMember).toHaveBeenCalledWith('o1', 'm1');
+    await waitFor(() => expect(box).toHaveFocus());
+    // One out, one back, one held: at the plan's limit of two, not over it.
+    expect(await screen.findByText(lt.held(2, 2), { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: lt.pressEnter(lt.exchangeN(1, 1)) })).toBeEnabled();
+  });
+
+  it('offers no reservation to a member who cannot borrow', async () => {
+    world.members = [member({ activeSubscriptionId: null })];
+    world.subs = [];
+    await openMember();
+    await screen.findByRole('button', { name: lt.subscribe });
+    expect(screen.queryByRole('button', { name: lt.placeReservation })).toBeNull();
   });
 
   it('leaves the decision to the server when the subscriptions could not be read', async () => {
@@ -412,6 +600,33 @@ describe('inspection', () => {
     };
     await user.click(screen.getByRole('button', { name: lt.failInspection }));
     await waitFor(() => expect(calls[1]).toMatchObject({ action: 'copies-inspect', copyId: 'cp2', outcome: 'DAMAGED', condition: 'POOR' }));
+    expect(await screen.findByText(lt.noInspections)).toBeInTheDocument();
+  });
+
+  it('reads the list again when the whole batch is refused, names the row that left, and the next click goes through', async () => {
+    const user = userEvent.setup();
+    world.inspection = [1, 2, 3].map((n) => copy(n, { status: 'UNDER_INSPECTION' }));
+    open();
+    await user.click(await screen.findByRole('tab', { name: lt.deskModeInspect }));
+
+    // C-2 was passed by a colleague, issued and returned at another branch since the list was read.
+    world.respond = () => {
+      world.inspection = [1, 3].map((n) => copy(n, { status: 'UNDER_INSPECTION' }));
+      return Object.assign(new FirebaseError('functions/failed-precondition', 'Copy C-2 is not at this branch.'), { details: { reason: 'OTHER_BRANCH' } });
+    };
+    await user.click(await screen.findByRole('button', { name: lt.passN(3) }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Copy C-2 is not at this branch.');
+    expect(await screen.findByText(lt.inspectGone('C-2'))).toBeInTheDocument();
+    await waitFor(() => expect(reads.listCopies).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText('Book 2')).toBeNull();
+
+    world.respond = () => {
+      world.inspection = [];
+      return { passed: ['cp1', 'cp3'], skipped: [] };
+    };
+    await user.click(screen.getByRole('button', { name: lt.passN(2) }));
+    expect(await screen.findByText(lt.inspectPassed(2))).toBeInTheDocument();
+    expect(calls.map((c) => c.copyIds)).toEqual([['cp1', 'cp2', 'cp3'], ['cp1', 'cp3']]);
     expect(await screen.findByText(lt.noInspections)).toBeInTheDocument();
   });
 });

@@ -71,6 +71,7 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
   const copies = list.items;
 
   const locName = (id: string | null) => (id ? (locations.data?.find((l) => l.id === id)?.code ?? '—') : '—');
+  const shelves = (locations.data ?? []).filter((l) => l.status === 'ACTIVE');
 
   return (
     <>
@@ -168,17 +169,25 @@ function BranchInventory({ orgId, branchId }: { orgId: string; branchId: string 
       <section className="section">
         <div className="page-header-row">
           <h2>{lt.locations}</h2>
-          {manage && (
-            <button type="button" className="btn btn-outlined" onClick={() => setNewLoc(true)}>
-              <Icon name="plus" /> {lt.newLocation}
-            </button>
-          )}
+          <div className="row">
+            {/* A label per shelf, holding its code: scanned on Shelve books, it picks the shelf. */}
+            {shelves.length > 0 && (
+              <Link className="btn btn-text" to={paths.adminLabels} state={{ labels: shelves.map((l): LabelData => ({ barcode: l.code, title: l.label })) }}>
+                {lt.shelfLabels}
+              </Link>
+            )}
+            {manage && (
+              <button type="button" className="btn btn-outlined" onClick={() => setNewLoc(true)}>
+                <Icon name="plus" /> {lt.newLocation}
+              </button>
+            )}
+          </div>
         </div>
         {!locations.data?.length ? (
           <p className="muted">{lt.refEmpty}</p>
         ) : (
           <ul className="chips">
-            {locations.data.filter((l) => l.status === 'ACTIVE').map((l) => (
+            {shelves.map((l) => (
               <li key={l.id}>
                 <span className="mono">{l.code}</span> {l.label}
               </li>

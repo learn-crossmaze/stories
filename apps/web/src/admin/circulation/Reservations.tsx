@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
+import { useAuth } from '../../auth/AuthContext';
+import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { branchReservations, type Reservation, RESERVATIONS_PAGE } from '../../data/circulation';
 import { type BranchStock, shelvedElsewhere, stockByBranchAll } from '../../data/inventory';
@@ -12,6 +14,7 @@ import { ConfirmWithReason } from '../components/Dialog';
 import { NeedBranch, Notice, Tabs } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
+import { ReserveDialog } from '../members/memberDialogs';
 
 function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
   const [tab, setTab] = useState<'ALLOCATED' | 'WAITING'>('ALLOCATED');
@@ -21,6 +24,13 @@ function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
     return { ALLOCATED, WAITING };
   }, [orgId, branchId]);
   const [cancelling, setCancelling] = useState<Reservation | null>(null);
+  const { claims } = useAuth();
+  // Handing a held book over happens at the desk, which opens with the member already chosen.
+  const canHandOver = can(claims, 'loans.issue', orgId, branchId);
+  // Reserving from here starts by finding the member, so it needs the right to see members too.
+  const canReserve = can(claims, 'reservations.manage', orgId, branchId) && can(claims, 'members.view', orgId, branchId);
+  const [reserving, setReserving] = useState(false);
+  const [placed, setPlaced] = useState<string | null>(null);
   const rows = lists.data?.[tab] ?? [];
   const waiting = lists.data?.WAITING;
 
@@ -49,6 +59,14 @@ function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
   const count = (list: Reservation[] | undefined) => (list && list.length < RESERVATIONS_PAGE ? list.length : undefined);
   return (
     <>
+      {canReserve && (
+        <div className="toolbar">
+          <button type="button" className="btn btn-outlined" onClick={() => setReserving(true)}>
+            {lt.placeReservation}
+          </button>
+        </div>
+      )}
+      {placed && <Notice tone="ok">{placed}</Notice>}
       <Tabs
         tabs={[
           { value: 'ALLOCATED', label: lt.awaitingPickup, count: count(lists.data?.ALLOCATED) },
@@ -108,6 +126,11 @@ function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
                         </td>
                       )}
                       <td className="cell-actions">
+                        {tab === 'ALLOCATED' && canHandOver && (
+                          <Link className="btn btn-text" to={paths.adminDeskFor(r.memberId)}>
+                            {lt.deskHandOver}
+                          </Link>
+                        )}
                         <button type="button" className="btn btn-text" onClick={() => setCancelling(r)}>
                           {lt.cancelReservation}
                         </button>
@@ -124,6 +147,17 @@ function Queue({ orgId, branchId }: { orgId: string; branchId: string }) {
         <ConfirmWithReason title={`${lt.cancelReservation}?`} body={`${cancelling.bookTitle} · ${cancelling.memberName}`} confirmLabel={lt.cancelReservation} onClose={() => setCancelling(null)}
           onConfirm={async (reason) => { await command('reservations-cancel', { orgId, reservationId: cancelling.id, reason }); lists.reload(); setCancelling(null); }} />
       )}
+      {reserving && (
+        <ReserveDialog
+          orgId={orgId}
+          branchId={branchId}
+          onClose={() => setReserving(false)}
+          onDone={(msg) => {
+            setPlaced(msg);
+            lists.reload();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -134,7 +168,7 @@ export function ReservationsPage() {
     <>
       <header className="page-header">
         <h1>{lt.reservationsTitle}</h1>
-        <p className="muted">Place reservations from a member’s page.</p>
+        <p className="muted">{lt.reservationsHint}</p>
       </header>
       {/* The counts kept per title belong to one organization. */}
       <NeedBranch>{(branchId) => org && <Queue key={org.id} orgId={org.id} branchId={branchId} />}</NeedBranch>

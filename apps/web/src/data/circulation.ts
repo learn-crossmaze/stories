@@ -28,6 +28,8 @@ export interface Reservation {
   bookTitle: string;
   branchId: string;
   status: 'WAITING' | 'ALLOCATED' | 'FULFILLED' | 'EXPIRED' | 'CANCELLED';
+  /** The copy held for the member while ALLOCATED. */
+  allocatedCopyId: string | null;
   allocatedCopyCode: string | null;
   holdUntil: unknown;
   queuedAt: unknown;

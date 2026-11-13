@@ -618,6 +618,12 @@ Staff fill in their own HR details and documents instead of HR typing them in.
     hours; per person and organization, on that device);
   - a *Needs attention* item on the dashboard and a card on My profile.
   All of them disappear as soon as the last item is done.
+  The console reads the person's own record and what is missing once and shares it (`OnboardingProvider` in the
+  shell): the banner, the pop-up, the menu count, the dashboard item, My profile and Complete my profile all show
+  that one answer. It is read again at once when the person saves or uploads something, when the tab comes back
+  into view after 5 minutes, and every 10 minutes while it stays in view, so a document HR rejected or a newly
+  mandatory detail shows within about 10 minutes. A read behind the page keeps what is on screen, and on Complete
+  my profile what is being typed (the form takes up saved details only when they really changed).
 - **Checklist:** while joining, saving a PAN ticks *PAN recorded*, an emergency contact ticks *Emergency contact
   recorded*, and adding the bank account ticks *Bank account recorded*; verifying documents ticks theirs as before.
   HR can untick them.

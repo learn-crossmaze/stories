@@ -23,6 +23,7 @@ vi.mock('firebase/functions', () => ({
   },
 }));
 vi.mock('../data/services', () => ({ services: () => ({ fns: {}, db: {} }) }));
+vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ claims: { v: 1, sa: true, o: {} } }) }));
 vi.mock('../admin/Workspace', () => ({
   useWorkspace: () => ({ org: { id: 'o1' }, branch: { id: 'nth', name: 'North' }, branches: [], branchesLoading: false }),
 }));

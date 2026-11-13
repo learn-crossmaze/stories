@@ -39,12 +39,19 @@ export async function currentTerm(tx: Pick<Transaction, 'get'>, orgId: string, m
   return null;
 }
 
-/** Throws the member-facing reason borrowing is blocked, if any. */
-export async function requireActiveTerm(tx: Transaction, orgId: string, member: Member): Promise<Term> {
+/** Throws when the membership itself is not active (suspended or closed): borrowing is paused. */
+export function assertMemberActive(member: Member): void {
   if (member.status !== 'ACTIVE') {
     throw errors.conflict('MEMBER_INACTIVE', `This membership is ${member.status.toLowerCase()}. Borrowing is paused.`);
   }
-  const term = await currentTerm(tx, orgId, member);
+}
+
+/**
+ * The check on a term already read with `currentTerm`: throws the member-facing
+ * reason borrowing is blocked, if any (the membership first, then the term).
+ */
+export function assertActiveTerm(member: Member, term: Term | null): Term {
+  assertMemberActive(member);
   if (!term) {
     throw errors.conflict(
       'NO_ACTIVE_SUBSCRIPTION',
@@ -52,4 +59,11 @@ export async function requireActiveTerm(tx: Transaction, orgId: string, member: 
     );
   }
   return term;
+}
+
+/** Throws the member-facing reason borrowing is blocked, if any. */
+export async function requireActiveTerm(tx: Transaction, orgId: string, member: Member): Promise<Term> {
+  // An inactive membership is refused before its subscriptions are read.
+  assertMemberActive(member);
+  return assertActiveTerm(member, await currentTerm(tx, orgId, member));
 }

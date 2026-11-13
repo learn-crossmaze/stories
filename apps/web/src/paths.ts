@@ -19,6 +19,8 @@ export const paths = {
   adminStaff: '/admin/staff',
   adminAudit: '/admin/audit',
   adminDesk: '/ops/desk',
+  /** The desk with a member already chosen (their home branch must be the one the desk is working at). */
+  adminDeskFor: (memberId: string) => `/ops/desk?member=${encodeURIComponent(memberId)}`,
   adminBooks: '/ops/books',
   adminBooksBulk: '/ops/books/bulk',
   adminBook: (id: string) => `/ops/books/${id}`,

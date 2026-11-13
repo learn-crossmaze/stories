@@ -370,7 +370,7 @@ export function PastLoans({ orgId, memberId, scope, reloadKey }: { orgId: string
 /** Waiting and held reservations, with "place reservation". */
 export function MemberReservations({
   orgId,
-  memberId,
+  member,
   branchId,
   scope,
   canPlace,
@@ -379,7 +379,7 @@ export function MemberReservations({
   onNotice,
 }: {
   orgId: string;
-  memberId: string;
+  member: Pick<Member, 'id' | 'fullName'>;
   branchId: string;
   scope: Scope;
   canPlace: boolean;
@@ -387,6 +387,7 @@ export function MemberReservations({
   onChanged: () => void;
   onNotice: (text: string) => void;
 }) {
+  const memberId = member.id;
   const reservations = useAsync(() => memberReservations(orgId, memberId, scope), [orgId, memberId, JSON.stringify(scope)]);
   useReloadOn(reloadKey, reservations.reload);
   const [placing, setPlacing] = useState(false);
@@ -420,7 +421,7 @@ export function MemberReservations({
       {placing && (
         <ReserveDialog
           orgId={orgId}
-          memberId={memberId}
+          member={member}
           branchId={branchId}
           onClose={() => setPlacing(false)}
           onDone={(msg) => {

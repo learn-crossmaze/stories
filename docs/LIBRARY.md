@@ -74,19 +74,53 @@ the catalogue) takes a delivery in one pass, for staff who look after copies at 
   outside lookup, so restocking works offline and for everyone), otherwise the public-catalogue match as below.
   Scanning a book already on the list **adds a copy to that row** (the scan field stays ready for the next book), so
   a stack of 5 copies is 5 scans or one row with *Copies* = 5.
+- **Scan-ready:** the page opens with the cursor in the first ISBN field (the field carries `data-autofocus`, see
+  ARCHITECTURE.md), a delivery that was saved puts it in the next empty row, and *Clear list* in the first row of
+  the fresh list; after a delivery that could not be saved it stays where it is. Rows already received stay listed
+  and no longer count as repeats, so the same title in the next carton is a new line. **Scan ISBNs with the
+  camera** reads the ISBN barcode on the back cover (for a laptop or phone without a hand scanner): a new ISBN goes
+  into the first empty row and is looked up like a typed one, a title already on the list counts another copy on
+  its row, and any other barcode (a price sticker, a copy label) is refused with a message.
 - **New titles:** looked up (see below); if nobody knows the ISBN, or the lookup services are down, type the title
   and author in the row. Adding titles needs `books.create` (head office, branch managers, librarians, catalogue
-  managers) in a corporate organization; others can only receive titles already in the catalogue.
-- **This delivery:** shelf location, condition and price per copy are set once (price can be changed per row).
+  managers) in a corporate organization; others can only receive titles already in the catalogue. Each row is
+  looked up with `books-lookup` and `exact: true`, so it is answered as soon as Google Books has that ISBN. A row
+  whose book details name the audience starts at that **age group** ("From the book details. Check it."); a guess,
+  or an age group picked on the row, is kept when the page's own choice changes, and a guess goes when another ISBN
+  is typed over the row.
+- **This delivery:** shelf location, condition and price per copy are set once (price can be changed per row). The
+  **shelf** last picked is offered again at that branch in this browser (only while it is still an active shelf
+  there), and is named beside the *Receive* button ("going on shelf A-01"). The condition and the price are never
+  remembered: a stale one would be written to every copy. The choices under *For new titles* (age group, reading
+  level, genre) are the ones last made in this browser, shared with the *New book* form.
 - **One click** (*Receive N copies*, `copies-receive`) adds the new titles to the catalogue and every copy to the
   branch in one transaction per batch of up to 25 titles / 100 copies: copy codes from the branch's pattern
   (copies of several titles sharing one counter get consecutive numbers), barcodes, `ACQUIRED` events, and members
   already waiting for a title get the new copies first. An ISBN that turns out to be in the catalogue just gets
-  copies; the same title listed twice is one line. Then covers are imported and **Print N labels** opens the label
-  sheet for exactly the new copies. Firestore takes at most 500 writes per transaction: the writes a batch needs
+  copies; the same title listed twice is one line. The result and **Print N labels** show as soon as the copies
+  are saved, and the page is free for the next carton. Firestore takes at most 500 writes per transaction: the writes a batch needs
   (three per copy, about five more per copy handed to a waiting member, plus new titles, authors and publishers) are
   counted first, and a batch that would go over is refused whole with "Receive it in two or more parts"
   (`RECEIVE_TOO_LARGE`) instead of failing half-way.
+- **Covers** of the new titles are imported behind the scenes, three at a time (`queueCovers` in
+  `apps/web/src/data/bulkBooks.ts`, one queue for the whole console): nothing waits for them, a quiet line counts
+  them ("Adding covers 6 of 20…"), and they keep coming while the label sheet or another page is open. A cover that
+  can't be fetched leaves the generated one. Closing or reloading the tab while covers are still waiting asks first,
+  because the rest would be lost (the book page takes a photo, not a link).
+- **Labels:** *Print N labels* covers every copy received since the page was opened or cleared (a second carton,
+  or a retry after a batch failed, adds to it; *Clear list* starts again). The labels travel with the link, so the
+  sheet shows at once and takes any number; see *Labels* under Inventory.
+- **Send to branches** (staff with `books.transfer` at this branch, when another branch is open): type how many
+  copies of each title go to each branch, and one click makes one transfer per branch, already on its way
+  (`transfers-create` with the copy ids and `dispatch: true`; a branch that gets more than 50 copies gets several
+  transfers). Nothing is scanned again: copies of a title are alike until labelled, so each branch gets the next
+  ones in code order. Send **before** sticking labels on: afterwards there is one *Print N labels for <branch>*
+  per branch and one for the books staying. Copies held for members waiting at this branch are never offered
+  (when the delivery served someone, the copies of titles we already had are read first to see which). If a copy
+  was taken meanwhile (reserved, issued), that branch's transfer is refused whole and named with the reason, the
+  other branches still go, and the copy is left out so the rest can be sent again. The receiving branch scans
+  each book in as usual ([CIRCULATION.md §Transfers](CIRCULATION.md#transfers)); the copies stay owned by the
+  branch that received the delivery.
 - `copies-receive` shares its code with `books-bulkCreate` (planning new titles) and `copies-acquire` (planning
   copies), so receiving, "Add by ISBN" and *Add copies* on a book page number and record copies the same way.
 
@@ -96,7 +130,9 @@ valid ISBN-10/13, looked up with `books-lookup`, and the row shows the cover, ti
 ISBN is not valid, repeated, not found or already in the catalogue. Rows whose match has no author ask for one. Age
 group, reading level and a genre fallback are set once for the whole list (genre and age group can be changed per
 row). One *Add N books* sends the ready rows with `books-bulkCreate` (up to 25 per call, in one transaction each;
-ISBNs already in the catalogue are skipped, authors and publishers are reused by name), then imports their covers.
+ISBNs already in the catalogue are skipped, authors and publishers are reused by name); their covers are imported
+behind the scenes, as for a delivery. Scan-ready rows, the camera, the age-group guess and the remembered choices
+for new titles work the same here.
 
 **Covers:** catalogue editors (Super Admin, head office) add a photo or scan on the book page (**Add cover** /
 **Change cover** / **Remove**). The browser shrinks it to a JPEG of at most 800 px (~100 KB) and sends it to
@@ -138,9 +174,15 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   - **Scan-ready:** the scan field has the keyboard on arrival, after each save and after a shelf is picked with the
     mouse. Scanning or typing an active shelf's code picks that shelf (a book in the list is matched first; a copy
     already shelved whose pre-printed barcode equals a shelf code would be read as the shelf, so the page always
-    says which shelf it chose). The list is read once: shelved books are hidden on the page, and it is read again
+    says which shelf it chose; **Print shelf labels** in Inventory's shelf locations prints a QR label per active
+    shelf to stick on it). The list is read once: shelved books are hidden on the page, and it is read again
     only when it was cut at 300, when nothing is left to show, when a save of more than 100 was refused part-way,
-    or with **Check for more books** (books inspected while the page is open show only then).
+    or with **Check for more books** (books inspected while the page is open show only then). Reading it again
+    keeps the work in hand: the ticks on books still listed and the copies scanned in from other shelves. Both
+    save buttons wait while the list is being read, so an older read can't show a book just shelved as unshelved.
+  - **Print labels for ticked (N)** prints labels for the ticked books from what is on the page (no shelf needed):
+    a lost or never-printed label of anything not yet shelved. Copies received straight onto a shelf, or held for
+    a member, are not in this list; their labels print from the book page.
 - **Condition:** NEW, GOOD, FAIR, POOR (changes are recorded as events). DAMAGED/LOST/RETIRED are *statuses*.
 - **State machine** — see [CIRCULATION.md](CIRCULATION.md). Retired copies are never deleted and never return.
 - **Availability** (`copies-availability`): per-branch counts computed live with Firestore count queries (always
@@ -155,11 +197,16 @@ Physical copies live under the owning organization: `orgs/{o}/copies/{copyId}` w
   filter still applied. A scan asks for the barcode and the code together (a barcode match wins). The copy page
   opened from a scan or a list row shows the copy just read while it reads it afresh (never once that read has
   answered), so its shelves and book load alongside. Its *Record condition* and *Inspect* dialogs start from the
-  copy's condition (*Repaired* from Good), and *Move* starts on the copy's shelf and saves only a real move.
+  copy's condition (*Repaired* from Good), and *Move* starts on the copy's shelf and saves only a real move. The
+  action buttons wait for the page's own read, so a dialog never starts from the copy that was carried there.
 - **Labels:** the console prints A4 sheets (3 × 8). Stories prints **QR codes only** (no 1-D barcodes): each label
   has the QR code of the copy code with the copy code and the book title (small type) beside it; the copy page shows
   the same QR tag, and member ID cards carry a QR code of the member code. Older labels with Code 128 bars and books'
-  ISBN barcodes still scan (below).
+  ISBN barcodes still scan (below). The links that lead to the sheet (Receive books, a book's page, *Print labels
+  for ticked* on Shelve books) hand it the labels they already hold (`labelsLink` in
+  `apps/web/src/admin/inventory/Inventory.tsx`, router state): no copy is read, and any number prints. The address
+  also carries the first 120 copy ids (`?copies=`), which is what a new tab or a pasted link reads instead; a copy
+  that can't be read there is left out and counted, not a blank sheet. The page says how many labels and sheets.
 - **Scanning:** USB/Bluetooth scanners work in every scan field (they type the code and press Enter). The camera
   button next to each scan field reads codes with the laptop webcam or a phone camera (QR, Data Matrix, Code 128,
   EAN-13 / ISBN, Code 39, UPC). Decoding runs in a Web Worker (`admin/barcode.worker.ts`, logic in

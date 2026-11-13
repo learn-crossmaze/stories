@@ -66,4 +66,13 @@ export const ct = {
   thresholdError: 'Enter an amount of ₹0 or more.',
   rulesSaved: 'Library rules saved.',
   otherSettings: 'More settings in Master control',
+
+  // What waits under Master control (the menu counts and the Dashboard's list): only what is missing or broken.
+  todoHolidays: (year: string) => `Enter the holidays for ${year}`,
+  todoLeaveTypes: 'Add a leave type: none is active, so nobody can apply for leave',
+  todoLetterDrafts: (n: number) => `${n} letter template${n === 1 ? '' : 's'} not published yet`,
+  todoPayrollSettings: 'Check and save the payroll settings (PF, ESI and professional tax)',
+  todoWhatsApp: (n: number) => `${n} WhatsApp notification${n === 1 ? '' : 's'} to fix or send to Meta`,
+  todoCourierTest: (n: number) => `${n} courier app${n === 1 ? ' is' : 's are'} still on a test account`,
+  todoAlerts: 'Choose who is told about new website enquiries',
 } as const;

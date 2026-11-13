@@ -12,7 +12,12 @@ import { t } from './strings';
 
 // The staff app (app.storiesforall.in). Members don't use it: their pages are the member area on the website
 // (memberRoutes.tsx, served at storiesforall.in/account); anyone who isn't staff is sent there.
-const AdminApp = lazy(() => import('./admin/AdminApp'));
+// The console's code starts downloading now, while sign-in is still being checked, not after it. The import must
+// stay dynamic (AdminShell imports this file), and `lazy` asks again by itself, so a failed first try is retried
+// when the console is shown.
+const loadAdminApp = () => import('./admin/AdminApp');
+const AdminApp = lazy(loadAdminApp);
+void loadAdminApp().catch(() => undefined);
 
 /** Where a page of the old member app lives now: the same path inside the member area. */
 export const memberAreaUrl = (path = '/') => `${env.memberUrl}${path === '/' ? '' : path}`;

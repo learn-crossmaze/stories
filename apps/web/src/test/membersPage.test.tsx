@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider, useParams } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,10 @@ const world = vi.hoisted(() => ({
   /** Searches wait for this: a test holds it to act while a lookup is on its way. */
   gate: Promise.resolve(),
   searches: [] as string[],
+  /** The branch being worked at; `memberListIndexedAt` says its older members were filled in already. */
+  branch: { id: 'b1', name: 'Central', memberListIndexedAt: 1 } as { id: string; name: string; memberListIndexedAt?: unknown },
+  /** Members the list counts as having a plan. */
+  withPlan: 0,
 }));
 const calls = world.calls as Sent[];
 
@@ -33,14 +37,14 @@ vi.mock('firebase/functions', () => ({
 vi.mock('../data/services', () => ({ services: () => ({ fns: {}, db: {} }) }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ claims: { v: 1, sa: true, o: {} }, user: { uid: 'me' } }) }));
 vi.mock('../admin/Workspace', () => ({
-  useWorkspace: () => ({ org: { id: 'o1', name: 'Stories' }, branch: { id: 'b1', name: 'Central' }, branches: [{ id: 'b1', name: 'Central', contact: { phone: '' } }], branchesLoading: false, branchName: () => 'Central' }),
+  useWorkspace: () => ({ org: { id: 'o1', name: 'Stories' }, branch: world.branch, branches: [{ id: 'b1', name: 'Central', contact: { phone: '' } }], branchesLoading: false, branchName: () => 'Central' }),
 }));
 vi.mock('../data/members', async (importOriginal) => {
   const real = await importOriginal<typeof import('../data/members')>();
   return {
     ...real,
     listMembers: async () => ({ items: world.members }),
-    memberCounts: async () => ({ ALL: world.members.length, ACTIVE: 0, DUE: 0, EXPIRED: 0, NONE: world.members.length }),
+    memberCounts: async () => ({ ALL: world.members.length, ACTIVE: world.withPlan, DUE: 0, EXPIRED: 0, NONE: world.members.length - world.withPlan }),
     searchMembers: async (_org: string, _branch: string, q: string) => {
       world.searches.push(q);
       await world.gate;
@@ -100,6 +104,8 @@ beforeEach(() => {
   world.members = [member('m1', 'Priya Sharma', 'CEN-M000012'), member('m2', 'Anil Sharma', 'CEN-M000123'), member('m3', 'Zoya Khan', 'CEN-M0001234')];
   world.gate = Promise.resolve();
   world.searches.length = 0;
+  world.branch = { id: 'b1', name: 'Central', memberListIndexedAt: 1 };
+  world.withPlan = 0;
 });
 
 describe('Members page', () => {
@@ -107,6 +113,40 @@ describe('Members page', () => {
     open();
     expect(await screen.findByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument();
     expect(calls).toEqual([]);
+  });
+
+  it('arriving on the page lands in the search box', async () => {
+    open();
+    const box = await screen.findByRole('searchbox', { name: lt.searchMembers });
+    // The mark the console looks for after a navigation, so focus goes here and not to the page heading.
+    expect(box).toHaveAttribute('data-autofocus');
+    expect(box).toHaveFocus();
+  });
+
+  it("fills in older members' plan and renewal date once per branch, behind the list, then reads the counts again", async () => {
+    world.branch = { id: 'b1', name: 'Central' };
+    let finish: (answer: unknown) => void = () => {};
+    world.respond = () => new Promise((r) => (finish = r));
+    open();
+    // The list and its counts do not wait for it.
+    expect(await screen.findByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument();
+    const chip = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}`) });
+    await waitFor(() => expect(chip(lt.subNone)).toHaveTextContent('3'));
+    expect(calls.map((c) => [c.action, c.orgId, c.branchId])).toEqual([['members-indexList', 'o1', 'b1']]);
+
+    // Filled in: two of the three had a plan all along, and the chips now say so.
+    world.withPlan = 2;
+    finish({ updated: 3 });
+    await waitFor(() => expect(chip(lt.subActive)).toHaveTextContent('2'));
+    expect(chip(lt.subNone)).toHaveTextContent('1');
+    expect(screen.getByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument();
+
+    // Coming back to the page asks nothing more, although this screen's copy of the branch is still the old one.
+    cleanup();
+    open();
+    expect(await screen.findByRole('link', { name: 'Priya Sharma' })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toHaveLength(1);
   });
 
   it('a scanned card opens its member, also when other codes start the same way', async () => {

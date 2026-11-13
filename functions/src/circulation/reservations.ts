@@ -9,9 +9,10 @@ import { errors } from '../core/errors.js';
 import { db, REGION } from '../core/firebase.js';
 import { id, reason } from '../core/schemas.js';
 import { JOB_OPTIONS, sweep } from '../core/sweep.js';
-import { loadMember } from '../members/members.js';
+import { inOrder } from '../core/reads.js';
+import { memberRef } from '../members/members.js';
 import type { Member } from '../members/model.js';
-import { requireActiveTerm } from '../billing/term.js';
+import { assertActiveTerm, currentTerm } from '../billing/term.js';
 import { allocate, copyOf, makeAvailable, nextWaiting, readCirculationConfig } from './allocation.js';
 
 /**
@@ -28,32 +29,39 @@ export async function placeReservation(
   tx: Transaction,
   authorize: (member: Member) => Promise<void>,
 ) {
-    const { snap: memberSnap, member } = await loadMember(tx, input.orgId, input.memberId);
-    await authorize(member);
-    const branch = await tx.get(db.doc(`orgs/${input.orgId}/branches/${input.branchId}`));
+    // Everything the request names is read together, as plain reads: nothing is judged, and nothing read here is
+    // told to the caller, until the caller is known to act for this member (the checks below keep their old order).
+    const [memberSnap, branch, book, existing, shelf, { holdHours }] = await inOrder([
+      tx.get(memberRef(input.orgId, input.memberId)),
+      tx.get(db.doc(`orgs/${input.orgId}/branches/${input.branchId}`)),
+      tx.get(db.doc(`books/${input.bookId}`)),
+      tx.get(
+        db.collection(`orgs/${input.orgId}/reservations`)
+          .where('memberId', '==', input.memberId)
+          .where('bookId', '==', input.bookId)
+          .where('status', 'in', ['WAITING', 'ALLOCATED'])
+          .limit(1),
+      ),
+      tx.get(
+        db.collection(`orgs/${input.orgId}/copies`)
+          .where('bookId', '==', input.bookId)
+          .where('currentBranchId', '==', input.branchId)
+          .where('status', '==', 'AVAILABLE')
+          .limit(1),
+      ),
+      readCirculationConfig(tx, input.orgId),
+    ]);
+    if (!memberSnap.exists) throw errors.notFound('Member');
+    const member = memberSnap.data() as Member;
+    // The permission check is listed first: a caller with no right to this member is refused for that alone.
+    const [, current] = await inOrder([authorize(member), currentTerm(tx, input.orgId, member)]);
     if (!branch.exists || branch.get('status') !== 'ACTIVE') throw errors.notFound('Branch');
-    const term = await requireActiveTerm(tx, input.orgId, member);
-    const book = await tx.get(db.doc(`books/${input.bookId}`));
+    const term = assertActiveTerm(member, current);
     if (!book.exists || book.get('status') !== 'ACTIVE') throw errors.notFound('Active catalogue title');
-    const existing = await tx.get(
-      db.collection(`orgs/${input.orgId}/reservations`)
-        .where('memberId', '==', input.memberId)
-        .where('bookId', '==', input.bookId)
-        .where('status', 'in', ['WAITING', 'ALLOCATED'])
-        .limit(1),
-    );
     if (!existing.empty) throw errors.conflict('ALREADY_RESERVED', `${member.fullName} already has a reservation for this title.`);
     if (member.waitingCount + member.allocatedCount >= term.max) {
       throw errors.conflict('RESERVATION_LIMIT', `Reservations are limited to ${term.max} at a time on this plan.`);
     }
-    const shelf = await tx.get(
-      db.collection(`orgs/${input.orgId}/copies`)
-        .where('bookId', '==', input.bookId)
-        .where('currentBranchId', '==', input.branchId)
-        .where('status', '==', 'AVAILABLE')
-        .limit(1),
-    );
-    const { holdHours } = await readCirculationConfig(tx, input.orgId);
 
     const ref = db.collection(`orgs/${input.orgId}/reservations`).doc();
     const base = {
@@ -95,20 +103,24 @@ export async function cancelReservation(
     const ref = db.doc(`orgs/${input.orgId}/reservations/${input.reservationId}`);
     const res = await tx.get(ref);
     if (!res.exists) throw errors.notFound('Reservation');
-    await authorize(res);
     const status = res.get('status') as string;
-    if (status !== 'WAITING' && status !== 'ALLOCATED') throw errors.conflict('NOT_OPEN', 'This reservation is already closed.');
-    const memberRef = db.doc(`orgs/${input.orgId}/members/${res.get('memberId')}`);
+    const member = memberRef(input.orgId, res.get('memberId'));
     if (status === 'ALLOCATED') {
-      const copy = await tx.get(db.doc(`orgs/${input.orgId}/copies/${res.get('allocatedCopyId')}`));
-      const [waiting] = await nextWaiting(tx, input.orgId, res.get('branchId'), res.get('bookId'));
-      const { holdHours } = await readCirculationConfig(tx, input.orgId);
+      // A held copy: what handing it on needs is read alongside the permission check, which is listed first.
+      const [, copy, [waiting], { holdHours }] = await inOrder([
+        authorize(res),
+        tx.get(db.doc(`orgs/${input.orgId}/copies/${res.get('allocatedCopyId')}`)),
+        nextWaiting(tx, input.orgId, res.get('branchId'), res.get('bookId')),
+        readCirculationConfig(tx, input.orgId),
+      ]);
       tx.update(ref, { status: 'CANCELLED', cancelReason: input.reason, updatedAt: FieldValue.serverTimestamp() });
-      tx.update(memberRef, { allocatedCount: FieldValue.increment(-1) });
+      tx.update(member, { allocatedCount: FieldValue.increment(-1) });
       makeAvailable(tx, input.orgId, copy, {}, { type: 'RESERVATION_CANCELLED', actorUid: actor.uid, ref: { reservationId: res.id } }, waiting, holdHours);
     } else {
+      await authorize(res);
+      if (status !== 'WAITING') throw errors.conflict('NOT_OPEN', 'This reservation is already closed.');
       tx.update(ref, { status: 'CANCELLED', cancelReason: input.reason, updatedAt: FieldValue.serverTimestamp() });
-      tx.update(memberRef, { waitingCount: FieldValue.increment(-1) });
+      tx.update(member, { waitingCount: FieldValue.increment(-1) });
     }
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
       action: 'reservation.cancel', entityType: 'reservation', entityId: res.id, branchId: res.get('branchId'), memberId: res.get('memberId'),

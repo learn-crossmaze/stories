@@ -47,19 +47,8 @@ export const toDate = (v: unknown): Date | null => (v instanceof Timestamp ? v.t
 /** Branch-scoped staff must filter on the branch field the rules check. */
 export const scoped = (field: string, scope: Scope): QueryConstraint[] => (scope === 'ALL' ? [] : [where(field, 'in', scope.slice(0, 10))]);
 
-/** Same normalization as the server's search tokens (functions/src/catalogue/search.ts). */
-export function queryToken(q: string): string | null {
-  const words = q
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .split(' ')
-    .filter((w) => w.length >= 2);
-  if (!words.length) return null;
-  return words.sort((a, b) => b.length - a.length)[0].slice(0, 12);
-}
+// How a typed search becomes the words asked of the database (kept free of database code so it is tested alone).
+export { matchesAll, normalizeText, primaryWord, queryWords } from '../shared/searchWords';
 
 export interface Page<T> {
   items: T[];

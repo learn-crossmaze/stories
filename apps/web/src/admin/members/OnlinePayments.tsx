@@ -1,8 +1,8 @@
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, type DocumentSnapshot, getDoc, onSnapshot } from 'firebase/firestore';
 import QRCode from 'qrcode';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { call, command, errorText } from '../../data/api';
+import { ApiError, call, command, errorText } from '../../data/api';
 import type { Branch } from '../../data/org';
 import { services } from '../../data/services';
 import { money, when } from '../../shared/format';
@@ -150,6 +150,15 @@ interface PaymentRequest {
   mode: string;
 }
 
+/**
+ * When the dialog asks Razorpay by itself whether an open request was paid (ms from the request being shown):
+ * first after `first`, then every `fast` until `slowAfter`, every `slow` until `stopAfter`, then no more.
+ */
+export const AUTO_CHECK = { first: 4_000, fast: 3_000, slowAfter: 60_000, slow: 6_000, stopAfter: 120_000 };
+/** Answers after which asking again is pointless (no right to see payments here, the request or the gateway is gone). */
+const AUTO_CHECK_GIVE_UP = new Set(['FORBIDDEN', 'PERMISSION-DENIED', 'NOT_FOUND', 'NOT-FOUND', 'UNAUTHENTICATED', 'GATEWAY_NOT_CONFIGURED', 'SERVER_OUTDATED']);
+const AUTO_CHECK_MAX_FAILURES = 3;
+
 /** Member page → "Collect online": send a Razorpay payment link or show a UPI QR code, then watch for the payment. */
 export function CollectOnlineDialog({
   orgId,
@@ -175,19 +184,76 @@ export function CollectOnlineDialog({
   const [qr, setQr] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Live status: the webhook marks the request paid; the dialog updates by itself.
+  // What the request document says, taken whole: "paid" and "paid but not applied" must arrive together, or the
+  // "payment recorded" notice below would fire for money that still needs someone's attention.
+  const show = (s: DocumentSnapshot) => {
+    if (!s.exists()) return;
+    setStatus(s.get('status') as string);
+    setNeedsAttention((s.get('needsAttention') as string | undefined) ?? null);
+  };
+
+  // Live status: the request is marked paid by the webhook or by a status check (the automatic one below, or the
+  // button), and the dialog updates by itself.
   useEffect(() => {
     if (!req) return;
-    return onSnapshot(
-      doc(services().db, `orgs/${orgId}/paymentRequests/${req.requestId}`),
-      (s) => {
-        if (!s.exists()) return;
-        setStatus(s.get('status') as string);
-        setNeedsAttention((s.get('needsAttention') as string | undefined) ?? null);
-      },
-      (e) => console.warn('payment request watch failed', e),
-    );
+    return onSnapshot(doc(services().db, `orgs/${orgId}/paymentRequests/${req.requestId}`), show, (e) => console.warn('payment request watch failed', e));
   }, [orgId, req]);
+
+  // While the request is open the dialog asks Razorpay by itself. The webhook alone keeps the counter waiting: it
+  // is served by a function of its own that is usually asleep, and it may be late or not set up at all. This only
+  // makes the server look; what the dialog shows still comes from the listener above. Silent, and it gives up by
+  // itself (AUTO_CHECK): the button stays for anything it misses.
+  const acting = useRef(busy);
+  acting.current = busy;
+  useEffect(() => {
+    if (!req || status !== 'OPEN') return;
+    const paymentRequestId = req.requestId;
+    const started = Date.now();
+    const expires = new Date(req.expiresAt).getTime();
+    let stopped = false;
+    let asking = false;
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+    const over = () => stopped || Date.now() - started >= AUTO_CHECK.stopAfter || Date.now() >= expires;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (over()) return stop();
+      const age = Date.now() - started;
+      timer = setTimeout(() => void tick(), age < AUTO_CHECK.first ? AUTO_CHECK.first - age : age < AUTO_CHECK.slowAfter ? AUTO_CHECK.fast : AUTO_CHECK.slow);
+    };
+    const tick = async () => {
+      if (asking) return;
+      if (over()) return stop();
+      // Not behind a hidden tab, and not while Cancel or Check is running (one question to the server at a time).
+      if (document.visibilityState === 'hidden' || acting.current) return schedule();
+      asking = true;
+      try {
+        const r = await call<{ status: string }>('payments-checkRequest', { orgId, paymentRequestId });
+        failures = 0;
+        if (r.status !== 'OPEN') stop();
+      } catch (e) {
+        failures++;
+        if (failures >= AUTO_CHECK_MAX_FAILURES || (e instanceof ApiError && AUTO_CHECK_GIVE_UP.has(e.reason))) stop();
+      } finally {
+        asking = false;
+      }
+      schedule();
+    };
+    // Back on this tab: ask at once instead of waiting out the timer.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - started >= AUTO_CHECK.first) void tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    schedule();
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [orgId, req, status]);
 
   useEffect(() => {
     if (status === 'PAID' && !needsAttention) onPaid();
@@ -208,9 +274,14 @@ export function CollectOnlineDialog({
     });
   const check = () =>
     run('check', async () => {
-      const r = await call<{ status: string }>('payments-checkRequest', { orgId, paymentRequestId: req!.requestId });
+      const paymentRequestId = req!.requestId;
+      const r = await call<{ status: string; reason?: string; problem?: string }>('payments-checkRequest', { orgId, paymentRequestId });
+      if (r.status === 'OPEN') return setError(lt.olNotYet);
+      // Settled: shown from the request itself (as the listener does), not from the bare status in the answer.
+      const settled = await getDoc(doc(services().db, `orgs/${orgId}/paymentRequests/${paymentRequestId}`)).catch(() => null);
+      if (settled?.exists()) return show(settled);
+      setNeedsAttention(r.reason === 'NEEDS_ATTENTION' ? (r.problem ?? r.reason) : null);
       setStatus(r.status);
-      if (r.status === 'OPEN') setError(lt.olNotYet);
     });
   const cancel = () =>
     run('cancel', async () => {

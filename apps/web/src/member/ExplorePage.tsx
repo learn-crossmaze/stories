@@ -45,8 +45,16 @@ function ExploreBody({ m }: { m: Membership }) {
       {m.member.audience !== 'ADULTS' && <p className="muted small">{t.meShowingFor(label(m.member.audience))}</p>}
       {list.error && !books.length ? (
         <ErrorState message={list.error} onRetry={list.reload} />
-      ) : list.loading && !books.length ? (
+      ) : list.loading && !books.length && !list.hasMore ? (
         <SkeletonRows rows={5} />
+      ) : !books.length && list.hasMore ? (
+        // A search of several words stops after a few pages: none matched so far, and there are more to read.
+        <>
+          <EmptyState icon="book" title={t.searchNoneYet} message={t.searchNoneYetHint} />
+          <button type="button" className="btn btn-outlined load-more" disabled={list.loading} onClick={list.loadMore}>
+            {list.loading ? t.loading : t.keepLooking}
+          </button>
+        </>
       ) : !books.length ? (
         <EmptyState icon="book" title={t.meNoBooksFound} message="" />
       ) : (

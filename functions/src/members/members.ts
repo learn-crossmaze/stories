@@ -5,7 +5,7 @@ import { cancelAtGateway, markRequestsCancelled, readOpenRequests } from '../bil
 import { searchTokens } from '../catalogue/search.js';
 import { aadhaarInput, aadhaarKey } from '../core/aadhaar.js';
 import { recordAudit } from '../core/audit.js';
-import { command } from '../core/callable.js';
+import { command, query } from '../core/callable.js';
 import { errors } from '../core/errors.js';
 import { db } from '../core/firebase.js';
 import { branchPatterns, existingCodes, reserveCodes } from '../core/numbering.js';
@@ -297,3 +297,43 @@ export const setStatus = command(
   },
   (r, ctx) => cancelAtGateway(ctx.input.orgId, r.cancelledRequestIds),
 );
+
+/**
+ * One-time fill of the member list fields (`planName`, `renewalDueAt`) for a
+ * branch's members registered before those fields existed. The member list
+ * calls it once per branch; afterwards payments keep the fields current.
+ * Safe to repeat (recomputed from the subscriptions).
+ */
+export const indexList = query('members-indexList', z.strictObject({ orgId: id, branchId: id }), async ({ actor, input }) => {
+  await actor.require('members.view', input.orgId, input.branchId);
+  const branchRef = db.doc(`orgs/${input.orgId}/branches/${input.branchId}`);
+  const branch = await branchRef.get();
+  if (!branch.exists) throw errors.notFound('Branch');
+  if (branch.get('memberListIndexedAt')) return { updated: 0 };
+  const members = await db.collection(`orgs/${input.orgId}/members`).where('homeBranchId', '==', input.branchId).select().get();
+  const ids = members.docs.map((d) => d.id);
+  const latest = new Map<string, { endAt: FirebaseFirestore.Timestamp; planName: string }>();
+  for (let i = 0; i < ids.length; i += 30) {
+    const subs = await db
+      .collection(`orgs/${input.orgId}/subscriptions`)
+      .where('memberId', 'in', ids.slice(i, i + 30))
+      .select('memberId', 'status', 'endAt', 'planSnapshot.name')
+      .get();
+    for (const s of subs.docs) {
+      if (!['ACTIVE', 'EXPIRED'].includes(s.get('status')) || !s.get('endAt')) continue;
+      const endAt = s.get('endAt') as FirebaseFirestore.Timestamp;
+      const prev = latest.get(s.get('memberId'));
+      if (!prev || prev.endAt.toMillis() < endAt.toMillis()) latest.set(s.get('memberId'), { endAt, planName: s.get('planSnapshot.name') });
+    }
+  }
+  const writer = db.bulkWriter();
+  // A member changed since it was read (e.g. paid just now) already has fresh fields: skip it, don't retry.
+  writer.onWriteError(() => false);
+  for (const d of members.docs) {
+    const l = latest.get(d.id);
+    writer.update(d.ref, { planName: l?.planName ?? null, renewalDueAt: l?.endAt ?? null }, { lastUpdateTime: d.updateTime }).catch(() => undefined);
+  }
+  await writer.close();
+  await branchRef.update({ memberListIndexedAt: FieldValue.serverTimestamp() });
+  return { updated: members.size };
+});

@@ -120,4 +120,10 @@ which then sees ISSUED and fails with "not available". Tested.
   branch). Both dialogs ask before a scanned list is thrown away. In both, a scan that lands on a tick box or a
   list does nothing (Enter does not press the main button there, and typed characters pick no option; arrow keys
   and Space still work), and a tick or a pick made with the mouse gives the keyboard back to the scan field.
+- **From Receive books** (`apps/web/src/admin/catalogue/ReceiveSend.tsx`): a delivery just received can be sent
+  on without scanning it again. *Send to branches* takes a number per title and branch and sends one
+  `transfers-create` with `dispatch: true` per branch (the copy ids come from the `copies-receive` answer; over
+  50 copies for a branch are split into several transfers). Copies held for members waiting at the sending
+  branch are left out, and a refusal (`COPY_NOT_AVAILABLE`) is shown for that branch only. Receiving at the
+  destination is unchanged. See [LIBRARY.md](LIBRARY.md) (Receive books).
 - All steps audited. Cross-branch *member* borrowing is a later phase.

@@ -14,6 +14,7 @@ import {
   where,
 } from 'firebase/firestore';
 
+import { call } from './api';
 import { AgeGroup, db, Page, page, withId } from './common';
 import type { DeliveryAddress } from './delivery';
 
@@ -202,6 +203,14 @@ export async function memberCounts(orgId: string, branchId: string): Promise<Rec
 export async function renewalsDueCount(orgId: string, branchId: string): Promise<number> {
   const q = query(collection(db(), `orgs/${orgId}/members`), where('homeBranchId', '==', branchId), ...dueSoon(renewalWindow()));
   return (await getCountFromServer(q)).data().count;
+}
+
+/**
+ * Fills plan and renewal date on members registered before the member list had them (once per branch).
+ * Gives how many members were gone through: 0 when the branch had been done before.
+ */
+export async function indexMemberList(orgId: string, branchId: string): Promise<number> {
+  return (await call<{ updated: number }>('members-indexList', { orgId, branchId })).updated;
 }
 
 export async function getMember(orgId: string, memberId: string): Promise<Member | null> {

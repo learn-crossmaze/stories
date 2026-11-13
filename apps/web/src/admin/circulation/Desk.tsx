@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { command, errorText } from '../../data/api';
 import { memberSubscriptions } from '../../data/billing';
-import { ISSUE_MAX, memberLoans, memberReservations, RETURN_MAX } from '../../data/circulation';
+import { ISSUE_MAX, memberLoans, memberReservations, type Reservation, RETURN_MAX } from '../../data/circulation';
 import { label, toDate } from '../../data/common';
-import { type Copy, findCopy, INSPECT_BATCH, listCopies, passInspections } from '../../data/inventory';
+import { type Copy, findCopy, getCopy, INSPECT_BATCH, listCopies, passInspections } from '../../data/inventory';
 import { getMember, type Member, searchMembers } from '../../data/members';
 import { useAsync } from '../../shared/useAsync';
 import { day, since } from '../../shared/format';
@@ -21,6 +21,7 @@ import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 import { CopyStatusBadge } from '../inventory/Inventory';
 import { SubscriptionCard } from '../members/memberCards';
+import { ReserveDialog } from '../members/memberDialogs';
 
 type Msg = { tone: 'ok' | 'warn' | 'error'; text: string } | null;
 
@@ -67,6 +68,7 @@ function Skipped({ skipped }: { skipped: ReturnType<typeof useSkipped> }) {
 
 /** Finds the member, then serves them (OpenMember); after a confirmed step it is back here, ready for the next card. */
 function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
+  const { branches } = useWorkspace();
   const [member, setMember] = useState<Member | null>(null);
   const [matches, setMatches] = useState<Member[] | null>(null);
   const [msg, setMsg] = useState<Msg>(null);
@@ -99,6 +101,47 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
     }
   };
 
+  // Arriving from a member's page or the pick-up list (?member=<id>): that member opens without being looked up
+  // again. Members borrow at their home branch, which the find box sees to by searching this branch only; a
+  // member opened by id is checked here instead.
+  const [params, setParams] = useSearchParams();
+  const wanted = params.get('member');
+  const [arriving, setArriving] = useState(!!wanted);
+  useEffect(() => {
+    if (!wanted) return;
+    let live = true;
+    setArriving(true);
+    getMember(orgId, wanted)
+      .then(
+        (m) => {
+          if (!live) return;
+          if (m && m.homeBranchId === branchId) pick(m);
+          else setMsg({ tone: 'warn', text: m ? lt.deskOtherBranch(m.fullName, branches.find((b) => b.id === m.homeBranchId)?.name ?? null) : lt.deskMemberMissing });
+        },
+        (e: unknown) => {
+          reportError(e, 'load', { what: 'member at the desk' });
+          if (live) setMsg({ tone: 'warn', text: lt.deskMemberMissing });
+        },
+      )
+      .finally(() => {
+        if (!live) return;
+        setArriving(false);
+        // Used once: left in the address, it would open the same member again after "Change member" or a change of tab.
+        setParams(
+          (now) => {
+            const rest = new URLSearchParams(now);
+            rest.delete('member');
+            return rest;
+          },
+          { replace: true },
+        );
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, orgId, branchId]);
+
   if (member) {
     return (
       <OpenMember
@@ -115,6 +158,7 @@ function MemberDesk({ orgId, branchId }: { orgId: string; branchId: string }) {
       />
     );
   }
+  if (arriving) return <SkeletonRows rows={3} />;
   return (
     <section className="desk-find">
       <ScanInput label={lt.findMember} placeholder={lt.findMemberHint} onScan={lookup} autoFocus />
@@ -194,17 +238,29 @@ function OpenMember({
     return loansNow.current.data ?? [];
   };
 
-  // Renewed and paid here: back to the scan box, where Enter confirms the books already scanned.
-  const lapsed = useRef(false);
-  const hasTerm = !!current;
+  // The subscription card is up while there is no term in force or a payment is waiting. Once its work is done
+  // (renewed, paid, or the unpaid one cancelled) it goes, and the button that had focus goes with it: back to the
+  // scan box, where Enter confirms the books already scanned.
+  const cardNeeded = !current || unpaid;
+  const cardWasUp = useRef(false);
   useEffect(() => {
     if (!subsKnown) return;
-    if (!hasTerm) lapsed.current = true;
-    else if (lapsed.current) {
-      lapsed.current = false;
+    if (cardNeeded) cardWasUp.current = true;
+    else if (cardWasUp.current) {
+      cardWasUp.current = false;
       setFocusSignal((n) => n + 1);
     }
-  }, [subsKnown, hasTerm]);
+  }, [subsKnown, cardNeeded]);
+
+  /** Puts a copy on the list to issue, or says why not: the same checks for a scanned book and for a held one added by its button. */
+  const stage = (copy: Copy, code: string) => {
+    if (issuing.now.current.some((c) => c.id === copy.id)) return skipped.add(code, lt.alreadyStaged);
+    if (copy.status === 'ISSUED') return skipped.add(code, lt.onLoanElsewhere);
+    if (copy.status !== 'AVAILABLE' && copy.status !== 'RESERVED') return skipped.add(code, lt.notOnShelf(label(copy.status)));
+    if (issuing.now.current.length >= ISSUE_MAX) return skipped.add(code, lt.issueLimit(ISSUE_MAX));
+    skipped.drop(code);
+    issuing.set([...issuing.now.current, copy]);
+  };
 
   const scan = async (value: string) => {
     const code = value.trim().toUpperCase();
@@ -221,12 +277,29 @@ function OpenMember({
     // A label that differs from the copy code is matched by the copy itself.
     const loan = mine.find((l) => l.copyId === copy.id);
     if (loan) return tick(loan.id);
-    if (issuing.now.current.some((c) => c.id === copy.id)) return skipped.add(code, lt.alreadyStaged);
-    if (copy.status === 'ISSUED') return skipped.add(code, lt.onLoanElsewhere);
-    if (copy.status !== 'AVAILABLE' && copy.status !== 'RESERVED') return skipped.add(code, lt.notOnShelf(label(copy.status)));
-    if (issuing.now.current.length >= ISSUE_MAX) return skipped.add(code, lt.issueLimit(ISSUE_MAX));
-    skipped.drop(code);
-    issuing.set([...issuing.now.current, copy]);
+    stage(copy, code);
+  };
+
+  // A book held for the member, added by its button instead of a scan: the copy is read by its id and goes
+  // through the same checks. The list of holds may be old (a hold runs out, or is cancelled, at any time).
+  const [adding, setAdding] = useState<string | null>(null);
+  const addHold = async (h: Reservation) => {
+    if (!h.allocatedCopyId || adding) return;
+    const code = h.allocatedCopyCode ?? h.bookTitle;
+    setAdding(h.id);
+    try {
+      const copy = await getCopy(orgId, h.allocatedCopyId);
+      if (!copy || copy.status !== 'RESERVED' || copy.activeReservationId !== h.id) {
+        skipped.add(code, lt.holdGone);
+        holds.reload();
+      } else stage(copy, code);
+    } catch (e) {
+      reportError(e, 'load', { what: 'held copy at the desk' });
+      skipped.add(code, errorText(e, t.errorLoad));
+    } finally {
+      setAdding(null);
+      setFocusSignal((n) => n + 1);
+    }
   };
 
   const r = returning.length;
@@ -249,7 +322,7 @@ function OpenMember({
             : heldAfter > max
               ? lt.blockedLimit(max)
               : null;
-  const ready = !busy && pending === 0 && (r > 0 || i > 0) && canAct && !blocked;
+  const ready = !busy && pending === 0 && !adding && (r > 0 || i > 0) && canAct && !blocked;
 
   const go = async () => {
     if (!ready) return;
@@ -270,14 +343,22 @@ function OpenMember({
     setFocusSignal((n) => n + 1);
   };
 
-  // After a renewal or payment here: the scanned books stay as they are, only the plan and the counts are read again.
-  const refresh = () => {
-    subs.reload();
+  const rereadMember = () =>
     getMember(orgId, mid).then(
       (fresh) => fresh && onRefreshed(fresh),
       (e: unknown) => reportError(e, 'load', { what: 'member at the desk' }),
     );
+  // After a renewal or payment here: the scanned books stay as they are, only the plan and the counts are read again.
+  const refresh = () => {
+    subs.reload();
+    void rereadMember();
+    // The dialog that did it is closing in this same update; its button may be gone when the card is drawn again.
+    setFocusSignal((n) => n + 1);
   };
+
+  // "That book is out, please hold it for me": reserved here, with the member and the scanned books kept.
+  const [reserving, setReserving] = useState(false);
+  const canReserve = can(claims, 'reservations.manage', orgId, branchId) && !!current && member.status === 'ACTIVE';
 
   return (
     <div className="desk">
@@ -304,20 +385,41 @@ function OpenMember({
           </div>
           <div className="row">
             <StatusBadge status={member.status} />
+            {canReserve && (
+              <button type="button" className="btn btn-outlined" disabled={busy} onClick={() => setReserving(true)}>
+                {lt.placeReservation}
+              </button>
+            )}
             <button type="button" className="btn btn-text" disabled={busy || pending > 0} onClick={onClose}>
               {lt.changeMember}
             </button>
           </div>
         </div>
         {!!holds.data?.length && (
-          <p className="small">
-            {lt.holdsReady}: {holds.data.map((h) => `${h.bookTitle} (${h.allocatedCopyCode})`).join(', ')}
-          </p>
+          <>
+            <p className="small">{lt.holdsReady}:</p>
+            <ul className="desk-list" aria-label={lt.holdsHere}>
+              {holds.data.map((h) => (
+                <li key={h.id}>
+                  <span>
+                    {h.bookTitle} <span className="mono small">{h.allocatedCopyCode}</span>
+                    {h.branchId !== branchId && <span className="muted small"> · {lt.holdAt(branches.find((x) => x.id === h.branchId)?.name ?? '')}</span>}
+                  </span>
+                  {/* A shortcut for a book held at this branch; scanning it does the same. */}
+                  {h.branchId === branchId && h.allocatedCopyId && !issuing.list.some((c) => c.id === h.allocatedCopyId) && (
+                    <button type="button" className="btn btn-text" aria-label={lt.holdAddTitle(h.bookTitle)} disabled={busy || !!adding} onClick={() => void addHold(h)}>
+                      {lt.holdAdd}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 
       {/* Renew and take the payment here: leaving for the member page would lose the scanned books. */}
-      {subs.data !== undefined && !subs.loading && (!current || unpaid) && (
+      {subs.data !== undefined && !subs.loading && cardNeeded && (
         <SubscriptionCard
           orgId={orgId}
           m={member}
@@ -391,6 +493,23 @@ function OpenMember({
           {busy ? t.saving : ready ? lt.pressEnter(actionLabel) : actionLabel}
         </button>
       </div>
+      {reserving && (
+        <ReserveDialog
+          orgId={orgId}
+          member={member}
+          branchId={branchId}
+          onClose={() => {
+            setReserving(false);
+            setFocusSignal((n) => n + 1);
+          }}
+          onDone={(text) => {
+            setMsg({ tone: 'ok', text });
+            // A copy held now counts toward the plan's limit, and shows under the member.
+            holds.reload();
+            void rereadMember();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -479,7 +598,17 @@ function Inspection({ orgId, branchId }: { orgId: string; branchId: string }) {
   // Copies decided here leave the list at once; the list is read again behind them (other staff's returns arrive meanwhile).
   const [decided, setDecided] = useState<string[]>([]);
   const [unticked, setUnticked] = useState<string[]>([]);
-  useEffect(() => setDecided([]), [queue.data]);
+  // Rows sent in a call the server refused. One stale row (a copy since moved to another branch, or removed) stops
+  // the whole batch, so the list is read again and the rows that are no longer in it are named.
+  const refused = useRef<Copy[] | null>(null);
+  useEffect(() => {
+    setDecided([]);
+    const sent = refused.current;
+    if (!sent || !queue.data) return;
+    refused.current = null;
+    const gone = sent.filter((c) => !queue.data!.some((x) => x.id === c.id));
+    if (gone.length) setMsg({ tone: 'warn', text: lt.inspectGone(gone.map((c) => c.code).join(', ')) });
+  }, [queue.data]);
   const canDecide = can(claims, 'copies.manage', orgId, branchId);
   const rows = (queue.data ?? []).filter((c) => !decided.includes(c.id));
   const ticked = rows.filter((c) => !unticked.includes(c.id)).slice(0, INSPECT_BATCH);
@@ -488,17 +617,23 @@ function Inspection({ orgId, branchId }: { orgId: string; branchId: string }) {
     setDecided((d) => [...d, ...copyIds]);
     queue.reload();
   };
-  const decide = (c: Copy, outcome: 'PASS' | 'DAMAGED') => {
+  const rereadAfterRefusal = (sent: Copy[]) => {
+    refused.current = sent;
+    queue.reload();
+  };
+  const decide = async (c: Copy, outcome: 'PASS' | 'DAMAGED') => {
     setMsg(null);
-    return action.run(async () => {
+    const done = await action.run(async () => {
       await command('copies-inspect', { orgId, copyId: c.id, outcome, condition: outcome === 'PASS' ? c.condition : 'POOR' });
       settled([c.id]);
     }, c.id);
+    if (!done) rereadAfterRefusal([c]);
   };
-  const passTicked = () => {
-    const copyIds = ticked.map((c) => c.id);
+  const passTicked = async () => {
+    const sent = ticked;
+    const copyIds = sent.map((c) => c.id);
     setMsg(null);
-    return action.run(async () => {
+    const done = await action.run(async () => {
       const res = await passInspections(orgId, branchId, copyIds);
       setMsg(
         res.skipped.length
@@ -507,6 +642,7 @@ function Inspection({ orgId, branchId }: { orgId: string; branchId: string }) {
       );
       settled(copyIds);
     }, 'many');
+    if (!done) rereadAfterRefusal(sent);
   };
 
   if (queue.loading) return <SkeletonRows rows={3} />;
