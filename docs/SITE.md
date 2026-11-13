@@ -30,7 +30,10 @@ prices, branches and hours, how it works, franchising and contact, plus a **Book
 - **Live data:** plans with today's prices (offers included), branches with hours, phone and delivery, and the number
   of titles come from `GET /api/public`. That's a Hosting rewrite to the `sitePublic` function
   (`functions/src/site/public.ts`), which returns only public fields of active organizations, branches and plans.
-  The CDN caches it for 15 minutes, so a price change shows on the site within about 15 minutes. Rendering is in
+  The CDN caches it for 5 minutes (browsers for 1), so a price change shows on the site within about 5 minutes.
+  Every page's head preloads it (`partials/head.html`), so the request starts before the script has loaded; the
+  script's own request (`loadSnapshot` in `src/data.ts`) must stay a plain GET with no headers, or the browser would
+  fetch the data twice. Rendering is in
   `apps/site/src/render.ts` (every value escaped) and tested in `apps/site/src/test`.
 - **Book shelves** (Books page, and two on the home page): *Trending this month* (most loans in 30 days), *New to
   the library* (newest titles), *All-time favourites* (sum of every copy's loans), *Most wanted* (members waiting

@@ -59,4 +59,7 @@ to both ends, no client writes.
 ## Indexes
 
 `firebase/firestore.indexes.json`: collection-group `memberships(orgId, branchIds CONTAINS)` and the collection-group
-single-field index on `orgId`; `auditLogs(branchId, at DESC)`; index exemptions for audit `before`/`after`.
+single-field index on `orgId`; `auditLogs(branchId, at DESC)`, `(entityId, at DESC)`, `(entityId, branchId, at DESC)`,
+`(memberId, at DESC)` and `(memberId, branchId, at DESC)` (the Audit log page filters by branch and by record, a member's
+history by member; a branch-scoped reader must always send the `branchId` filter); index exemptions for audit
+`before`/`after`.

@@ -151,11 +151,25 @@ template per message, and each branch has its own copy:
 The **Notifications** list shows only the messages this branch has added, one line each: name, Meta's review
 status and an On/Off switch. Click a line (or **Edit**) to see and change everything about it.
 
-For each message you want:
+**The quick way, for a whole branch (about six clicks):**
+
+1. **Add notification → Add all** (or **Add these** beside one group). Each message is added with the wording
+   Stories suggests, switched off. Messages the branch already has are left as they are.
+2. **Submit all to Meta.** Stories first checks with Meta, so a template your WhatsApp account already has (for
+   example from another branch) is linked and not sent again. It then sends every message that is still **Not
+   submitted**, a few at a time, and shows how far it is. If Meta does not take some, the page lists each with
+   Meta's reason; the others are sent all the same. Fix those and press the button again.
+3. A few minutes later, **Check approvals**.
+4. **Switch on all approved.** Messages you switched off on purpose can be switched off again one by one.
+
+Rejected, paused and already approved messages are never sent again by **Submit all to Meta**: a rejected one needs
+new wording first.
+
+**One message at a time, to word it your way:**
 
 0. **Add notification** and pick the transaction from the list (grouped by Membership, Payments, Borrowing,
-   Reservations and Staff). It opens with a default wording; **Add notification** saves it to the list.
-   **Remove notification** (inside the message) takes it off the list; the template stays in Meta.
+   Reservations, Home delivery and Staff). It opens with a default wording; **Add notification** saves it to the
+   list. **Remove notification** (inside the message) takes it off the list; the template stays in Meta.
 1. **Edit wording.** Change the text. Click a value chip (e.g. `{{member_name}}`) to insert it. The preview shows
    the message with sample values. Rules:
    - A message can't start or end with a value.
@@ -166,10 +180,14 @@ For each message you want:
    - If several branches share one WABA but word a message differently, give each its own name (e.g.
      `stories_member_welcome_central`).
    - A name Meta rejected or deleted can't be reused for 30 days, so change it.
-3. **Save**, then click **Submit to Meta**. Stories sends the wording (as `{{1}}`, `{{2}}`, … with sample values)
-   for approval in the **Utility** category. Approval usually takes minutes, at most 24 hours.
+3. **Save and submit to Meta** (shown once the branch is connected) saves the wording and sends it in one go.
+   Stories sends it (as `{{1}}`, `{{2}}`, … with sample values) for approval in the **Utility** category. Approval
+   usually takes minutes, at most 24 hours. If Meta refuses it, the message stays open with Meta's reason: your
+   wording is saved, so change what Meta asks for and press the button again. (**Save** alone keeps it for later;
+   **Submit to Meta** inside the message, or **Submit all to Meta** on the list, sends it then.)
 4. Click **Check approvals**. The status changes to **Approved**, or **Rejected** with Meta's reason.
-5. Tick **Send this message** (the card shows **On**), then **Send test** to your number.
+5. Tick **Send this message** (the card shows **On**) or press **Switch on all approved**, then **Send test** to
+   your number.
 
 You can also create templates directly in **WhatsApp Manager → Message templates**. Use the same name and language,
 and write `{{1}}`, `{{2}}`, … in the order the values first appear in Stories' wording. **Check approvals** then
@@ -258,6 +276,15 @@ links them.
   - GET answers Meta's verification with the branch's verify token.
   - POST checks `X-Hub-Signature-256` against the app secret (when saved), records status updates by `wamid`, and
     sets `whatsappOptOut` on members whose number replied STOP.
-- **Callables (admin router):** `whatsapp-overview`, `-saveConnection`, `-saveTemplate`, `-submitTemplate`,
-  `-syncTemplates`, `-sendTest` and `-log`, all requiring `messaging.manage` at the branch.
+- **Callables (admin router):** `whatsapp-overview`, `-saveConnection`, `-saveTemplate`, `-addTemplates`,
+  `-switchTemplates`, `-removeTemplate`, `-submitTemplate`, `-syncTemplates`, `-sendTest` and `-log`, all requiring
+  `messaging.manage` at the branch.
+  - `-addTemplates` creates only the templates the branch lacks, switched off and `NOT_SUBMITTED`, so the
+    switchboard does not change. Sending checks only the switch, not Meta's review, which is why nothing is added
+    switched on.
+  - `-switchTemplates` changes `enabled` on templates the branch has and rewrites the switchboard entry in the same
+    transaction.
+  - "Submit all to Meta" is a loop in the console (`apps/web/src/data/whatsapp.ts submitAllTemplates`): one
+    `-syncTemplates`, a fresh `-overview`, then `-submitTemplate` for each added template still `NOT_SUBMITTED`,
+    three at a time. There is no server-side "submit all", so a slow Meta cannot run into the function's time limit.
 - **Graph API version:** `v23.0` (`messaging/whatsapp.ts GRAPH`). Meta supports each version for about two years.

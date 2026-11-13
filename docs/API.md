@@ -86,7 +86,7 @@ line per failed document (`path`). Useful Cloud Logging filters: `jsonPayload.fn
 | | `copies-availability` (query) | any signed-in user |
 | | `copies-availabilityMany` (query) — per-branch counts for up to 60 titles (catalogue search; the Reservations waiting list, to show which other branch has a title on its shelf) | any signed-in user |
 | | `copies-locate` (query) — which branch holds a copy, by barcode or code | `books.view` in the org (any branch) |
-| WhatsApp | `whatsapp-overview`, `whatsapp-saveConnection` (`phoneNumberId, wabaId, accessToken` write-only, `appSecret`, `language`, `enabled`), `whatsapp-saveTemplate` (`event, enabled, name, language, body`), `whatsapp-submitTemplate`, `whatsapp-syncTemplates`, `whatsapp-sendTest` (`to`, `event` or null for hello_world), `whatsapp-log` — see [WHATSAPP.md](WHATSAPP.md) | `messaging.manage` at the branch (HO, FO, BM) |
+| WhatsApp | `whatsapp-overview`, `whatsapp-saveConnection` (`phoneNumberId, wabaId, accessToken` write-only, `appSecret`, `language`, `enabled`), `whatsapp-saveTemplate` (`event, enabled, name, language, body`), `whatsapp-addTemplates` (`events[]`: adds the ones the branch lacks with the default wording, switched off; returns `{ added }`), `whatsapp-switchTemplates` (`events[], enabled`: only templates the branch has; returns `{ switched }`), `whatsapp-removeTemplate` (`event`), `whatsapp-submitTemplate` (`event`), `whatsapp-syncTemplates`, `whatsapp-sendTest` (`to`, `event` or null for hello_world), `whatsapp-log` — see [WHATSAPP.md](WHATSAPP.md) | `messaging.manage` at the branch (HO, FO, BM) |
 | Members | `members-register/update/setStatus` (optional `aadhaar`: 12 digits; empty keeps the one on file), `members-revealAadhaar` (audited) | `members.manage` at the home branch |
 | Plans | `plans-create/update/archive` (`options[]`: 1–4 of `{duration, priceMinor}`; `discount`: `{type AMOUNT|PERCENT, value, from, to, durations[], label}` or null; see SUBSCRIPTIONS.md) | `plans.manage` |
 | Subscriptions | `subscriptions-create/cancelPending` (`duration`: the billing option; optional when the plan has one). `subscriptions-create` also takes an optional `payment: {method, amountMinor, reference}` (staff only; `me-subscribe` refuses it): the plan is sold and the counter payment recorded in one step, and the result adds `paymentId, startAt, endAt` | `subscriptions.manage`; with `payment` also `payments.recordOffline`, both at the member's branch |
@@ -108,6 +108,20 @@ line per failed document (`path`). Useful Cloud Logging filters: `jsonPayload.fn
 | | `deliveries-mine` (query), `deliveries-report` (`outcome DELIVERED\|FAILED, collectedLoanIds, failReason, handedTo, fee{method, reference}`) | the assigned rider (`delivery.execute`), or `delivery.manage` |
 | | `me-requestDelivery`, `me-cancelDelivery` (member self-service) | the member's account holder or guardian; plan must include home delivery |
 | | `deliveryWebhook` (HTTPS, courier status updates) | the branch's token in `?o=&b=&t=` |
+
+## Website callables (docs/WEBSITE_ADMIN.md)
+
+Rights are worked out across all of the caller's organizations (`rightsOf` in `functions/src/site/admin.ts`), so no
+`orgId` is sent except for a branch page.
+
+| Group | Callables | Permission |
+|---|---|---|
+| Overview and lists | `site-overview` (query; `counts`: `newSubmissions`, `callsThisWeek`, `openJobs`, and `alertRecipients`, the number of people on the enquiry alerts list, `null` unless a website manager), `site-list` (query: `kind`), `site-get` (query: `kind, id?, orgId?`) | `website.manage`, `website.branch` or `blog.write`; each sees what they may edit |
+| Items | `site-save` (`kind, id?, orgId?, draft, publish?`; with `publish: true` the saved draft goes on the website in the same transaction, and nothing is saved if it can't be published), `site-publish`, `site-unpublish`, `site-requestReview` (posts). All four return how the item now stands (`id, exists, status, isLive, changed, liveSlug, liveOn, previewToken, review, updatedAt, updatedBy, publishedAt, publishedBy, canPublish, canDelete`), never the draft; the publishing ones also `result` (`publish`, `unpublish` or `none`) | `website.manage` for everything; `website.branch` for the branch's page and posts about the branch; `blog.write` to save one's own posts and ask for a review |
+| | `site-discard`, `site-delete`, `site-publishAll` (returns `published`, `blocked`), `site-uploadImage` (query: `image` base64, 2 MB at most; the file is named after `requestId`) | as above |
+| Enquiries | `site-submissions` (query: `limit?`, `open?`; `open: true` = only those not handled yet), `site-submission` (query: `id`; one enquiry, not found when it is another branch's), `site-resume` (query) | `website.manage` (all) or `website.branch` (their branches') |
+| | `site-markHandled` (`id, handled, note?`; the note changes only when one is sent), `site-deleteSubmission` | as above; delete: `website.manage` |
+| Settings | `site-calls` (query: `days`), `site-connections` (query), `site-saveConnections`, `site-admins` (query) | `website.manage` |
 
 ## HRMS callables (docs/HRMS.md)
 

@@ -15,7 +15,9 @@ import {
 
 import type { Permission, Role } from '../generated/rbac';
 import { toDate } from './common';
+import type { DeliverySettings } from './delivery';
 import { services } from './services';
+import type { WhatsAppSettings } from './whatsapp';
 
 export type OrgType = 'CORPORATE' | 'FRANCHISE';
 export type Weekday = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
@@ -54,6 +56,10 @@ export interface Branch {
   payments?: {
     razorpay?: { enabled: boolean; keyId: string; mode: 'test' | 'live'; notifySms: boolean; notifyEmail: boolean; hasWebhookSecret: boolean };
   };
+  /** The WhatsApp connection, once saved under Settings → WhatsApp (the token and app secret are never stored here). */
+  whatsapp?: WhatsAppSettings;
+  /** Home delivery, once saved under Settings → Delivery (courier API keys are never stored here). */
+  delivery?: DeliverySettings;
 }
 
 export interface Department {
@@ -149,13 +155,19 @@ export async function getStaffMember(orgId: string, uid: string): Promise<StaffM
 
 export const AUDIT_PAGE_SIZE = 25;
 
-/** One page of the audit log, newest first. Branch-scoped readers pass their branches. */
+/**
+ * One page of the audit log, newest first. Branch-scoped readers pass their branches (the rules refuse them a
+ * read without that filter); to show one branch, pass a scope of that branch alone. `entityId` keeps only the
+ * entries saved against one record. No other filter has an index.
+ */
 export async function listAudit(
   orgId: string,
   scope: string[] | 'ALL',
   after?: DocumentSnapshot,
+  only: { entityId?: string } = {},
 ): Promise<{ entries: AuditEntry[]; cursor?: DocumentSnapshot }> {
   const filters: QueryConstraint[] = [];
+  if (only.entityId) filters.push(where('entityId', '==', only.entityId));
   if (scope !== 'ALL') filters.push(where('branchId', 'in', scope.slice(0, 10)));
   filters.push(orderBy('at', 'desc'), limit(AUDIT_PAGE_SIZE));
   if (after) filters.push(startAfter(after));

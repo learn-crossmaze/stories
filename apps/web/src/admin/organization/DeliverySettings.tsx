@@ -123,10 +123,23 @@ function Form({ orgId, branchId, view, onSaved }: { orgId: string; branchId: str
 }
 
 function BranchDelivery({ orgId, branchId }: { orgId: string; branchId: string }) {
+  const { reloadBranches } = useWorkspace();
   const view = useAsync(() => deliverySettings(orgId, branchId), [orgId, branchId]);
   if (view.loading && !view.data) return <SkeletonRows rows={5} />;
   if (view.error) return <ErrorState message={view.error} onRetry={view.reload} />;
-  return <Form key={branchId} orgId={orgId} branchId={branchId} view={view.data!} onSaved={view.reload} />;
+  return (
+    <Form
+      key={branchId}
+      orgId={orgId}
+      branchId={branchId}
+      view={view.data!}
+      onSaved={() => {
+        view.reload();
+        // The settings are kept on the branch itself: the copy the console holds (the menu reads it) is read again.
+        reloadBranches();
+      }}
+    />
+  );
 }
 
 export function DeliverySettingsPage() {
