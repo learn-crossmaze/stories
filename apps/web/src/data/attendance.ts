@@ -67,6 +67,8 @@ export interface Correction {
   reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   decisionNote: string | null;
+  /** When it was asked. The id is the person and the day, so this tells a day asked again from the request before it. */
+  requestedAt: Date | null;
 }
 
 export interface MonthSummary {
@@ -100,6 +102,7 @@ export interface MonthLock {
 
 const toRecord = (id: string, d: Record<string, unknown>) => ({ ...d, id, checkIn: toDate(d.checkIn), checkOut: toDate(d.checkOut) }) as AttendanceRecord;
 const branchFilter = (scope: string[] | 'ALL'): QueryConstraint[] => (scope === 'ALL' ? [] : [where('branchId', 'in', scope.slice(0, 30))]);
+const toCorrection = (id: string, d: Record<string, unknown>) => ({ ...d, id, requestedAt: toDate(d.requestedAt) }) as Correction;
 
 export const previousMonth = (m: string) => {
   const [y, mm] = m.split('-').map(Number);
@@ -144,12 +147,12 @@ export async function myDay(orgId: string, uid: string, date: string): Promise<A
 
 export async function pendingCorrections(orgId: string, scope: string[] | 'ALL'): Promise<Correction[]> {
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/attendanceCorrections`), where('status', '==', 'PENDING'), ...branchFilter(scope), limit(300)));
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<Correction, 'id'>), id: d.id })).sort((a, b) => a.date.localeCompare(b.date));
+  return snap.docs.map((d) => toCorrection(d.id, d.data())).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export async function myCorrections(orgId: string, uid: string): Promise<Correction[]> {
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/attendanceCorrections`), where('employeeUid', '==', uid), limit(100)));
-  return snap.docs.map((d) => ({ ...(d.data() as Omit<Correction, 'id'>), id: d.id })).sort((a, b) => b.date.localeCompare(a.date));
+  return snap.docs.map((d) => toCorrection(d.id, d.data())).sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function monthSummaries(orgId: string, month: string, scope: string[] | 'ALL'): Promise<MonthSummary[]> {

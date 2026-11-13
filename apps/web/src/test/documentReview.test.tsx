@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FirebaseError } from 'firebase/app';
 import { StrictMode } from 'react';
@@ -188,6 +188,68 @@ describe('reviewing documents', () => {
     await screen.findByRole('img', { name: ht.reviewPreview(a.typeName, a.employeeName) });
     unmount();
     await waitFor(() => expect(revoked).toEqual(['blob:test/1', 'blob:test/2', 'blob:test/3']));
+  });
+
+  it('keeps Shift+Tab inside the dialog from the line that names the document', async () => {
+    const user = userEvent.setup();
+    const [a, b] = [doc('a'), doc('b')];
+    render(
+      <>
+        <button type="button">Behind the dialog</button>
+        <DocumentReviewDialog orgId="o1" documents={[a, b]} onReviewed={() => undefined} onClose={() => undefined} />
+      </>,
+    );
+    await screen.findByRole('img', { name: ht.reviewPreview(a.typeName, a.employeeName) });
+    expect(screen.getByText(place(1, 2, a))).toHaveFocus();
+    // Going back from the line wraps to the last button, as it does from the first control.
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: ht.verify })).toHaveFocus();
+
+    // The same after moving on, when focus is put on the line again.
+    await user.click(screen.getByRole('button', { name: ht.verify }));
+    expect(await screen.findByText(place(2, 2, b))).toHaveFocus();
+    await screen.findByRole('img', { name: ht.reviewPreview(b.typeName, b.employeeName) });
+    await user.tab({ shift: true });
+    expect(screen.getByRole('button', { name: ht.verify })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Behind the dialog' })).not.toHaveFocus();
+  });
+
+  it('stays open on Escape and a click outside while a decision is on its way, so closing still refreshes once', async () => {
+    const user = userEvent.setup();
+    const [a, b] = [doc('a'), doc('b')];
+    pending = [a, b];
+    let answer: (v: unknown) => void = () => undefined;
+    respond = (data) => (data.action === 'documents-open' ? file() : new Promise((r) => (answer = r)));
+    render(
+      <MemoryRouter>
+        <DocumentsPage />
+      </MemoryRouter>,
+    );
+    await user.click(await screen.findByRole('button', { name: ht.reviewPending(2) }));
+    const dialog = within(screen.getByRole('dialog'));
+    await dialog.findByRole('img', { name: ht.reviewPreview(a.typeName, a.employeeName) });
+    const reads = documentQueue.mock.calls.length;
+
+    await user.click(dialog.getByRole('button', { name: ht.verify }));
+    await waitFor(() => expect(reviews()).toHaveLength(1));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.mouseDown(screen.getByRole('dialog').parentElement!);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // The answer arrives in the dialog; closing after it reads the lists once, as for any sitting that decided something.
+    answer({ documentId: 'a', status: 'VERIFIED' });
+    expect(await dialog.findByText(place(2, 2, b))).toHaveFocus();
+    expect(documentQueue.mock.calls.length).toBe(reads);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(documentQueue.mock.calls.length).toBe(reads + 1));
+    expect(screen.queryByText(a.employeeName)).not.toBeInTheDocument();
+
+    // A sitting that decides nothing reads nothing: the earlier one left no mark behind.
+    await user.click(screen.getByRole('button', { name: ht.reviewPending(1) }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(documentQueue.mock.calls.length).toBe(reads + 1);
   });
 
   it('keeps a document that could not be decided, with the reason, and can ask for a file again', async () => {

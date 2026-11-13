@@ -163,7 +163,9 @@ status and an On/Off switch. Click a line (or **Edit**) to see and change everyt
 4. **Switch on all approved.** Messages you switched off on purpose can be switched off again one by one.
 
 Rejected, paused and already approved messages are never sent again by **Submit all to Meta**: a rejected one needs
-new wording first.
+new wording first. Once you change the wording of a message and save it, it shows **Not submitted** again and the
+button sends it. It stays **Not submitted** until then: **Check approvals** does not bring back the old Approved
+or Rejected, because that was Meta's answer to the old wording.
 
 **One message at a time, to word it your way:**
 
@@ -286,5 +288,8 @@ links them.
     transaction.
   - "Submit all to Meta" is a loop in the console (`apps/web/src/data/whatsapp.ts submitAllTemplates`): one
     `-syncTemplates`, a fresh `-overview`, then `-submitTemplate` for each added template still `NOT_SUBMITTED`,
-    three at a time. There is no server-side "submit all", so a slow Meta cannot run into the function's time limit.
+    three at a time. `-syncTemplates` (and the template status webhook) leave a template alone that is
+    `NOT_SUBMITTED` and has a `metaId`: it was reworded after Meta saw it, so Meta's status is for the old wording
+    and the loop sends it again. There is no server-side "submit all", so a slow Meta cannot run into the
+    function's time limit.
 - **Graph API version:** `v23.0` (`messaging/whatsapp.ts GRAPH`). Meta supports each version for about two years.

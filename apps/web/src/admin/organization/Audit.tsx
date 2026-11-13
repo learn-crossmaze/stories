@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
@@ -53,9 +54,20 @@ export function AuditPage() {
     { enabled: !!org, keepPrevious: false },
   );
   const { items: entries, loading, error } = list;
+  // Pressing a record's id, or "Show all records", takes the pressed button off the page. Focus then goes to the
+  // notice about the one record, or back to the heading, so the keyboard stays on this page's content.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const notice = useRef<HTMLDivElement>(null);
+  const pressed = useRef(false);
+  useEffect(() => {
+    if (!pressed.current) return;
+    pressed.current = false;
+    (record ? notice : heading).current?.focus();
+  }, [record]);
 
   if (!org) return <NoOrgState />;
-  const filter = (key: 'record' | 'branch', value: string, replace = false) =>
+  const filter = (key: 'record' | 'branch', value: string, replace = false) => {
+    if (key === 'record') pressed.current = true;
     setParams(
       (now) => {
         const next = new URLSearchParams(now);
@@ -65,12 +77,15 @@ export function AuditPage() {
       },
       { replace },
     );
+  };
   // A branch opened from a link may be archived (not in the list): it still gets its own line.
   const choices = chosen && !myBranches.some((b) => b.id === chosen) ? [...myBranches.map((b) => b.id), chosen] : myBranches.map((b) => b.id);
   return (
     <>
       <header className="page-header">
-        <h1>{t.auditTitle}</h1>
+        <h1 ref={heading} tabIndex={-1}>
+          {t.auditTitle}
+        </h1>
       </header>
       {choices.length > 1 && (
         <div className="toolbar">
@@ -85,7 +100,7 @@ export function AuditPage() {
         </div>
       )}
       {record && (
-        <div className="notice notice-ok" role="status">
+        <div className="notice notice-ok" role="status" ref={notice} tabIndex={-1}>
           {t.auditOneRecord} <span className="mono">{record}</span>{' '}
           <button type="button" className="btn btn-text btn-inline" onClick={() => filter('record', '')}>
             {t.auditShowAll}

@@ -150,7 +150,13 @@ export function EmployeeDialog({
   });
 
   return (
-    <Dialog title={employee ? ht.editDetails : ht.addEmployee} onClose={onClose}>
+    // Escape and a click outside wait for a save on its way, as the buttons do: the person being added is still said here.
+    <Dialog
+      title={employee ? ht.editDetails : ht.addEmployee}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
       <form
         ref={form}
         onSubmit={(e) => {

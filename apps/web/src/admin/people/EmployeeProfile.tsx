@@ -57,7 +57,8 @@ export function EmployeeProfilePage() {
 
   if (!org) return <NoOrgState />;
   if (employee.loading && !employee.data) return <SkeletonRows rows={5} />;
-  if (employee.error) return <ErrorState message={employee.error} onRetry={employee.reload} />;
+  // A refresh that failed keeps the record on screen (and whatever is open over it), with a note; see below.
+  if (employee.error && !e) return <ErrorState message={employee.error} onRetry={employee.reload} />;
   if (!e) return <EmptyState page icon="person" title={t.notFoundTitle} message="" />;
 
   const canEdit = perm('employees.edit') && e.status !== 'OFFBOARDED';
@@ -101,6 +102,14 @@ export function EmployeeProfilePage() {
         </div>
       </header>
       {notice && <Notice tone="ok">{notice}</Notice>}
+      {employee.error && (
+        <Notice tone="error">
+          {employee.error}{' '}
+          <button type="button" className="btn btn-text" onClick={employee.reload}>
+            {t.retry}
+          </button>
+        </Notice>
+      )}
 
       <Tabs
         value={tab}

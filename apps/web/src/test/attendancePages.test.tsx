@@ -20,6 +20,8 @@ const world = vi.hoisted(() => ({
   people: [] as unknown[],
   shifts: [] as unknown[],
   holidays: [] as unknown[],
+  /** When set, the holidays arrive only once this does. */
+  holidaysWait: undefined as Promise<void> | undefined,
   records: {} as Record<string, unknown[]>,
   corrections: [] as unknown[],
   leave: [] as unknown[],
@@ -59,7 +61,7 @@ vi.mock('../data/leave', async (importOriginal) => ({
 vi.mock('../data/attendance', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../data/attendance')>()),
   listShifts: async () => (world.reads.shifts++, [...world.shifts]),
-  listHolidays: async () => [...world.holidays],
+  listHolidays: async () => (await world.holidaysWait, [...world.holidays]),
   dayRecords: async (_org: string, date: string) => (world.reads.day.push(date), [...(world.records[date] ?? [])]),
   pendingCorrections: async () => (world.reads.corrections++, [...world.corrections]),
   monthLock: async () => null,
@@ -119,6 +121,7 @@ beforeEach(() => {
   world.people = [person(0, 'Me Manager', { uid: 'me' }), asha, bela];
   world.shifts = [morning];
   world.holidays = [];
+  world.holidaysWait = undefined;
   world.records = {};
   world.corrections = [];
   world.leave = [];
@@ -225,6 +228,59 @@ describe('the day board', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: ht.selectAllNoRecord })).toBeDisabled());
     expect(screen.getByRole('checkbox', { name: ht.selectForAdjust('Asha Rao') })).toBeEnabled();
   });
+
+  it('"everyone" waits for the holidays of the day picked (the list read for today says nothing about it)', async () => {
+    world.people = [...(world.people as Employee[]).slice(0, 2), person(2, 'Bela Shah', { branchId: 'b2' })];
+    world.holidays = [{ id: past, date: past, name: 'Founders day', branchIds: ['b1'] } as Holiday];
+    let arrive!: () => void;
+    world.holidaysWait = new Promise<void>((resolve) => (arrive = resolve));
+    const user = await openBoard();
+    // The day's records are there before its holidays.
+    await goTo(past);
+    const everyone = screen.getByRole('checkbox', { name: ht.selectAllNoRecord });
+    expect(everyone).toBeDisabled();
+    arrive();
+    await waitFor(() => expect(everyone).toBeEnabled());
+    await user.click(everyone);
+    // It was a holiday at Asha's branch only.
+    expect(screen.getByRole('checkbox', { name: ht.selectForAdjust('Bela Shah') })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: ht.selectForAdjust('Asha Rao') })).not.toBeChecked();
+  });
+
+  it('a closed month ends it for that branch only, and everyone not adjusted gets a reason', async () => {
+    const finalized = 'Attendance for this month is finalized. Ask HR to reopen it.';
+    const names = ['Asha Rao', 'Bela Shah', 'Chitra Nair', 'Dev Menon', 'Esha Roy', 'Farid Khan'];
+    // Odd numbers work at Central, even ones at another branch.
+    world.people = [(world.people as Employee[])[0], ...names.map((name, i) => person(i + 1, name, { branchId: i % 2 ? 'b2' : 'b1' }))];
+    const user = await openBoard();
+    await goTo(past);
+    await user.click(screen.getByRole('checkbox', { name: ht.selectAllNoRecord }));
+    await user.click(screen.getByRole('button', { name: ht.adjustSelected(6) }));
+    const dialog = screen.getByRole('dialog', { name: ht.adjustManyTitle(6, past) });
+    await user.clear(within(dialog).getByLabelText(t.reasonLabel));
+    await user.type(within(dialog).getByLabelText(t.reasonLabel), 'Biometric was down');
+    const answer = later();
+    await user.click(within(dialog).getByRole('button', { name: ht.adjustSelected(6) }));
+    await waitFor(() => expect(calls).toHaveLength(4));
+
+    // Central's month is closed: Esha (Central) is not sent, Farid (the other branch) is.
+    answer('e1', refused('MONTH_FINALIZED', finalized));
+    await waitFor(() => expect(calls).toHaveLength(5));
+    expect(calls.map((c) => c.employeeId)).toEqual(['e1', 'e2', 'e3', 'e4', 'e6']);
+    // A different refusal afterwards does not undo that.
+    answer('e3', refused('ON_LEAVE', 'Chitra is on leave that day.'));
+    for (const id of ['e2', 'e4', 'e6']) answer(id);
+
+    const still = await screen.findByRole('dialog', { name: ht.adjustManyTitle(3, past) });
+    expect(calls).toHaveLength(5);
+    const reasonOf = (name: string) => within(still).getByText(name).closest('li');
+    expect(reasonOf('Asha Rao')).toHaveTextContent(finalized);
+    expect(reasonOf('Chitra Nair')).toHaveTextContent('Chitra is on leave that day.');
+    expect(reasonOf('Esha Roy')).toHaveTextContent(ht.adjustManyStopped);
+    await user.click(within(still).getByRole('button', { name: t.cancel }));
+    expect(screen.getByText(ht.adjustManyDone(3))).toBeInTheDocument();
+    expect(screen.getByText(ht.adjustManyNotDone(3))).toBeInTheDocument();
+  });
 });
 
 describe('adjusting one day', () => {
@@ -242,6 +298,20 @@ describe('adjusting one day', () => {
     open(past, record('e1', past, { checkIn: new Date(`${past}T04:15:00Z`) }));
     expect(screen.getByLabelText(ht.checkInTime)).toHaveValue('09:45');
     expect(screen.getByLabelText(ht.checkOutTime)).toHaveValue('18:00');
+  });
+
+  it('fills no check-out that is not later than the check-in already there (it would be saved as the next morning)', () => {
+    // Came at 18:20, after the shift's end.
+    const cameLate = record('e1', past, { checkIn: new Date(`${past}T12:50:00Z`) });
+    expect(shiftDefault(past, morning, cameLate)).toEqual({ checkIn: '09:30', checkOut: '' });
+    expect(shiftDefault(past, morning, record('e1', past, { checkIn: new Date(`${past}T12:30:00Z`) }))).toEqual({ checkIn: '09:30', checkOut: '' });
+    expect(shiftDefault(past, morning, record('e1', past, { checkIn: new Date(`${past}T12:29:00Z`) }))).toEqual({ checkIn: '09:30', checkOut: '18:00' });
+    // An overnight shift ends the next morning anyway.
+    expect(shiftDefault(past, { start: '22:00', end: '06:00' }, record('e1', past, { checkIn: new Date(`${past}T16:40:00Z`) }))).toEqual({ checkIn: '22:00', checkOut: '06:00' });
+    open(past, cameLate);
+    expect(screen.getByLabelText(ht.checkInTime)).toHaveValue('18:20');
+    expect(screen.getByLabelText(ht.checkOutTime)).toHaveValue('');
+    expect(screen.queryByText(ht.adjustShiftFilled('09:30', '18:00'))).toBeNull();
   });
 
   it('fills nothing for today, for a full day of leave, or without a shift', () => {
@@ -308,6 +378,27 @@ describe('corrections', () => {
     // One more read of the list, once nothing is on its way.
     await waitFor(() => expect(world.reads.corrections).toBe(3));
     expect(tab).toHaveTextContent(`${ht.tabCorrections}1`);
+  });
+
+  it('a day asked again while the list is open does not arrive ticked', async () => {
+    world.corrections = [correction(1, 'Asha Rao', past, { requestedAt: new Date(1_800_000_000_000) }), correction(2, 'Bela Shah', past), correction(3, 'Chitra Nair', past)];
+    const user = await openBoard();
+    await user.click(screen.getByRole('tab', { name: new RegExp(ht.tabCorrections) }));
+    await waitFor(() => expect(world.reads.corrections).toBe(2));
+    await user.click(await screen.findByRole('checkbox', { name: ht.selectCorrection('Asha Rao', past) }));
+    await user.click(screen.getByRole('checkbox', { name: ht.selectCorrection('Bela Shah', past) }));
+    expect(screen.getByRole('button', { name: ht.approveSelected(2) })).toBeEnabled();
+
+    // Meanwhile HR rejects Asha's request and she asks again for the same day, with another time: the id is the same.
+    world.corrections = [correction(1, 'Asha Rao', past, { checkIn: '08:00', requestedAt: new Date(1_800_000_600_000) }), correction(2, 'Bela Shah', past)];
+    // Deciding another row reads the list again.
+    await user.click(screen.getByRole('button', { name: `${ht.approve} Chitra Nair ${past}` }));
+    await waitFor(() => expect(world.reads.corrections).toBe(3));
+    expect(await screen.findByText(ht.requested('08:00', '18:00'))).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: ht.selectCorrection('Asha Rao', past) })).not.toBeChecked();
+    // Bela's is the request that was ticked: it still is.
+    expect(screen.getByRole('checkbox', { name: ht.selectCorrection('Bela Shah', past) })).toBeChecked();
+    expect(screen.getByRole('button', { name: ht.approveSelected(1) })).toBeEnabled();
   });
 
   it('says on the Month tab what still waits for the month, before Finalize is pressed', async () => {

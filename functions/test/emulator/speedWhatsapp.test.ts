@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { db } from '../../src/core/firebase.js';
 import { EVENT_KEYS, EVENTS } from '../../src/messaging/events.js';
+import { handleWebhook } from '../../src/messaging/outbox.js';
 import * as settings from '../../src/messaging/settings.js';
 import { clearSwitchboardCache } from '../../src/messaging/whatsapp.js';
 import * as branches from '../../src/organization/branches.js';
@@ -20,8 +21,9 @@ const CONN = { phoneNumberId: '1234567890', wabaId: '9876543210', accessToken: '
 const GRAPH = 'https://graph.facebook.com/v23.0';
 const WORDING = 'Hello {{member_name}}, a warm welcome to {{branch_name}}! Your member ID is {{member_code}}. Show it at the counter.';
 
-/** Meta confirms the connection; nothing else is asked of it here. */
-function fakeMeta() {
+/** Meta confirms the connection; `routes` answers anything else by "METHOD path" and the calls to those are recorded. */
+function fakeMeta(routes: Record<string, () => unknown> = {}) {
+  const calls: { route: string; body: Record<string, unknown> }[] = [];
   const real = globalThis.fetch;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -29,8 +31,14 @@ function fakeMeta() {
     const path = url.slice(GRAPH.length).split('?')[0];
     if (path === `/${CONN.phoneNumberId}`) return Response.json({ display_phone_number: '+91 98765 00000', verified_name: 'Stories Central' });
     if (path === `/${CONN.wabaId}/phone_numbers`) return Response.json({ data: [{ id: CONN.phoneNumberId }] });
+    const route = `${init?.method ?? 'GET'} ${path}`;
+    if (routes[route]) {
+      calls.push({ route, body: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {} });
+      return Response.json(routes[route]());
+    }
     return Response.json({ error: { code: 100, message: 'Unsupported request' } }, { status: 400 });
   });
+  return calls;
 }
 
 const at = () => ({ orgId: org, branchId: central });
@@ -174,5 +182,69 @@ describe('switching several notifications on or off at once', () => {
     expect(await turn(['books_issued'], true, bm, requestId)).toEqual({ switched: ['books_issued'] });
     expect((await templates()).books_issued.enabled).toBe(false);
     expect(await audits('whatsapp.template.switch')).toHaveLength(2);
+  });
+});
+
+describe('a notification reworded after Meta saw it', () => {
+  const REWORDED = 'Hello {{member_name}}, you took {{book_titles}} home from {{branch_name}} today. Happy reading, and see you soon!';
+  const sync = () => call<{ statuses: Record<string, string>; missing: string[] }>(settings.syncTemplates, bm, at(), null);
+  const reword = (body: string, enabled = false) => call(settings.saveTemplate, bm, { ...at(), event: 'books_issued', enabled, name: 'stories_books_issued', language: 'hi', body });
+  const issued = async () => (await templates()).books_issued;
+
+  it('stays not submitted through Check approvals, whatever Meta says of the old wording, until it is sent again', async () => {
+    let verdict: Record<string, unknown> = { status: 'REJECTED', rejected_reason: 'INVALID_FORMAT' };
+    const calls = fakeMeta({
+      [`GET /${CONN.wabaId}/message_templates`]: () => ({ data: [{ id: 'tpl_1', name: 'stories_books_issued', language: 'hi', ...verdict }] }),
+      'POST /tpl_1': () => ({ success: true }),
+    });
+    await connect();
+    await add(['books_issued', 'books_returned']);
+    // Never sent from here, but the business account has it: linked, with Meta's verdict.
+    expect((await sync()).statuses).toEqual({ books_issued: 'REJECTED' });
+    expect(await issued()).toMatchObject({ status: 'REJECTED', reason: 'INVALID_FORMAT', metaId: 'tpl_1' });
+
+    await reword(REWORDED);
+    expect(await issued()).toMatchObject({ status: 'NOT_SUBMITTED', reason: null, metaId: 'tpl_1' });
+    // Meta still holds the old, rejected wording: its verdict is not written back, and it is not reported as checked.
+    expect(await sync()).toMatchObject({ statuses: {}, missing: [] });
+    expect(await issued()).toMatchObject({ status: 'NOT_SUBMITTED', reason: null, metaId: 'tpl_1', body: REWORDED });
+    // The same for an old wording Meta approved: the new one is not shown as approved.
+    verdict = { status: 'APPROVED' };
+    expect((await sync()).statuses).toEqual({});
+    expect((await issued()).status).toBe('NOT_SUBMITTED');
+
+    // Sending it updates the template Meta has, and from then on Meta's review counts again.
+    expect(await call(settings.submitTemplate, bm, { ...at(), event: 'books_issued' }, null)).toEqual({ status: 'PENDING' });
+    expect(calls.filter((c) => c.route === 'POST /tpl_1')).toMatchObject([{ body: { components: [{ type: 'BODY', text: 'Hello {{1}}, you took {{2}} home from {{3}} today. Happy reading, and see you soon!' }] } }]);
+    expect((await sync()).statuses).toEqual({ books_issued: 'APPROVED' });
+    expect(await issued()).toMatchObject({ status: 'APPROVED', metaId: 'tpl_1', body: REWORDED });
+  });
+
+  it('is linked to the template Meta has now when that is another one, still not submitted', async () => {
+    fakeMeta({ [`GET /${CONN.wabaId}/message_templates`]: () => ({ data: [{ id: 'tpl_2', name: 'stories_books_issued', language: 'hi', status: 'APPROVED' }] }) });
+    await connect();
+    await add(['books_issued']);
+    await db.doc(`orgs/${org}/branches/${central}/whatsappTemplates/books_issued`).update({ metaId: 'tpl_1', status: 'APPROVED' });
+    await reword(REWORDED);
+    expect((await sync()).statuses).toEqual({});
+    expect(await issued()).toMatchObject({ status: 'NOT_SUBMITTED', metaId: 'tpl_2', body: REWORDED });
+  });
+
+  it("keeps not submitted when Meta's decision on the old wording arrives by webhook", async () => {
+    fakeMeta();
+    await connect();
+    await add(['books_issued', 'books_returned']);
+    const col = db.collection(`orgs/${org}/branches/${central}/whatsappTemplates`);
+    await Promise.all(['books_issued', 'books_returned'].map((k) => col.doc(k).update({ metaId: 'tpl_1', status: 'PENDING' })));
+    await reword(REWORDED);
+    const raw = Buffer.from(JSON.stringify({ entry: [{ changes: [{ field: 'message_template_status_update', value: { event: 'APPROVED', message_template_id: 'tpl_1', reason: 'NONE' } }] }] }));
+    const out = { status: 0 };
+    const signature = `sha256=${createHmac('sha256', CONN.appSecret).update(raw).digest('hex')}`;
+    await handleWebhook({ method: 'POST', query: { o: org, b: central }, headers: { 'x-hub-signature-256': signature }, rawBody: raw } as never, { status: (n: number) => ({ send: () => void (out.status = n) }) });
+    expect(out.status).toBe(200);
+    const saved = await templates();
+    expect(saved.books_issued).toMatchObject({ status: 'NOT_SUBMITTED', body: REWORDED });
+    // One that was not changed takes the decision as before.
+    expect(saved.books_returned).toMatchObject({ status: 'APPROVED', reason: null });
   });
 });

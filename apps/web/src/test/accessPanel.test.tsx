@@ -26,6 +26,7 @@ vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ claims, user: { uid: '
 const branches = [
   { id: 'b1', code: 'CEN', name: 'Central', status: 'ACTIVE' },
   { id: 'b2', code: 'NOR', name: 'North', status: 'ACTIVE' },
+  { id: 'b3', code: 'OLD', name: 'Old Town', status: 'INACTIVE' },
 ];
 vi.mock('../admin/Workspace', () => ({ useWorkspace: () => ({ org: { id: 'o1', type: 'CORPORATE' }, branches, branchName: (id: string) => branches.find((b) => b.id === id)?.name ?? id }) }));
 const getStaffMember = vi.fn();
@@ -94,6 +95,42 @@ describe('employee profile → Access', () => {
     await user.click(dialog.getByRole('button', { name: t.staffGiveAccess }));
     expect(await dialog.findByText('Choose at least one branch.')).toBeInTheDocument();
     expect(calls.some((c) => c.action === 'staff-setRoles')).toBe(false);
+  });
+
+  it('ticks nothing for an administrator when the branch on record is closed, in either dialog', async () => {
+    const user = userEvent.setup();
+    claims = { v: 1, sa: true, o: {} };
+    const first = render(
+      <MemoryRouter>
+        <AccessPanel org={org} employee={employee({ branchId: 'b3' })} onChanged={() => undefined} />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: t.staffGiveAccess }));
+    let dialog = within(screen.getByRole('dialog'));
+    // Not "All branches" by default: that is for head office, and here it would give every branch unasked.
+    expect(dialog.getByRole('checkbox', { name: t.allBranches })).not.toBeChecked();
+    expect(dialog.getByRole('checkbox', { name: /Central/ })).not.toBeChecked();
+    expect(dialog.queryByRole('checkbox', { name: /Old Town/ })).not.toBeInTheDocument();
+    await user.click(dialog.getByRole('checkbox', { name: ROLES.LIBRARIAN.label }));
+    await user.click(dialog.getByRole('button', { name: t.staffGiveAccess }));
+    expect(await dialog.findByText('Choose at least one branch.')).toBeInTheDocument();
+    expect(calls.some((c) => c.action === 'staff-setRoles')).toBe(false);
+    first.unmount();
+
+    // The same start for Manage roles when the person is linked but holds no roles yet.
+    panel(employee({ branchId: 'b3', uid: 'u1', status: 'ACTIVE' }));
+    await user.click(await screen.findByRole('button', { name: ht.manageRoles }));
+    dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByRole('checkbox', { name: t.allBranches })).not.toBeChecked();
+    expect(dialog.getByRole('checkbox', { name: /Central/ })).not.toBeChecked();
+  });
+
+  it('starts from all branches for someone at head office', async () => {
+    const user = userEvent.setup();
+    claims = { v: 1, sa: true, o: {} };
+    panel(employee({ branchId: null }));
+    await user.click(screen.getByRole('button', { name: t.staffGiveAccess }));
+    expect(within(screen.getByRole('dialog')).getByRole('checkbox', { name: t.allBranches })).toBeChecked();
   });
 
   it('offers nothing in one step without an email on record, and keeps Link account for editors', () => {

@@ -134,16 +134,23 @@ describe('the audit page', () => {
     await user.click((await screen.findAllByRole('button', { name: `${t.auditOnlyThis}: copy1` }))[0]);
     await waitFor(() => expect(lastAsked()).toEqual(['entityId == "copy1"', ...page]));
     expect(address).toBe('/admin/audit?record=copy1');
-    expect(await screen.findByText(t.auditOneRecord, { exact: false })).toBeInTheDocument();
+    // The pressed id is no longer a button: focus is on the notice, one Tab before "Show all records".
+    expect(await screen.findByText(t.auditOneRecord, { exact: false })).toHaveFocus();
     expect(await screen.findByText('copy.transfer')).toBeInTheDocument();
     expect(screen.queryByText('role.update')).not.toBeInTheDocument();
+    expect(screen.getByText(t.auditOneRecord, { exact: false })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: t.auditShowAll })).toHaveFocus();
     // The record's kind stays in view (an id is not unique to a kind), and its id is no longer a button.
     expect(screen.queryByRole('button', { name: `${t.auditOnlyThis}: copy1` })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: t.auditShowAll }));
+    await user.keyboard('{Enter}');
     await waitFor(() => expect(lastAsked()).toEqual(page));
     expect(address).toBe('/admin/audit');
+    // The notice went with its button: the heading takes focus, not the top of the document.
+    expect(screen.getByRole('heading', { name: t.auditTitle })).toHaveFocus();
     expect(await screen.findByText('role.update')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: t.auditTitle })).toHaveFocus();
   });
 
   it('opens from a link with the record and the branch already chosen', async () => {
@@ -152,6 +159,8 @@ describe('the audit page', () => {
     expect(world.asked).toHaveLength(1);
     expect(lastAsked()).toEqual(['entityId == "copy1"', 'branchId in ["b2"]', ...page]);
     expect(screen.getByRole('combobox', { name: t.branch })).toHaveValue('b2');
+    // Arriving by link is not a press on this page: focus is left where the console put it.
+    expect(document.body).toHaveFocus();
   });
 
   it('says so when the choice has nothing recorded', async () => {

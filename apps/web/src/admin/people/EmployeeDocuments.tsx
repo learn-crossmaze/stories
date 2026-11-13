@@ -273,10 +273,29 @@ export function DocumentReviewDialog({
   const reasonError = reason.trim().length < 3 ? ht.reviewReasonShort : undefined;
 
   return (
-    <Dialog title={ht.reviewTitle} onClose={onClose}>
+    // Escape and a click outside wait for a decision on its way, as the Close button does: its answer still belongs to this sitting.
+    <Dialog
+      title={ht.reviewTitle}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+    >
       <div className="doc-review">
         {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-        <p className="doc-review-place" tabIndex={-1} ref={place} data-autofocus>
+        <p
+          className="doc-review-place"
+          tabIndex={-1}
+          ref={place}
+          data-autofocus
+          onKeyDown={(e) => {
+            // Not a control, so the dialog's Tab wrap does not know it: going back from here would land on the page behind.
+            if (e.key !== 'Tab' || !e.shiftKey) return;
+            const controls = e.currentTarget.closest('[role="dialog"]')?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), input:not(:disabled)');
+            if (!controls?.length) return;
+            e.preventDefault();
+            controls[controls.length - 1].focus();
+          }}
+        >
           {current ? `${ht.reviewPosition(index + 1, list.length)}: ${current.typeName}, ${current.employeeName}` : ht.reviewFinished(reviewed, list.length - reviewed)}
         </p>
         {current && (
@@ -441,7 +460,8 @@ export function EmployeeDocumentsPanel({
   const review = useDocumentReview(orgId, refresh);
 
   if (data.loading) return <SkeletonRows rows={3} />;
-  if (data.error || !data.data) return <ErrorState message={data.error ?? t.errorGeneric} onRetry={data.reload} />;
+  // A refresh that failed keeps what is on screen, and the review dialog open over it; the note below says so.
+  if (!data.data) return <ErrorState message={data.error ?? t.errorGeneric} onRetry={data.reload} />;
   const { types, docs } = data.data;
   const active = types.filter((x) => x.status === 'ACTIVE');
   const uploadable = active.filter((x) => canManage || (self && x.selfUpload));
@@ -465,6 +485,14 @@ export function EmployeeDocumentsPanel({
   return (
     <>
       {notice && <Notice tone="ok">{notice}</Notice>}
+      {data.error && (
+        <Notice tone="error">
+          {data.error}{' '}
+          <button type="button" className="btn btn-text" onClick={data.reload}>
+            {t.retry}
+          </button>
+        </Notice>
+      )}
       <FormError error={openError ?? review.error} />
       {required.length > 0 && (
         <section className="card" aria-labelledby="req-docs">

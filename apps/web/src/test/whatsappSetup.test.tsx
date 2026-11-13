@@ -4,12 +4,14 @@ import { FirebaseError } from 'firebase/app';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { MessageEvent } from '../data/whatsapp';
+import { t } from '../strings';
 import { wt } from '../strings/messaging';
 
 // Settings → WhatsApp, setting a branch's notifications up in one go: several added at once, saved and sent to
 // Meta with one button, all sent to Meta together, and the approved ones switched on together.
 type Sent = Record<string, unknown> & { action: string; event?: string; events?: string[]; enabled?: boolean };
-type Saved = { status: string; enabled: boolean; body?: string };
+/** `metaId`: Meta has a template for it (sent from here, or linked by "Check approvals"). */
+type Saved = { status: string; enabled: boolean; body?: string; metaId?: string | null };
 
 const world = vi.hoisted(() => ({
   calls: [] as Sent[],
@@ -49,7 +51,7 @@ const overview = () => ({
       variables: [{ key: 'member_name', label: 'Member', sample: 'Asha' }],
       body: BODY,
       added: !!own,
-      template: { event: e.key, enabled: own?.enabled ?? false, name: `stories_${e.key}`, language: 'en', body: own?.body ?? BODY, status: own?.status ?? 'NOT_SUBMITTED', reason: null, metaId: null },
+      template: { event: e.key, enabled: own?.enabled ?? false, name: `stories_${e.key}`, language: 'en', body: own?.body ?? BODY, status: own?.status ?? 'NOT_SUBMITTED', reason: null, metaId: own?.metaId ?? null },
     };
   }),
 });
@@ -74,12 +76,19 @@ async function answer(data: Sent): Promise<unknown> {
       for (const k of switched) world.saved[k].enabled = data.enabled!;
       return { switched };
     }
-    case 'whatsapp-saveTemplate':
-      world.saved[data.event!] = { status: 'NOT_SUBMITTED', enabled: data.enabled!, body: data.body as string };
-      return { status: 'NOT_SUBMITTED' };
-    case 'whatsapp-syncTemplates':
-      for (const [k, status] of Object.entries(world.atMeta)) world.saved[k] = { enabled: world.saved[k]?.enabled ?? false, status };
-      return { statuses: world.atMeta, found: Object.keys(world.atMeta).length, missing: [] };
+    case 'whatsapp-saveTemplate': {
+      // As the server does: new wording means "not submitted" again, and the link to Meta's template stays.
+      const own = world.saved[data.event!];
+      const status = !own || (own.body ?? BODY) !== data.body ? 'NOT_SUBMITTED' : own.status;
+      world.saved[data.event!] = { status, enabled: data.enabled!, body: data.body as string, metaId: own?.metaId ?? null };
+      return { status };
+    }
+    case 'whatsapp-syncTemplates': {
+      // As the server does: one reworded since Meta saw it (not submitted, yet linked) keeps its status.
+      const statuses = Object.fromEntries(Object.entries(world.atMeta).filter(([k]) => !(world.saved[k]?.status === 'NOT_SUBMITTED' && world.saved[k].metaId)));
+      for (const [k, status] of Object.entries(statuses)) world.saved[k] = { ...world.saved[k], enabled: world.saved[k]?.enabled ?? false, status, metaId: `tpl_${k}` };
+      return { statuses, found: Object.keys(world.atMeta).length, missing: [] };
+    }
     case 'whatsapp-submitTemplate': {
       world.together = Math.max(world.together, ++world.running);
       if (world.hold) await new Promise<void>((go) => world.hold!.push(go));
@@ -87,7 +96,7 @@ async function answer(data: Sent): Promise<unknown> {
       world.running--;
       const refused = world.refuse[data.event!];
       if (refused) throw Object.assign(new FirebaseError('functions/failed-precondition', refused), { details: { reason: 'WHATSAPP_ERROR' } });
-      world.saved[data.event!] = { ...world.saved[data.event!], status: 'PENDING' };
+      world.saved[data.event!] = { ...world.saved[data.event!], status: 'PENDING', metaId: `tpl_${data.event!}` };
       return { status: 'PENDING' };
     }
     default:
@@ -218,6 +227,66 @@ describe('the WhatsApp page', () => {
     expect(screen.getByText(wt.savedNotSubmitted)).toBeInTheDocument();
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(world.saved.member_welcome).toMatchObject({ status: 'NOT_SUBMITTED', enabled: false });
+  });
+
+  it('locks the buttons of a notification while one of them waits for Meta', async () => {
+    world.saved.member_welcome = { status: 'REJECTED', enabled: false, metaId: 'tpl_member_welcome' };
+    world.hold = [];
+    const user = await open();
+    await user.click(screen.getByRole('button', { name: `${wt.edit}: Welcome` }));
+    let dialog = await screen.findByRole('dialog');
+    const button = (name: string) => within(dialog).getByRole('button', { name });
+    await user.type(within(dialog).getByLabelText(wt.testTo), '9876543210');
+    for (const name of [wt.submit, wt.sendTest, wt.remove, wt.saveAndSubmit, t.save]) expect(button(name)).toBeEnabled();
+
+    // "Save and submit to Meta" is with Meta: a second send, a test or a removal must wait for it.
+    await user.click(button(wt.saveAndSubmit));
+    await waitFor(() => expect(world.hold).toHaveLength(1));
+    for (const name of [wt.submit, wt.sendTest, wt.remove]) expect(button(name)).toBeDisabled();
+    world.hold.forEach((go) => go());
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(sent('whatsapp-submitTemplate')).toHaveLength(1);
+
+    // The other way round: "Submit to Meta" below is with Meta, so nothing can be saved or sent from above.
+    await screen.findByText(wt.status.PENDING);
+    world.hold = [];
+    await user.click(screen.getByRole('button', { name: `${wt.edit}: Welcome` }));
+    dialog = await screen.findByRole('dialog');
+    await user.click(button(wt.submit));
+    await waitFor(() => expect(world.hold).toHaveLength(1));
+    for (const name of [wt.saveAndSubmit, t.save, wt.remove]) expect(button(name)).toBeDisabled();
+    world.hold.forEach((go) => go());
+    world.hold = null;
+    expect(await within(dialog).findByText(wt.submitted('PENDING'))).toBeInTheDocument();
+    for (const name of [wt.saveAndSubmit, t.save, wt.remove]) expect(button(name)).toBeEnabled();
+    expect(sent('whatsapp-submitTemplate')).toHaveLength(2);
+    expect(sent('whatsapp-removeTemplate')).toHaveLength(0);
+  });
+
+  it('sends a notification again with "Submit all to Meta" once it was reworded, whatever Meta said of the old wording', async () => {
+    // Meta rejected the first wording of one and approved the first wording of another; a third it has never seen.
+    world.saved.books_issued = { status: 'REJECTED', enabled: false, metaId: 'tpl_books_issued' };
+    world.saved.books_returned = { status: 'APPROVED', enabled: false, metaId: 'tpl_books_returned' };
+    world.atMeta = { books_issued: 'REJECTED', books_returned: 'APPROVED', member_welcome: 'APPROVED' };
+    add('member_welcome');
+    const user = await open();
+    for (const label of ['Books issued', 'Books returned']) {
+      await user.click(screen.getByRole('button', { name: `${wt.edit}: ${label}` }));
+      const dialog = await screen.findByRole('dialog');
+      await user.type(within(dialog).getByLabelText(wt.body, { exact: false }), ' Thank you for reading with us.');
+      await user.click(within(dialog).getByRole('button', { name: t.save }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    }
+    // Both reworded ones and the never-sent one are counted, and the reworded ones are really sent.
+    await user.click(await screen.findByRole('button', { name: wt.submitAll(3) }));
+    expect(await screen.findByText(wt.submittedAll(2, 0))).toBeInTheDocument();
+    expect(sent('whatsapp-submitTemplate').map((c) => c.event).sort()).toEqual(['books_issued', 'books_returned']);
+    expect(world.saved.books_issued).toMatchObject({ status: 'PENDING', body: `${BODY} Thank you for reading with us.` });
+    expect(world.saved.books_returned.status).toBe('PENDING');
+    // The one Meta already had under that name is linked, not sent again; it is the only one to switch on.
+    expect(world.saved.member_welcome.status).toBe('APPROVED');
+    expect(await screen.findByRole('button', { name: wt.switchOnApproved(1) })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Submit all to Meta/ })).not.toBeInTheDocument();
   });
 
   it('switches on every approved notification with one press', async () => {

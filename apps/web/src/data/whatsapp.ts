@@ -134,7 +134,8 @@ export interface SubmitAllResult {
 /**
  * Sends every added notification that is still "not submitted" to Meta, a few at a time. It first checks with
  * Meta (whatsapp-syncTemplates), so a template the business account already has is linked, not sent again;
- * that check can also add notifications, so the list is read afresh after it. One failure never stops the rest.
+ * that check can also add notifications, so the list is read afresh after it. One reworded since Meta saw it
+ * stays "not submitted" through the check (the server keeps it so) and is sent. One failure never stops the rest.
  */
 export async function submitAllTemplates(orgId: string, branchId: string, onProgress?: (done: number, total: number) => void): Promise<SubmitAllResult> {
   await syncTemplates(orgId, branchId);

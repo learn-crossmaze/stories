@@ -35,12 +35,20 @@ const dayBefore = (date: string) => new Date(Date.parse(date) - 86_400_000).toIS
 /**
  * The times to start from for a day with a punch missing: the shift's own, for a day that is over. Never for
  * today (a check-out that has not happened would be recorded), nor for the last night of an overnight shift,
- * nor over a full day of leave.
+ * nor over a full day of leave. No check-out either when a day shift ends at or before the check-in already
+ * recorded: the server takes a check-out that is not later than the check-in as the next morning.
  */
-export function shiftDefault(date: string, shift: ShiftHours | null | undefined, record: Pick<AttendanceRecord, 'leave'> | null | undefined, today = todayIST()): { checkIn: string; checkOut: string } | null {
+export function shiftDefault(
+  date: string,
+  shift: ShiftHours | null | undefined,
+  record: (Pick<AttendanceRecord, 'leave'> & Partial<Pick<AttendanceRecord, 'checkIn'>>) | null | undefined,
+  today = todayIST(),
+): { checkIn: string; checkOut: string } | null {
   if (!shift || date >= today || (record?.leave && !record.leave.half)) return null;
   const overnight = shift.end <= shift.start;
-  return { checkIn: shift.start, checkOut: overnight && date >= dayBefore(today) ? '' : shift.end };
+  const cameAt = hhmm(record?.checkIn ?? null);
+  const noCheckOut = overnight ? date >= dayBefore(today) : !!cameAt && shift.end <= cameAt;
+  return { checkIn: shift.start, checkOut: noCheckOut ? '' : shift.end };
 }
 
 /**
@@ -115,12 +123,15 @@ export function AdjustDialog({
 
 /** The month is closed: every other person of the same branch would be refused for the same reason. */
 const monthClosed = (e: unknown) => e instanceof ApiError && e.reason === 'MONTH_FINALIZED';
+/** Not sent: the month of this person's branch turned out to be closed. */
+const NOT_TRIED = new Error('not tried');
 
 /**
  * One past day for several people (a day the punches were missed): each person gets their own shift's times,
  * or the times set here, with one reason. Every person is their own command, a few at a time, so one refusal
- * does not stop the others. `onSettled` hears who was adjusted and why the others were not (shown on their rows,
- * here and on the board, which keeps them ticked).
+ * does not stop the others. Only a closed month ends it early, and only for the people of that branch (months
+ * are closed branch by branch, head office on its own). `onSettled` hears who was adjusted and why the others
+ * were not (shown on their rows, here and on the board, which keeps them ticked).
  */
 export function AdjustManyDialog({
   orgId,
@@ -132,7 +143,7 @@ export function AdjustManyDialog({
 }: {
   orgId: string;
   date: string;
-  people: { employee: { id: string; fullName: string }; shift: ShiftHours | null }[];
+  people: { employee: { id: string; fullName: string; branchId: string | null }; shift: ShiftHours | null }[];
   problems: Readonly<Record<string, string>>;
   onClose: () => void;
   onSettled: (done: string[], problems: Record<string, string>) => void;
@@ -163,21 +174,27 @@ export function AdjustManyDialog({
       failed[p.employee.id] = ht.adjustManyNoShift;
       return false;
     });
-    let closed = false;
-    const left = await runEach(
+    // Branches (null is head office) whose month was refused as closed: a branch is only ever added.
+    const closed = new Set<string | null>();
+    await runEach(
       ready,
       AT_ONCE,
-      (p) => {
+      async (p) => {
+        if (closed.has(p.employee.branchId)) throw NOT_TRIED;
         const times = timesFor(p.shift)!;
-        return command('attendance-adjust', { orgId, employeeId: p.employee.id, date, checkIn: times.checkIn, checkOut: times.checkOut || null, reason: reason.trim() });
+        try {
+          await command('attendance-adjust', { orgId, employeeId: p.employee.id, date, checkIn: times.checkIn, checkOut: times.checkOut || null, reason: reason.trim() });
+        } catch (e) {
+          if (monthClosed(e)) closed.add(p.employee.branchId);
+          throw e;
+        }
       },
       (p, failure) => {
-        if (failure) failed[p.employee.id] = errorText(failure);
+        if (failure === NOT_TRIED) failed[p.employee.id] = ht.adjustManyStopped;
+        else if (failure) failed[p.employee.id] = errorText(failure);
         else done.push(p.employee.id);
       },
-      (failure) => (closed = monthClosed(failure)),
     );
-    if (closed) for (const p of left) failed[p.employee.id] = ht.adjustManyStopped;
     lastReason = reason.trim();
     onSettled(done, failed);
     if (!Object.keys(failed).length) onClose();

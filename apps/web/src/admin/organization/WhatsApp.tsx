@@ -187,7 +187,8 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
   };
   const store = () => saveTemplate(orgId, branchId, { event: event.key, ...f, body: f.body.trim(), name: f.name.trim() });
   const save = useSubmit(async () => {
-    if (unknown.length) return;
+    // Enter in a field submits the form too: not while a button below is at work.
+    if (unknown.length || busy !== null) return;
     await store();
     onSaved();
     onClose();
@@ -210,6 +211,9 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
     onClose();
   });
   const saving = save.busy || saveAndSubmit.busy;
+  // One thing at a time for this notification: the buttons above and the ones below ("Submit to Meta", test,
+  // remove) lock each other, or it could be sent twice, or come back after being removed.
+  const locked = saving || busy !== null;
   // Meta limits changes to an approved template: it is sent again only when its wording, name or language changed.
   const reworded = f.name.trim() !== initial.name || f.language !== initial.language || f.body.trim() !== initial.body;
   const run = (key: string, fn: () => Promise<string>, close = false) => {
@@ -277,11 +281,11 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
             {t.cancel}
           </button>
           {connected && (
-            <button type="button" className="btn btn-outlined" disabled={saving || (tpl.status === 'APPROVED' && !reworded)} onClick={() => void saveAndSubmit.submit()}>
+            <button type="button" className="btn btn-outlined" disabled={locked || (tpl.status === 'APPROVED' && !reworded)} onClick={() => void saveAndSubmit.submit()}>
               {saveAndSubmit.busy ? t.saving : wt.saveAndSubmit}
             </button>
           )}
-          <button type="submit" className="btn btn-filled" disabled={saving}>
+          <button type="submit" className="btn btn-filled" disabled={locked}>
             {save.busy ? t.saving : event.added ? t.save : wt.addThis}
           </button>
         </div>
@@ -296,7 +300,7 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
               <button
                 type="button"
                 className="btn btn-outlined"
-                disabled={busy !== null || dirty || tpl.status === 'APPROVED'}
+                disabled={locked || dirty || tpl.status === 'APPROVED'}
                 onClick={() => void run('submit', async () => wt.submitted((await submitTemplate(orgId, branchId, event.key)).status))}
               >
                 {busy === 'submit' ? t.loading : wt.submit}
@@ -309,7 +313,7 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
               <button
                 type="button"
                 className="btn btn-outlined"
-                disabled={busy !== null || dirty || to.trim().length < 10}
+                disabled={locked || dirty || to.trim().length < 10}
                 onClick={() => void run('test', async () => (await sendTest(orgId, branchId, to, event.key), wt.testSent))}
               >
                 {busy === 'test' ? t.loading : wt.sendTest}
@@ -321,7 +325,7 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
           <button
             type="button"
             className="btn btn-text danger"
-            disabled={busy !== null}
+            disabled={locked}
             onClick={() => {
               if (window.confirm(wt.removeConfirm(event.label))) void run('remove', async () => (await removeTemplate(orgId, branchId, event.key), ''), true);
             }}

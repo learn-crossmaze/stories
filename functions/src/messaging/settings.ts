@@ -333,7 +333,10 @@ export const submitTemplate = query('whatsapp-submitTemplate', z.strictObject({ 
   return { status };
 });
 
-/** Reads every template's review status from Meta and updates the branch's templates (matched by name and language). */
+/**
+ * Reads every template's review status from Meta and updates the branch's templates (matched by name and
+ * language). A template changed since it was sent keeps "not submitted": Meta's status is for the old wording.
+ */
 export const syncTemplates = query('whatsapp-syncTemplates', z.strictObject(branchInput), async ({ actor, input }) => {
   await requireBranch(actor, input.orgId, input.branchId);
   const conn = await loadConnection(input.orgId, input.branchId, { requireEnabled: false });
@@ -356,6 +359,12 @@ export const syncTemplates = query('whatsapp-syncTemplates', z.strictObject(bran
         missing.push(e.key);
         batch.set(templateRef(input.orgId, input.branchId, e.key), { ...t, status: 'NOT_SUBMITTED', reason: null, metaId: null, syncedAt: FieldValue.serverTimestamp() }, { merge: true });
       }
+      continue;
+    }
+    // Reworded since Meta saw it (saveTemplate keeps the link while name and language stay): what Meta holds is
+    // the old wording, so its verdict is not taken over. The template waits to be submitted again.
+    if (t.status === 'NOT_SUBMITTED' && t.metaId) {
+      if (t.metaId !== found.id) batch.set(templateRef(input.orgId, input.branchId, e.key), { metaId: found.id, syncedAt: FieldValue.serverTimestamp() }, { merge: true });
       continue;
     }
     result[e.key] = found.status;

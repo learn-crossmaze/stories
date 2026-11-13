@@ -146,25 +146,36 @@ export function useHidden<T extends { id: string }>(rows: T[] | undefined) {
 }
 
 const NONE: ReadonlySet<string> = new Set();
+const NO_TICKS: ReadonlyMap<string, unknown> = new Map();
+const byIdAlone = () => null;
 
-/** Ticking rows of a list (never pre-selected). `rows` are the ones that may be ticked; a row that left them no longer counts. */
-export function useTicks<T extends { id: string }>(rows: T[]) {
-  const [ticked, setTicked] = useState<ReadonlySet<string>>(NONE);
-  const chosen = rows.filter((r) => ticked.has(r.id));
+/**
+ * Ticking rows of a list (never pre-selected). `rows` are the ones that may be ticked; a row that left them no
+ * longer counts. Where an id can come back as another request (a correction for the same day, asked again),
+ * `stamp` says what a tick stands for: the row read again with another stamp is not ticked.
+ */
+export function useTicks<T extends { id: string }>(rows: T[], stamp: (row: T) => unknown = byIdAlone) {
+  // Each ticked id with the stamp of the row as it was ticked.
+  const [ticked, setTicked] = useState<ReadonlyMap<string, unknown>>(NO_TICKS);
+  const chosen = rows.filter((r) => ticked.has(r.id) && ticked.get(r.id) === stamp(r));
+  const chosenIds = new Set(chosen.map((r) => r.id));
+  const ticking = (which: T[]) => new Map(which.map((r) => [r.id, stamp(r)]));
   return {
     chosen,
-    has: (id: string) => ticked.has(id),
+    has: (id: string) => chosenIds.has(id),
     all: rows.length > 0 && chosen.length === rows.length,
-    toggle: (id: string, on: boolean) =>
+    toggle: (id: string, on: boolean) => {
+      const row = rows.find((r) => r.id === id);
       setTicked((s) => {
-        const next = new Set(s);
-        if (on) next.add(id);
+        const next = new Map(s);
+        if (on && row) next.set(id, stamp(row));
         else next.delete(id);
         return next;
-      }),
-    toggleAll: (on: boolean) => setTicked(new Set(on ? rows.map((r) => r.id) : [])),
+      });
+    },
+    toggleAll: (on: boolean) => setTicked(on ? ticking(rows) : NO_TICKS),
     /** Ticks exactly these. */
-    set: (ids: string[]) => setTicked(new Set(ids)),
+    set: (ids: string[]) => setTicked(ticking(rows.filter((r) => ids.includes(r.id)))),
   };
 }
 

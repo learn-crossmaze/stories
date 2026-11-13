@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,11 +10,14 @@ import { ht } from '../strings/hr';
 // People → Employees with the reads faked in the data layer and the server at the Cloud Functions boundary.
 type Sent = { action: string; fullName: string; email: string; branchId: string | null; employmentType: string; joiningDate: string | null; managerId: string | null; requestId: string };
 const calls: Sent[] = [];
+/** When set, the server answers only once the test lets it. */
+let hold: Promise<void> | null = null;
 
 vi.mock('firebase/functions', () => ({
   httpsCallable: () => async (data: Sent) => {
     calls.push(data);
     const n = calls.length;
+    await hold;
     return { data: { employeeId: `new${n}`, code: `EMP-00${n}`, linked: data.email === 'has.account@example.test' } };
   },
 }));
@@ -54,6 +57,7 @@ const { EmployeeDialog, PeoplePage } = await import('../admin/people/People');
 
 beforeEach(() => {
   calls.length = 0;
+  hold = null;
   directory = [person('e1', 'Asha Rao', { uid: 'u1' })];
   lists = { designations: () => undefined, departments: () => undefined };
   for (const f of [listEmployees, listStaff, listDesignations, listDepartments]) f.mockClear();
@@ -138,6 +142,31 @@ describe('People → Employees', () => {
     await waitFor(() => expect(listEmployees).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(listStaff).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays open on Escape while a person is being added, so the addition is said and the list read again', async () => {
+    const user = userEvent.setup();
+    let answer = () => undefined as void;
+    hold = new Promise((r) => (answer = r));
+    page();
+    await screen.findByRole('link', { name: 'Asha Rao' });
+    await user.click(screen.getByRole('button', { name: ht.addEmployee }));
+    const dialog = within(screen.getByRole('dialog'));
+    await user.type(dialog.getByLabelText(ht.fullName), 'Bina Shah');
+    await user.click(dialog.getByRole('button', { name: ht.addAnother }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.mouseDown(screen.getByRole('dialog').parentElement!);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    answer();
+    expect(await dialog.findByText(ht.addedOne('Bina Shah', 'EMP-001'))).toBeInTheDocument();
+    expect(listEmployees).toHaveBeenCalledTimes(1);
+
+    // Once the answer is in, Escape closes as usual and the directory is read again for the person added.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(listEmployees).toHaveBeenCalledTimes(2));
   });
 
   it('keeps the current department, job title and manager on show while the lists load when editing', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
@@ -29,9 +29,32 @@ export const Fact = ({ label, value }: { label: string; value: React.ReactNode }
 /**
  * Checklist ticks on their way to the server, per employee. They go one after another: each rewrites the whole
  * list from the record it reads, so two at once would only collide and retry. Kept outside the component, so
- * ticks still waiting are sent when the tab is switched.
+ * ticks still waiting are sent when the tab is switched, and a checklist opened again meanwhile shows them and
+ * knows they are not saved yet.
  */
-const tickQueues = new Map<string, Promise<void>>();
+interface Ticks {
+  /** The tick sent last: the next one waits for it. */
+  tail: Promise<void>;
+  inFlight: number;
+  /** Boxes shown ahead of the record, by `list/key`: the tick at once, taken out again if the server refuses. */
+  ahead: Record<string, boolean>;
+  /** Goes up when a tick fails: the ticks waiting behind it are dropped, not sent. */
+  round: number;
+  error: string | null;
+  /** The record the boxes were last shown over. Once nothing is on its way, a newer one puts them back on the record. */
+  record: Employee;
+  /** The page behind, from the checklist that ticked or opened last (its callbacks still work once it has gone). */
+  page: { current: { onChanged: () => void; onSaving?: (saving: boolean) => void } };
+  /** Checklists on screen. */
+  watchers: Set<() => void>;
+}
+const ticks = new Map<string, Ticks>();
+const announce = (s: Ticks) => s.watchers.forEach((redraw) => redraw());
+/** Forgotten once there is nothing to send, show or tell. */
+const tidy = (queue: string) => {
+  const s = ticks.get(queue);
+  if (s && !s.inFlight && !s.watchers.size && !Object.keys(s.ahead).length) ticks.delete(queue);
+};
 
 /**
  * `onChanged` refreshes the record: once after a burst of ticks, not after each. `onSaving` tells the page
@@ -53,56 +76,85 @@ export function Checklist({
   onSaving?: (saving: boolean) => void;
 }) {
   const items = (employee[list] ?? []) as ChecklistItem[];
-  const [error, setError] = useState<string | null>(null);
-  // Shows the tick at once; undone if the server refuses.
-  const [pending, setPending] = useState<Record<string, boolean>>({});
-  const [saving, setSaving] = useState(false);
-  const inFlight = useRef(0);
-  // Goes up when a tick fails: the ticks waiting behind it are dropped, not sent.
-  const round = useRef(0);
+  const queue = `${orgId}/${employee.id}`;
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
   const latest = useRef({ onChanged, onSaving });
   latest.current = { onChanged, onSaving };
+  const mine = (): Ticks => {
+    const s = ticks.get(queue) ?? { tail: Promise.resolve(), inFlight: 0, ahead: {}, round: 0, error: null, record: employee, page: latest, watchers: new Set() };
+    ticks.set(queue, s);
+    return s;
+  };
+  const state = ticks.get(queue);
   // A fresh record with nothing on its way: the boxes follow the record again. (Not sooner, or a tick would flicker back.)
+  const settled = !!state && !state.inFlight && state.record !== employee;
+  const ahead = state && !settled ? state.ahead : {};
+  const saving = !!state?.inFlight;
+
   useEffect(() => {
-    if (!inFlight.current) setPending((p) => (Object.keys(p).length ? {} : p));
-  }, [employee]);
+    const s = mine();
+    s.watchers.add(redraw);
+    // Opened while ticks made earlier are still on their way: this page waits for them too.
+    if (editable) s.page = latest;
+    if (s.inFlight) latest.current.onSaving?.(true);
+    return () => {
+      s.watchers.delete(redraw);
+      if (!s.watchers.size) s.error = null;
+      tidy(queue);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queue]);
+  useEffect(() => {
+    const s = ticks.get(queue);
+    if (!s || s.record === employee) return;
+    s.record = employee;
+    if (s.inFlight || !Object.keys(s.ahead).length) return;
+    s.ahead = {};
+    announce(s);
+  }, [queue, employee]);
 
   const tick = (key: string, value: boolean) => {
-    const queue = `${orgId}/${employee.id}`;
-    const mine = round.current;
+    const s = mine();
+    const box = `${list}/${key}`;
+    const round = s.round;
     // Its own request each time: tick, untick, tick of one box must never replay the first answer.
     const requestId = crypto.randomUUID();
-    const undo = () => setPending(({ [key]: _, ...rest }) => rest);
-    setError(null);
-    setPending((p) => ({ ...p, [key]: value }));
-    inFlight.current += 1;
-    if (inFlight.current === 1) {
-      setSaving(true);
-      latest.current.onSaving?.(true);
-    }
-    const sent = (tickQueues.get(queue) ?? Promise.resolve())
+    const undo = () => {
+      const { [box]: _, ...rest } = s.ahead;
+      s.ahead = rest;
+    };
+    s.error = null;
+    s.ahead = { ...s.ahead, [box]: value };
+    s.record = employee;
+    s.page = latest;
+    s.inFlight += 1;
+    if (s.inFlight === 1) s.page.current.onSaving?.(true);
+    s.tail = s.tail
       .then(async () => {
-        if (mine !== round.current) return undo();
+        if (round !== s.round) return undo();
         try {
           await command('employees-checkItem', { orgId, employeeId: employee.id, list, key, done: value }, requestId);
         } catch (err) {
-          round.current += 1;
+          s.round += 1;
           undo();
-          setError(errorText(err));
+          // Said only to a checklist on screen: one opened later starts from what the server has.
+          if (s.watchers.size) s.error = errorText(err);
         }
       })
       .then(() => {
-        if (tickQueues.get(queue) === sent) tickQueues.delete(queue);
-        inFlight.current -= 1;
-        if (inFlight.current) return;
-        setSaving(false);
-        latest.current.onSaving?.(false);
-        // After a refusal this also puts the boxes back to what the server has.
-        latest.current.onChanged();
+        s.inFlight -= 1;
+        if (!s.inFlight) {
+          // Every tick made on this employee has been answered, whichever checklist took it.
+          s.page.current.onSaving?.(false);
+          // After a refusal this also puts the boxes back to what the server has.
+          s.page.current.onChanged();
+        }
+        announce(s);
+        tidy(queue);
       });
-    tickQueues.set(queue, sent);
+    announce(s);
   };
-  const isDone = (i: ChecklistItem) => pending[i.key] ?? i.done;
+  const isDone = (i: ChecklistItem) => ahead[`${list}/${i.key}`] ?? i.done;
   const done = items.filter(isDone).length;
   return (
     <section className="card">
@@ -131,7 +183,7 @@ export function Checklist({
           {t.saving}
         </p>
       )}
-      <FormError error={error} />
+      <FormError error={state?.error ?? null} />
     </section>
   );
 }
@@ -211,10 +263,12 @@ export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: 
   // Roles in one step for someone with an email on record: saving them links the account too. Not tied to
   // editing employees, which branch managers may not do. Link account stays for a different sign-in email.
   const canGive = !employee.uid && !!employee.email && canRoles;
-  // Start from the employee's own branch, when it is one the viewer may give (a branch outside their own would be refused).
+  // Start from the employee's own branch, when it is one the viewer may give (a branch outside their own would be
+  // refused). Head office starts from all branches; a branch that cannot be given starts from nothing, so one must
+  // be chosen ([] would read as head office and tick "All branches" unasked).
   const scope = branchScope(claims, org.id);
   const home = employee.branchId;
-  const startBranches = home && (scope === 'ALL' || scope.includes(home)) && branches.some((b) => b.id === home && b.status === 'ACTIVE') ? [home] : [];
+  const startBranches = !home ? [] : (scope === 'ALL' || scope.includes(home)) && branches.some((b) => b.id === home && b.status === 'ACTIVE') ? [home] : undefined;
   const link = useSubmit(async () => {
     await command('employees-linkAccount', { orgId: org.id, employeeId: employee.id, email: email.trim() });
     setLinking(false);

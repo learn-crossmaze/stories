@@ -243,9 +243,10 @@ async function applyTemplateStatus(orgId: string, metaId: string, event: string,
   for (const b of branches.docs) {
     const found = await b.ref.collection('whatsappTemplates').where('metaId', '==', metaId).get();
     await Promise.all(
-      found.docs.map((d) =>
-        d.ref.update({ status: event.toUpperCase(), reason: reason && reason !== 'NONE' ? reason : null, syncedAt: FieldValue.serverTimestamp() }),
-      ),
+      found.docs
+        // Reworded since it was sent: the decision is on the old wording (as in whatsapp-syncTemplates).
+        .filter((d) => d.get('status') !== 'NOT_SUBMITTED')
+        .map((d) => d.ref.update({ status: event.toUpperCase(), reason: reason && reason !== 'NONE' ? reason : null, syncedAt: FieldValue.serverTimestamp() })),
     );
   }
 }

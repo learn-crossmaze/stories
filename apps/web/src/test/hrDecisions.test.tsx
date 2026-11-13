@@ -173,4 +173,29 @@ describe('useHidden and useTicks', () => {
     act(() => result.current.toggle('b', false));
     expect(result.current.chosen).toEqual([]);
   });
+
+  it('a tick does not pass to another request that comes back under the same id', () => {
+    type Asked = Row & { at: number };
+    const first: Asked[] = [{ id: 'a', at: 1 }, { id: 'b', at: 1 }];
+    const { result, rerender } = renderHook(({ rows }) => useTicks(rows, (r) => r.at), { initialProps: { rows: first } });
+    act(() => result.current.toggleAll(true));
+    expect(result.current.all).toBe(true);
+    // The list is read again: "a" is the same request, "b" was rejected and asked again.
+    const again: Asked[] = [{ id: 'a', at: 1 }, { id: 'b', at: 2 }];
+    rerender({ rows: again });
+    expect(result.current.chosen).toEqual([{ id: 'a', at: 1 }]);
+    expect(result.current.has('a')).toBe(true);
+    expect(result.current.has('b')).toBe(false);
+    expect(result.current.all).toBe(false);
+    // Ticking it now is a tick on the new request, and "set" keeps to what is on the list as well.
+    act(() => result.current.toggle('b', true));
+    expect(result.current.chosen).toEqual(again);
+    act(() => result.current.set(['b', 'gone']));
+    expect(result.current.chosen).toEqual([{ id: 'b', at: 2 }]);
+    // Without a stamp a row is known by its id alone (ids that are never used twice).
+    const plain = renderHook(({ rows }) => useTicks(rows), { initialProps: { rows: first } });
+    act(() => plain.result.current.toggle('b', true));
+    plain.rerender({ rows: again });
+    expect(plain.result.current.chosen).toEqual([{ id: 'b', at: 2 }]);
+  });
 });

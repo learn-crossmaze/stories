@@ -127,7 +127,7 @@ const mine = new Map<string, { at: number; read: Promise<Employee | null> }>();
  * parts of one screen ask for it (the page, the check-in card, the profile
  * reminder), so callers within a minute share one read; a failed read is not
  * kept. After changing the record, call `forgetMyEmployee()` before reading it
- * again.
+ * again (the "onboarding changed" signal does so by itself, see below).
  */
 export function myEmployee(orgId: string, uid: string): Promise<Employee | null> {
   const key = `${orgId}:${uid}`;
@@ -148,6 +148,11 @@ export function myEmployee(orgId: string, uid: string): Promise<Employee | null>
 export function forgetMyEmployee(): void {
   mine.clear();
 }
+
+// Saving a photo, a detail or a document of one's own announces it on the window (`onboardingChanged()` in
+// data/selfOnboarding.ts, which imports this file, hence the name spelled out here). What is kept is stale from
+// then on, also a read still on its way; the pages read again right after the announcement.
+if (typeof window !== 'undefined') window.addEventListener('stories:onboarding-changed', forgetMyEmployee);
 
 export async function getPrivateProfile(orgId: string, employeeId: string): Promise<PrivateProfile> {
   const snap = await getDoc(doc(db(), `orgs/${orgId}/employees/${employeeId}/private/profile`));

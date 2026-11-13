@@ -111,6 +111,7 @@ Records without a branch (head office staff) need the permission across all bran
     Each person is a separate `employees-create` request. People added this way can be picked as the next
     person's manager, the access step is not offered (the line that confirms the add says so when the person has
     an account), and the list is read again once, when the form closes. Enter and **Add employee** behave as before.
+    While a save is on its way the form does not close on Escape or a click outside, so that line is always seen.
 - **Employee profile** (`/admin/people/:id`) has six tabs:
   - Overview: job and contact details.
   - Personal: personal and statutory details, visible to HR and finance.
@@ -122,12 +123,14 @@ Records without a branch (head office staff) need the permission across all bran
   - Onboarding & exit: status actions and checklists. Ticks show at once and never lock the other boxes; they
     are sent one after another (each its own `employees-checkItem` request), the record is read again once after
     the last, and a refused tick is undone with the reason, together with any still waiting behind it. The status
-    buttons wait while ticks are being saved.
+    buttons wait while ticks are being saved. Ticks still on their way are kept per employee, outside the tab: if
+    the tab is left and opened again meanwhile, the boxes still show them and the buttons wait for all of them.
   - History: effective-dated changes (read once per profile, and again after an edit, a status change or a change
     on the Access tab).
   - Access: see and manage roles, and link a Stories account. For someone not linked yet who has an email on
     record, **Give access** sets roles and links the account in one step (`staff-setRoles`, §3), starting from
-    the employee's branch when the viewer may give it; it needs `staff.manageRoles`, not `employees.edit`, so a
+    the employee's branch when the viewer may give it (all branches for head office; nothing ticked when the
+    branch on record is closed or not the viewer's); it needs `staff.manageRoles`, not `employees.edit`, so a
     branch manager can do it. **Link account** stays for linking without roles or under another sign-in email.
     The tab reads this person's membership only (one document), not the staff list.
 - **Roles & access** (Organization): a review of everyone who can sign in, with roles and branches. It has no *Add*
@@ -178,7 +181,9 @@ expiry dates. HR changes or adds types under **Settings → Document types**.
     file is on screen. A document someone else reviewed meanwhile, or that was removed, is dropped with a note.
   - On the Documents page a reviewed document leaves the pending list at once and the lists are read again once,
     when the dialog closes; on a profile the tab is read again after each decision (it can tick an onboarding
-    item and replace an older copy).
+    item and replace an older copy). If one of those reads fails, the dialog stays open at its place and the
+    page behind keeps what it had, with a note and *Try again*. The dialog does not close on Escape or a click
+    outside while a decision is being saved.
 - **On verification:**
   - older verified or expired copies of the same type become **replaced**;
   - the matching onboarding checklist item is ticked (for example, a PAN card ticks "PAN recorded").
@@ -239,18 +244,23 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
   their own day.
   - For a past day with a punch missing, the dialog starts from the person's current shift times (never for today,
     and never over a full day of leave); **Clear times** empties both, which marks the day as not worked. The last
-    reason typed is offered again.
+    reason typed is offered again. A day shift's end is not offered as the check-out when the check-in already
+    recorded is at or after it (the server would take it as the next morning).
   - On the Day tab, for a past day, people with nothing recorded can be ticked and adjusted together
     (**Adjust selected**): each gets their own shift's times, or the times set in the dialog, with one reason. Every
     person is still their own `attendance-adjust` command (a few at a time); someone who could not be adjusted
-    stays ticked with the reason. "Select everyone" leaves out people whose weekly off or holiday it was.
+    stays ticked with the reason. Once a branch's month turns out to be finalized, nothing more is sent for that
+    branch; people of other branches go on. "Select everyone" leaves out people whose weekly off or holiday it
+    was, and stays off until the holidays of the day picked are known.
 - **Corrections:**
   - An employee asks with `attendance-requestCorrection`. A manager or HR decides with
     `attendance-decideCorrection`; approving applies the times.
   - Nobody decides their own correction, and rejecting one needs a reason.
   - Several can be ticked and approved together (**Approve selected**). Each is still its own command, sent a few
     at a time; a refused one stays on the list, ticked, with the reason, and one already decided by someone else
-    just leaves the list. Nothing is ticked to begin with. Rejecting stays one at a time, with its reason.
+    just leaves the list. Nothing is ticked to begin with, and a tick belongs to the request it was made on: a
+    day asked again after a rejection (it comes back under the same id) is not ticked. Rejecting stays one at a
+    time, with its reason.
 - **Finalize** (`attendance-finalize`, `attendance.finalize`) runs per branch and month, or for head office staff.
   It only works on a month that is over, and never while corrections or leave requests are waiting.
   - It closes the month first: one transaction checks nothing is waiting and sets the lock to FINALIZING. From then

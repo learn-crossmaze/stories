@@ -42,8 +42,11 @@ function DayBoard({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' }) 
   const records = useAsync(async () => ({ date, list: await dayRecords(orgId, date, scope) }), [orgId, date, scopeKey]);
   // The records on screen belong to the day picked (while another day's are on their way, nobody's day is known).
   const known = !records.loading && records.data?.date === date;
-  // Holidays are needed only to keep "select everyone" off people's days off on a past day.
-  const holidays = useAsync(() => (isToday ? Promise.resolve([] as Holiday[]) : listHolidays(orgId, date.slice(0, 4)).catch(() => null)), [orgId, isToday ? '' : date.slice(0, 4)]);
+  // Holidays are needed only to keep "select everyone" off people's days off on a past day: read by year, none for today.
+  const holidayYear = isToday ? '' : date.slice(0, 4);
+  const holidaysRead = useAsync(async () => ({ year: holidayYear, list: holidayYear ? await listHolidays(orgId, holidayYear).catch(() => null) : ([] as Holiday[]) }), [orgId, holidayYear]);
+  // Unknown (null) while the year's list is on its way (the one read before stays in `data` until then), or when it could not be read.
+  const holidays = !holidaysRead.loading && holidaysRead.data?.year === holidayYear ? holidaysRead.data.list : null;
   const [adjusting, setAdjusting] = useState<{ e: Employee; r: AttendanceRecord | null } | null>(null);
   const [adjustingMany, setAdjustingMany] = useState(false);
   const [shiftFor, setShiftFor] = useState<Employee | null>(null);
@@ -100,8 +103,8 @@ function DayBoard({ orgId, scope }: { orgId: string; scope: string[] | 'ALL' }) 
   const ticks = useTicks(eligible);
   // "Select everyone" leaves out people off that day (a weekly off or a holiday), who would be marked present; unknown holidays switch it off.
   const dayOff = (e: Employee) => (e.weeklyOffs ?? myBranches.find((b) => b.id === e.branchId)?.weeklyOffs ?? []).includes(weekdayOf(date));
-  const onHoliday = (e: Employee) => !!holidays.data?.some((h) => h.date === date && (!h.branchIds?.length || (!!e.branchId && h.branchIds.includes(e.branchId))));
-  const everyone = holidays.data ? eligible.filter((e) => !byEmployee.has(e.id) && !dayOff(e) && !onHoliday(e)) : [];
+  const onHoliday = (e: Employee) => !!holidays?.some((h) => h.date === date && (!h.branchIds?.length || (!!e.branchId && h.branchIds.includes(e.branchId))));
+  const everyone = holidays ? eligible.filter((e) => !byEmployee.has(e.id) && !dayOff(e) && !onHoliday(e)) : [];
   const allTicked = everyone.length > 0 && everyone.every((e) => ticks.has(e.id));
   const pickDate = (next: string) => {
     setDate(next);
@@ -405,13 +408,19 @@ function MonthView({ orgId, scope, corrections, onLook, goToCorrections }: { org
   );
 }
 
+/**
+ * What a tick on a correction stands for. Its id is the person and the day, so it comes back when the day is
+ * asked for again after a rejection: that is another request, and must not arrive ticked.
+ */
+const asked = (c: Correction) => [c.requestedAt?.getTime() ?? '', c.checkIn ?? '', c.checkOut ?? '', c.reason].join('|');
+
 /** Corrections waiting for a decision. The page owns the list (it also counts it for the tab) and the decisions. */
 function CorrectionsView({ orgId, scope, list, rows, decision }: { orgId: string; scope: string[] | 'ALL'; list: AsyncState<Correction[]>; rows: Correction[]; decision: ReturnType<typeof useCorrectionDecision> }) {
   const { claims, user } = useAuth();
   const { branchName } = useWorkspace();
   // A convenience only: the server decides who may approve what (never your own correction).
   const mayDecide = (c: Correction) => c.employeeUid !== user?.uid && (c.branchId ? can(claims, 'corrections.approve', orgId, c.branchId) : can(claims, 'corrections.approve', orgId) && scope === 'ALL');
-  const ticks = useTicks(rows.filter(mayDecide));
+  const ticks = useTicks(rows.filter(mayDecide), asked);
   if (list.loading) return <SkeletonRows />;
   if (list.error && !list.data) return <ErrorState message={list.error} onRetry={list.reload} />;
   const selectable = rows.some(mayDecide);

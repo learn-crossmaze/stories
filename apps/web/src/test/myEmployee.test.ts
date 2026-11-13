@@ -1,3 +1,4 @@
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The signed-in person's own employee record: several parts of one screen ask for it, and share one read
@@ -27,6 +28,8 @@ vi.mock('firebase/firestore', async (importOriginal) => ({
 
 const { forgetMyEmployee, myEmployee } = await import('../data/hr');
 const { dayAfterPunch, myDay } = await import('../data/attendance');
+const { onboardingChanged } = await import('../data/selfOnboarding');
+const { useAsync } = await import('../shared/useAsync');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -69,6 +72,34 @@ describe('myEmployee', () => {
     expect(await myEmployee('o1', 'u1')).toBeNull();
     vi.advanceTimersByTime(61_000);
     expect(await myEmployee('o1', 'u1')).toMatchObject({ id: 'e9' });
+  });
+
+  it('reads again once the person has saved something of their own (the "onboarding changed" signal)', async () => {
+    expect(await myEmployee('o1', 'u1')).not.toHaveProperty('photoUrl');
+    world.answer = () => [{ id: 'e1', fullName: 'Asha Rao', photoUrl: 'new.jpg' }];
+    onboardingChanged();
+    expect(await myEmployee('o1', 'u1')).toMatchObject({ photoUrl: 'new.jpg' });
+    expect(world.asked).toHaveLength(2);
+    // A read that was on its way when the signal came may hold the record as it was: it is not handed on.
+    const early = myEmployee('o1', 'u2');
+    onboardingChanged();
+    const fresh = myEmployee('o1', 'u2');
+    expect(fresh).not.toBe(early);
+    await Promise.all([early, fresh]);
+    expect(world.asked).toHaveLength(4);
+  });
+
+  it('a page that reloads its record and then gives the signal, as the photo does, shows the new record', async () => {
+    vi.useRealTimers();
+    const page = renderHook(() => useAsync(() => myEmployee('o1', 'u1'), []));
+    await waitFor(() => expect(page.result.current.data).toMatchObject({ id: 'e1' }));
+    world.answer = () => [{ id: 'e1', fullName: 'Asha Rao', photoUrl: 'new.jpg' }];
+    act(() => {
+      page.result.current.reload();
+      onboardingChanged();
+    });
+    await waitFor(() => expect(page.result.current.data).toMatchObject({ photoUrl: 'new.jpg' }));
+    expect(world.asked).toHaveLength(2);
   });
 
   it('keeps people and organizations apart', async () => {

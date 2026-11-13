@@ -120,6 +120,81 @@ describe('checklist', () => {
     expect(onSaving).toHaveBeenLastCalledWith(false);
   });
 
+  it('shows ticks still on their way when the tab is opened again, and waits for all of them', async () => {
+    const user = userEvent.setup();
+    const record = employee('e5');
+    const onChanged = vi.fn();
+    const onSaving = vi.fn();
+    const first = render(<Checklist orgId="o1" employee={record} list="onboarding" editable onChanged={onChanged} onSaving={onSaving} />);
+    await user.click(box('a'));
+    await user.click(box('b'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    first.unmount();
+
+    // Back on the tab before the answers: the record is the old one, the boxes are not.
+    render(<Checklist orgId="o1" employee={record} list="onboarding" editable onChanged={onChanged} onSaving={onSaving} />);
+    expect(box('a')).toBeChecked();
+    expect(box('b')).toBeChecked();
+    expect(screen.getByRole('status')).toHaveTextContent(t.saving);
+    expect(onSaving).toHaveBeenLastCalledWith(true);
+    await user.click(box('c'));
+    expect(box('c')).toBeChecked();
+
+    // The earlier ticks are answered: the one made since still waits behind them, so nothing is called saved yet.
+    answers[0].resolve({ ok: true });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    answers[1].resolve({ ok: true });
+    await waitFor(() => expect(calls).toHaveLength(3));
+    expect(calls.map((c) => c.key)).toEqual(['a', 'b', 'c']);
+    expect(onSaving).not.toHaveBeenCalledWith(false);
+    expect(onChanged).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent(t.saving);
+
+    answers[2].resolve({ ok: true });
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(onSaving).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    for (const k of ['a', 'b', 'c']) expect(box(k)).toBeChecked();
+  });
+
+  it('drops a tick made after the tab was opened again when an earlier one is refused, and says why there', async () => {
+    const user = userEvent.setup();
+    const record = employee('e6');
+    const onChanged = vi.fn();
+    const first = render(<Checklist orgId="o1" employee={record} list="onboarding" editable onChanged={onChanged} />);
+    await user.click(box('a'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    first.unmount();
+    render(<Checklist orgId="o1" employee={record} list="onboarding" editable onChanged={onChanged} />);
+    await user.click(box('b'));
+
+    answers[0].reject(refusal());
+    expect(await screen.findByText('This checklist is closed.')).toBeInTheDocument();
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(calls.map((c) => c.key)).toEqual(['a']);
+    expect(box('a')).not.toBeChecked();
+    expect(box('b')).not.toBeChecked();
+  });
+
+  it('follows a newer record when the tab is opened again after the ticks were saved', async () => {
+    const user = userEvent.setup();
+    const record = employee('e7');
+    const onChanged = vi.fn();
+    const first = render(<Checklist orgId="o1" employee={record} list="onboarding" editable onChanged={onChanged} />);
+    await user.click(box('a'));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    first.unmount();
+    answers[0].resolve({ ok: true });
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+
+    // The same old record: the tick still shows. A newer one (someone unticked it meanwhile) is believed.
+    const again = render(<Checklist orgId="o1" employee={record} list="onboarding" editable onChanged={onChanged} />);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(box('a')).toBeChecked();
+    again.rerender(<Checklist orgId="o1" employee={employee('e7')} list="onboarding" editable onChanged={() => undefined} />);
+    expect(box('a')).not.toBeChecked();
+  });
+
   it('cannot be ticked when it is only shown', () => {
     render(<Checklist orgId="o1" employee={employee('e4', ['a'])} list="onboarding" editable={false} onChanged={() => undefined} />);
     for (const k of ['a', 'b', 'c']) expect(box(k)).toBeDisabled();
