@@ -40,19 +40,25 @@ async function requireBranch(actor: Actor, orgId: string, branchId: string, tx?:
   return branch;
 }
 
+const templatesCol = (orgId: string, branchId: string) => db.collection(`orgs/${orgId}/branches/${branchId}/whatsappTemplates`);
+
+/** The switchboard entry of a branch: the events switched on, or none while the branch's sending is off. */
+const writeSwitchboard = (tx: Transaction, orgId: string, branchId: string, settingsOn: boolean, on: Iterable<string>) =>
+  tx.set(switchboardRef(orgId), { branches: { [branchId]: settingsOn ? [...on].sort() : [] } }, { merge: true });
+
 /**
  * Rewrites the switchboard entry for a branch (events that may go out), from
  * its connection and templates. Reads first: call before other writes.
  */
 async function planSwitchboard(tx: Transaction, orgId: string, branchId: string, override?: { enabled?: boolean; template?: Pick<Template, 'event' | 'enabled'> }) {
-  const [branch, templates] = await Promise.all([tx.get(db.doc(`orgs/${orgId}/branches/${branchId}`)), tx.get(db.collection(`orgs/${orgId}/branches/${branchId}/whatsappTemplates`))]);
+  const [branch, templates] = await Promise.all([tx.get(db.doc(`orgs/${orgId}/branches/${branchId}`)), tx.get(templatesCol(orgId, branchId))]);
   const settingsOn = override?.enabled ?? (branch.get('whatsapp.enabled') as boolean | undefined) ?? false;
   const on = new Set(templates.docs.filter((d) => d.get('enabled')).map((d) => d.id));
   if (override?.template) {
     if (override.template.enabled) on.add(override.template.event);
     else on.delete(override.template.event);
   }
-  return () => tx.set(switchboardRef(orgId), { branches: { [branchId]: settingsOn ? [...on].sort() : [] } }, { merge: true });
+  return () => writeSwitchboard(tx, orgId, branchId, settingsOn, on);
 }
 
 /** Where Meta should send delivery updates and replies for this branch. */
@@ -63,7 +69,7 @@ export const overview = query('whatsapp-overview', z.strictObject(branchInput), 
   const branch = await requireBranch(actor, input.orgId, input.branchId);
   const [secret, templates] = await Promise.all([
     privateRef(input.orgId, input.branchId).get(),
-    db.collection(`orgs/${input.orgId}/branches/${input.branchId}/whatsappTemplates`).get(),
+    templatesCol(input.orgId, input.branchId).get(),
   ]);
   const settings = (branch.get('whatsapp') as WhatsAppSettings | undefined) ?? null;
   const language = settings?.language ?? 'en';
@@ -217,6 +223,60 @@ export const saveTemplate = command(
   },
 );
 
+const eventList = z.array(z.enum(EVENT_KEYS)).min(1).max(EVENT_KEYS.length);
+
+/**
+ * Adds several notifications to the branch's list in one go, each with the
+ * default wording and template name, switched off and not yet sent to Meta.
+ * One the branch already has (possibly reworded) is left as it is.
+ */
+export const addTemplates = command('whatsapp-addTemplates', z.strictObject({ ...branchInput, events: eventList }), async ({ actor, input, requestId }, tx) => {
+  const branch = await requireBranch(actor, input.orgId, input.branchId, tx);
+  const have = new Set((await tx.get(templatesCol(input.orgId, input.branchId))).docs.map((d) => d.id));
+  const added = EVENT_KEYS.filter((k) => input.events.includes(k) && !have.has(k));
+  if (!added.length) return { added };
+  const language = (branch.get('whatsapp.language') as string | undefined) ?? 'en';
+  // Nothing is switched on, so the switchboard stays as it is.
+  for (const event of added) {
+    tx.create(templateRef(input.orgId, input.branchId, event), { ...templateOf(null, event, language), updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid });
+  }
+  recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+    action: 'whatsapp.template.add',
+    entityType: 'branch',
+    entityId: input.branchId,
+    branchId: input.branchId,
+    after: { events: added },
+  });
+  return { added };
+});
+
+/**
+ * Switches several of the branch's notifications on or off in one go. Only
+ * notifications the branch has added are touched; the rest are ignored.
+ */
+export const switchTemplates = command(
+  'whatsapp-switchTemplates',
+  z.strictObject({ ...branchInput, events: eventList, enabled: z.boolean() }),
+  async ({ actor, input, requestId }, tx) => {
+    const branch = await requireBranch(actor, input.orgId, input.branchId, tx);
+    const templates = await tx.get(templatesCol(input.orgId, input.branchId));
+    const change = templates.docs.filter((d) => input.events.includes(d.id) && !!d.get('enabled') !== input.enabled);
+    const switched = change.map((d) => d.id).sort();
+    if (!switched.length) return { switched };
+    const on = templates.docs.filter((d) => (switched.includes(d.id) ? input.enabled : !!d.get('enabled'))).map((d) => d.id);
+    for (const d of change) tx.update(d.ref, { enabled: input.enabled, updatedAt: FieldValue.serverTimestamp(), updatedBy: actor.uid });
+    writeSwitchboard(tx, input.orgId, input.branchId, (branch.get('whatsapp.enabled') as boolean | undefined) ?? false, on);
+    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, input.orgId, {
+      action: 'whatsapp.template.switch',
+      entityType: 'branch',
+      entityId: input.branchId,
+      branchId: input.branchId,
+      after: { events: switched, enabled: input.enabled },
+    });
+    return { switched };
+  },
+);
+
 /**
  * Removes a notification from the branch's list: it stops being sent. The
  * template stays in Meta's WhatsApp Manager (delete it there if wanted).
@@ -283,7 +343,7 @@ export const syncTemplates = query('whatsapp-syncTemplates', z.strictObject(bran
   } catch (e) {
     metaError(e);
   }
-  const snaps = await db.collection(`orgs/${input.orgId}/branches/${input.branchId}/whatsappTemplates`).get();
+  const snaps = await templatesCol(input.orgId, input.branchId).get();
   const batch = db.batch();
   const result: Record<string, string> = {};
   const missing: string[] = [];

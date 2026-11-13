@@ -1,8 +1,8 @@
 // Pieces shared by the leave pages: balances, the apply dialog, request lists and decisions.
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { Link } from 'react-router';
 
-import { command, errorText } from '../../data/api';
+import { command } from '../../data/api';
 import { todayIST } from '../../shared/dates';
 import { applyLeave, available, daysLabel, type HalfDay, type LeaveBalance, type LeaveRequest, type LeaveType, type LedgerEntry } from '../../data/leave';
 import { paths } from '../../paths';
@@ -11,6 +11,7 @@ import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { makeStatusBadge, TableWrap } from '../../shared/ui';
+import { useDecisions, type useTicks } from './decisions';
 
 export const LeaveBadge = makeStatusBadge<string>({ PENDING: 'info', APPROVED: 'ok', REJECTED: 'danger', CANCELLED: 'muted' }, ht.leaveStatus);
 
@@ -38,7 +39,10 @@ export function BalanceCards({ types, balance }: { types: LeaveType[]; balance: 
 
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-/** Apply for leave: your own, or with `employee` on their behalf. */
+/**
+ * Apply for leave: your own, or with `employee` on their behalf. Leave recorded for someone else can be
+ * approved in the same step (the box is offered only then, and starts unticked); `onDone` hears whether it was.
+ */
 export function ApplyLeaveDialog({
   orgId,
   types,
@@ -52,15 +56,17 @@ export function ApplyLeaveDialog({
   balance: LeaveBalance | null;
   employee?: { id: string; fullName: string };
   onClose: () => void;
-  onDone: (days: number) => void;
+  onDone: (days: number, approved: boolean) => void;
 }) {
   const active = types.filter((ty) => ty.status === 'ACTIVE');
+  const [approve, setApprove] = useState(false);
   const [typeId, setTypeId] = useState(active[0]?.id ?? '');
   const [from, setFrom] = useState(todayIST());
   const [to, setTo] = useState(todayIST());
   const [halfDay, setHalfDay] = useState<HalfDay>('NONE');
   const [reason, setReason] = useState('');
   const [touched, setTouched] = useState(false);
+  const approveHintId = useId();
   const type = active.find((ty) => ty.id === typeId);
   const errors = {
     from: isDate(from) ? undefined : t.required,
@@ -71,8 +77,8 @@ export function ApplyLeaveDialog({
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
     if (Object.values(errors).some(Boolean)) return;
-    const res = await applyLeave({ orgId, ...(employee ? { employeeId: employee.id } : {}), typeId, from, to, halfDay, reason: reason.trim() });
-    onDone(res.days);
+    const res = await applyLeave({ orgId, ...(employee ? { employeeId: employee.id } : {}), typeId, from, to, halfDay, reason: reason.trim(), approve: !!employee && approve });
+    onDone(res.days, res.status === 'APPROVED');
     onClose();
   });
   const e = (k: keyof typeof errors) => (touched ? errors[k] : undefined);
@@ -111,6 +117,16 @@ export function ApplyLeaveDialog({
           />
         )}
         <TextField label={ht.leaveReason} value={reason} onChange={setReason} error={e('reason')} />
+        {employee && (
+          <>
+            <label className="check">
+              <input type="checkbox" checked={approve} onChange={(ev) => setApprove(ev.target.checked)} aria-describedby={approveHintId} /> {ht.approveNow}
+            </label>
+            <p id={approveHintId} className="field-hint">
+              {ht.approveNowHint}
+            </p>
+          </>
+        )}
         <FormError error={error} />
         <DialogActions busy={busy} submitLabel={employee ? ht.applyOnBehalf : ht.applyLeave} onCancel={onClose} />
       </form>
@@ -145,43 +161,52 @@ export function CancelLeaveDialog({ orgId, request, own, onClose, onDone }: { or
   );
 }
 
-/** Approve or reject leave (a reason is required to reject). */
-export function useLeaveDecision(orgId: string, onDone: () => void) {
-  const [rejecting, setRejecting] = useState<LeaveRequest | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const approve = async (r: LeaveRequest) => {
-    setError(null);
-    try {
-      await command('leave-decide', { orgId, leaveId: r.id, decision: 'APPROVE' });
-      onDone();
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
+/**
+ * Approve or reject leave (a reason is required to reject), each request with its own command. Several can be
+ * on their way at once: `busy(id)` marks a row, `failed[id]` is why it was refused. `onDone` hears about each
+ * request decided, `onIdle` once nothing is on its way any more.
+ */
+export function useLeaveDecision(orgId: string, onDone: (r: LeaveRequest) => void, onIdle?: () => void) {
+  const decision = useDecisions<LeaveRequest>((r, how, note) => command('leave-decide', { orgId, leaveId: r.id, decision: how, ...(how === 'REJECT' ? { note } : {}) }), onDone, onIdle);
+  const { rejecting } = decision;
   const dialog = rejecting && (
-    <ConfirmWithReason
-      title={ht.rejectLeaveTitle(rejecting.employeeName)}
-      body={ht.rejectLeaveBody}
-      confirmLabel={ht.reject}
-      onClose={() => setRejecting(null)}
-      onConfirm={async (note) => {
-        await command('leave-decide', { orgId, leaveId: rejecting.id, decision: 'REJECT', note });
-        setRejecting(null);
-        onDone();
-      }}
-    />
+    <ConfirmWithReason title={ht.rejectLeaveTitle(rejecting.employeeName)} body={ht.rejectLeaveBody} confirmLabel={ht.reject} onClose={() => decision.reject(null)} onConfirm={decision.confirmReject} />
   );
-  return { approve, reject: setRejecting, dialog, error };
+  return { ...decision, dialog };
 }
 
-/** A table of requests. `who` shows the employee column; `actions` renders row buttons. */
-export function RequestTable({ requests, who, actions, empty }: { requests: LeaveRequest[]; who?: (r: LeaveRequest) => string; actions?: (r: LeaveRequest) => ReactNode; empty: string }) {
+/**
+ * A table of requests. `who` shows the employee column; `actions` renders row buttons. `select` adds a tick
+ * column for the rows it allows; `busy` marks a row whose decision is on its way; `problem` is shown on a row.
+ */
+export function RequestTable({
+  requests,
+  who,
+  actions,
+  empty,
+  select,
+  busy,
+  problem,
+}: {
+  requests: LeaveRequest[];
+  who?: (r: LeaveRequest) => string;
+  actions?: (r: LeaveRequest) => ReactNode;
+  empty: string;
+  select?: { can: (r: LeaveRequest) => boolean } & Pick<ReturnType<typeof useTicks>, 'has' | 'all' | 'toggle' | 'toggleAll'>;
+  busy?: (id: string) => boolean;
+  problem?: (r: LeaveRequest) => string | undefined;
+}) {
   if (!requests.length) return <p className="muted">{empty}</p>;
   return (
     <TableWrap>
       <table className="table">
         <thead>
           <tr>
+            {select && (
+              <th scope="col" className="check-col">
+                <input type="checkbox" aria-label={ht.selectAllDecidable} title={ht.selectAllDecidable} checked={select.all} onChange={(e) => select.toggleAll(e.target.checked)} />
+              </th>
+            )}
             {who && <th scope="col">{ht.colName}</th>}
             <th scope="col">{ht.leaveType}</th>
             <th scope="col">{ht.leaveDatesCol}</th>
@@ -196,7 +221,20 @@ export function RequestTable({ requests, who, actions, empty }: { requests: Leav
         </thead>
         <tbody>
           {requests.map((r) => (
-            <tr key={r.id}>
+            <tr key={r.id} aria-busy={busy?.(r.id) || undefined}>
+              {select && (
+                <td className="check-col">
+                  {select.can(r) && (
+                    <input
+                      type="checkbox"
+                      aria-label={ht.selectLeave(r.employeeName, ht.leaveDates(r.from, r.to))}
+                      disabled={busy?.(r.id)}
+                      checked={select.has(r.id)}
+                      onChange={(e) => select.toggle(r.id, e.target.checked)}
+                    />
+                  )}
+                </td>
+              )}
               {who && (
                 <td>
                   <Link to={paths.adminEmployee(r.employeeId)}>{r.employeeName}</Link>
@@ -217,6 +255,11 @@ export function RequestTable({ requests, who, actions, empty }: { requests: Leav
               <td>
                 {r.reason}
                 {(r.decisionNote || r.cancelNote) && <div className="muted small">{r.cancelNote ?? r.decisionNote}</div>}
+                {problem?.(r) && (
+                  <div className="field-error" role="alert">
+                    {problem(r)}
+                  </div>
+                )}
               </td>
               <td>
                 <LeaveBadge status={r.status} />

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import { todayIST } from '../../shared/dates';
 import { myEmployee } from '../../data/hr';
-import { daysLabel, employeeRequests, leaveBalance, ledgerFor, listLeaveTypes, type LeaveRequest } from '../../data/leave';
+import { daysLabel, leaveBalance, listLeaveTypes, type LeaveRequest, myLedger, myRequests } from '../../data/leave';
 import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
@@ -23,16 +23,17 @@ export function MyLeavePage() {
   const [cancelling, setCancelling] = useState<LeaveRequest | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const me = useAsync(() => (org && user ? myEmployee(org.id, user.uid) : Promise.resolve(null)), [org?.id, user?.uid]);
+  // Only the balance is found by the employee record; the rest start at once (`me` above shares that one read).
   const data = useAsync(async () => {
-    if (!org || !user || !me.data) return null;
+    if (!org || !user) return null;
     const [types, balance, requests, ledger] = await Promise.all([
       listLeaveTypes(org.id),
-      leaveBalance(org.id, me.data.id, year),
-      employeeRequests(org.id, me.data.id, year, { ownUid: user.uid }),
-      ledgerFor(org.id, me.data.id, year, { ownUid: user.uid }),
+      myEmployee(org.id, user.uid).then((e) => (e ? leaveBalance(org.id, e.id, year) : null)),
+      myRequests(org.id, user.uid, year),
+      myLedger(org.id, user.uid, year),
     ]);
     return { types, balance, requests, ledger };
-  }, [org?.id, me.data?.id, year]);
+  }, [org?.id, user?.uid, year]);
   if (!org) return <NoOrgState />;
   const today = todayIST();
   const cancellable = (r: LeaveRequest) => r.status === 'PENDING' || (r.status === 'APPROVED' && r.from > today);

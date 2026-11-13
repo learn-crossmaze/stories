@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 
 import { errorText } from '../../data/api';
-import { deleteSubmission, downloadCsv, downloadResume, type Form, listSubmissions, markHandled, type Submission } from '../../data/site';
+import { deleteSubmission, downloadCsv, downloadResume, type Form, getSubmission, listSubmissions, markHandled, type Submission } from '../../data/site';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { Badge, EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
@@ -20,10 +20,43 @@ const details = (s: Submission) => [s.jobTitle, s.branchName, s.city, s.readers,
 
 /** Submissions (as on crossmaze.in): every enquiry and application from the website's forms. */
 export function SubmissionsPage() {
-  const list = useAsync(listSubmissions, []);
   const [form, setForm] = useState<Form | 'ALL'>('ALL');
   const [show, setShow] = useState<'NEW' | 'ALL'>('NEW');
-  const rows = (list.data ?? []).filter((s) => (form === 'ALL' || s.form === form) && (show === 'ALL' || !s.handled));
+  // "To follow up" asks the server for the open ones only; "All" for the newest 500, handled or not.
+  const list = useAsync(() => listSubmissions(show === 'NEW'), [show]);
+  // Marked from this list: shown as handled at once (and so gone from "To follow up"), before the list is read again.
+  const [marked, setMarked] = useState<ReadonlySet<string>>(new Set());
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const sending = useRef(new Set<string>());
+  const [last, setLast] = useState<{ id: string; name: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const rows = (list.data ?? [])
+    .map((s) => (marked.has(s.id) ? { ...s, handled: true } : s))
+    .filter((s) => (form === 'ALL' || s.form === form) && (show === 'ALL' || !s.handled));
+  /** One click on a row. The note is not sent, so one written on the enquiry's page stays as it is. */
+  const mark = async (s: { id: string; name: string }, handled: boolean) => {
+    const toggle = (ids: ReadonlySet<string>, on: boolean) => new Set(on ? [...ids, s.id] : [...ids].filter((x) => x !== s.id));
+    // A double click must not send the same change twice.
+    if (sending.current.has(s.id)) return;
+    sending.current.add(s.id);
+    setBusy((b) => toggle(b, true));
+    setError(null);
+    setLast(null);
+    setMarked((m) => toggle(m, handled));
+    try {
+      await markHandled(s.id, handled);
+      if (handled) setLast(s);
+      list.reload();
+    } catch (e) {
+      // Back to how it was: the row returns to the list (or, for an undo, the offer to undo returns).
+      setMarked((m) => toggle(m, !handled));
+      setError(errorText(e));
+      if (!handled) setLast(s);
+    } finally {
+      sending.current.delete(s.id);
+      setBusy((b) => toggle(b, false));
+    }
+  };
   const exportCsv = () =>
     downloadCsv(
       `stories-submissions-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -57,9 +90,18 @@ export function SubmissionsPage() {
           ))}
         </div>
       </div>
+      {last && (
+        <p className="notice notice-ok" role="status">
+          {st.markedHandled(last.name)}{' '}
+          <button type="button" className="btn btn-text" disabled={busy.has(last.id)} onClick={() => void mark(last, false)}>
+            {st.undo}
+          </button>
+        </p>
+      )}
+      {error && <p className="notice notice-error" role="alert">{error}</p>}
       {list.loading ? (
         <SkeletonRows />
-      ) : list.error ? (
+      ) : list.error && !list.data ? (
         <ErrorState message={list.error} onRetry={list.reload} />
       ) : !rows.length ? (
         <EmptyState icon="check" title={show === 'NEW' ? st.noNewSubmissions : st.noSubmissions} message={st.noSubmissionsHint} />
@@ -74,6 +116,7 @@ export function SubmissionsPage() {
                 <th scope="col">{st.phone}</th>
                 <th scope="col">{st.details}</th>
                 <th scope="col">{st.statusLabel}</th>
+                <th scope="col">{st.followUp}</th>
               </tr>
             </thead>
             <tbody>
@@ -89,6 +132,13 @@ export function SubmissionsPage() {
                   </td>
                   <td className="small">{details(s)}</td>
                   <td>{s.handled ? <Badge tone="ok">{st.handled}</Badge> : <Badge tone="warn">{st.newOne}</Badge>}</td>
+                  <td>
+                    {!s.handled && (
+                      <button type="button" className="btn btn-outlined" disabled={busy.has(s.id)} aria-label={st.markFollowedUpFor(s.name)} onClick={() => void mark(s, true)}>
+                        {st.markFollowedUp}
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -102,20 +152,21 @@ export function SubmissionsPage() {
 export function SubmissionPage() {
   const { submissionId = '' } = useParams();
   const navigate = useNavigate();
-  const list = useAsync(listSubmissions, []);
+  // This enquiry only (a notification opens this page): not the whole list to find one row.
+  const one = useAsync(() => getSubmission(submissionId), [submissionId]);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const s = list.data?.find((x) => x.id === submissionId);
-  if (list.loading) return <SkeletonRows />;
-  if (list.error || !s) return <ErrorState message={list.error ?? st.notFound} onRetry={list.reload} />;
+  const s = one.data;
+  if (one.loading) return <SkeletonRows />;
+  if (!s) return <ErrorState message={one.error ?? st.notFound} onRetry={one.reload} />;
+  /** `after`: what follows a success (read the enquiry again, or leave the page). */
   const act = async (fn: () => Promise<unknown>, after?: () => void) => {
     setBusy(true);
     setMessage(null);
     try {
       await fn();
       after?.();
-      list.reload();
     } catch (e) {
       setMessage(errorText(e));
     } finally {
@@ -165,7 +216,7 @@ export function SubmissionPage() {
               {s.email && <a className="btn btn-outlined" href={`mailto:${s.email}`}>{st.email}</a>}
             </p>
             <TextArea label={st.note} hint={st.noteHint} rows={3} value={note ?? s.note ?? ''} onChange={setNote} />
-            <button type="button" className={`btn ${s.handled ? 'btn-outlined' : 'btn-filled'}`} disabled={busy} onClick={() => void act(() => markHandled(s.id, !s.handled, note ?? s.note ?? ''))}>
+            <button type="button" className={`btn ${s.handled ? 'btn-outlined' : 'btn-filled'}`} disabled={busy} onClick={() => void act(() => markHandled(s.id, !s.handled, note ?? s.note ?? ''), one.reload)}>
               {s.handled ? st.markNotHandled : st.markHandled}
             </button>
             {s.handled && s.handledBy && <p className="muted small">{st.handledBy(s.handledBy.name, when(s.handledAt ?? null))}</p>}

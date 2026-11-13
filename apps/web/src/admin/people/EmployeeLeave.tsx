@@ -10,8 +10,8 @@ import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
-import { FormError } from '../components/Dialog';
 import { Notice } from '../components/kit';
+import { DecideButtons, DecisionNotices } from './decisions';
 import { AdjustBalanceDialog, ApplyLeaveDialog, BalanceCards, CancelLeaveDialog, LedgerList, RequestTable, useLeaveDecision } from './leaveKit';
 
 export function EmployeeLeavePanel({ orgId, employee, canApprove, canAdjust }: { orgId: string; employee: Employee; canApprove: boolean; canAdjust: boolean }) {
@@ -32,6 +32,7 @@ export function EmployeeLeavePanel({ orgId, employee, canApprove, canAdjust }: {
   const [adjusting, setAdjusting] = useState(false);
   const [cancelling, setCancelling] = useState<LeaveRequest | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // The row stays and changes status, so the list is read again after each decision.
   const decision = useLeaveDecision(orgId, data.reload);
   const now = Number(todayIST().slice(0, 4));
   const today = todayIST();
@@ -75,21 +76,23 @@ export function EmployeeLeavePanel({ orgId, employee, canApprove, canAdjust }: {
       </section>
       <section className="section" aria-labelledby="leave-requests">
         <h2 id="leave-requests">{ht.tabRequests}</h2>
-        <FormError error={decision.error} />
+        <DecisionNotices decision={decision} rows={d.requests} name={(r) => ht.leaveDates(r.from, r.to)} />
         <RequestTable
           requests={d.requests}
           empty={ht.leaveEmpty}
+          busy={decision.busy}
+          problem={(r) => decision.failed[r.id]}
           actions={(r) => (
             <>
               {!self && canApprove && r.status === 'PENDING' && (
-                <>
-                  <button type="button" className="btn btn-text" onClick={() => void decision.approve(r)} aria-label={`${ht.approve} ${ht.leaveDates(r.from, r.to)}`}>
-                    {ht.approve}
-                  </button>
-                  <button type="button" className="btn btn-text" onClick={() => decision.reject(r)} aria-label={`${ht.reject} ${ht.leaveDates(r.from, r.to)}`}>
-                    {ht.reject}
-                  </button>
-                </>
+                <DecideButtons
+                  busy={decision.busy(r.id)}
+                  hold={data.refreshing}
+                  onApprove={() => void decision.approve(r)}
+                  onReject={() => decision.reject(r)}
+                  approveLabel={`${ht.approve} ${ht.leaveDates(r.from, r.to)}`}
+                  rejectLabel={`${ht.reject} ${ht.leaveDates(r.from, r.to)}`}
+                />
               )}
               {mayCancel(r) && (
                 <button type="button" className="btn btn-text" onClick={() => setCancelling(r)} aria-label={ht.cancelLeaveFor(r.from)}>
@@ -112,8 +115,8 @@ export function EmployeeLeavePanel({ orgId, employee, canApprove, canAdjust }: {
           balance={d.balance}
           employee={employee}
           onClose={() => setApplying(false)}
-          onDone={(days) => {
-            setNotice(ht.leaveApplied(daysLabel(days)));
+          onDone={(days, approved) => {
+            setNotice(approved ? ht.leaveRecordedApproved(daysLabel(days)) : ht.leaveApplied(daysLabel(days)));
             data.reload();
           }}
         />

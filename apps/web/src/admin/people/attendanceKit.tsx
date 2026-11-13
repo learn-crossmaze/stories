@@ -1,13 +1,15 @@
 // Pieces shared by the attendance pages: status badge, dialogs and the month table.
 import { useState } from 'react';
 
-import { command, errorText } from '../../data/api';
+import { ApiError, command, errorText } from '../../data/api';
 import { type AttendanceRecord, type Correction, hhmm, hours, type Shift, timeOf, type Weekday, WEEKDAYS } from '../../data/attendance';
 import type { Employee } from '../../data/hr';
+import { todayIST } from '../../shared/dates';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { ConfirmWithReason, Dialog, DialogActions, FormError, SelectField, TextField, useSubmit } from '../components/Dialog';
 import { makeStatusBadge, TableWrap } from '../../shared/ui';
+import { AT_ONCE, runEach, useDecisions } from './decisions';
 
 export const DayBadge = makeStatusBadge<string>(
   { PRESENT: 'ok', HALF_DAY: 'warn', ABSENT: 'danger', WEEKLY_OFF: 'muted', HOLIDAY: 'info', ON_LEAVE: 'info', IN_PROGRESS: 'info', NOT_IN: 'muted' },
@@ -22,11 +24,53 @@ export function DayFlags({ r }: { r: Pick<AttendanceRecord, 'late' | 'lateMinute
 
 const timeOk = (v: string) => !v || /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 
-export function AdjustDialog({ orgId, employee, date, record, onClose, onDone }: { orgId: string; employee: { id: string; fullName: string }; date: string; record?: AttendanceRecord | null; onClose: () => void; onDone: () => void }) {
-  const [checkIn, setIn] = useState(hhmm(record?.checkIn ?? null));
-  const [checkOut, setOut] = useState(hhmm(record?.checkOut ?? null));
-  const [reason, setReason] = useState('');
+/** A shift's hours as the dialogs need them. */
+export type ShiftHours = Pick<Shift, 'start' | 'end'>;
+
+/** The reason last used to adjust a day, offered again in the next dialog (this visit to the page only). */
+let lastReason = '';
+
+const dayBefore = (date: string) => new Date(Date.parse(date) - 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The times to start from for a day with a punch missing: the shift's own, for a day that is over. Never for
+ * today (a check-out that has not happened would be recorded), nor for the last night of an overnight shift,
+ * nor over a full day of leave.
+ */
+export function shiftDefault(date: string, shift: ShiftHours | null | undefined, record: Pick<AttendanceRecord, 'leave'> | null | undefined, today = todayIST()): { checkIn: string; checkOut: string } | null {
+  if (!shift || date >= today || (record?.leave && !record.leave.half)) return null;
+  const overnight = shift.end <= shift.start;
+  return { checkIn: shift.start, checkOut: overnight && date >= dayBefore(today) ? '' : shift.end };
+}
+
+/**
+ * Sets a day's times, with a reason. `shift` is the person's current shift (the server works the day out
+ * from it): a time missing on a past day starts from it, and Clear times empties both (the day was not worked).
+ */
+export function AdjustDialog({
+  orgId,
+  employee,
+  date,
+  record,
+  shift,
+  onClose,
+  onDone,
+}: {
+  orgId: string;
+  employee: { id: string; fullName: string };
+  date: string;
+  record?: AttendanceRecord | null;
+  shift?: ShiftHours | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const fill = shiftDefault(date, shift, record);
+  const [checkIn, setIn] = useState(hhmm(record?.checkIn ?? null) || (fill?.checkIn ?? ''));
+  const [checkOut, setOut] = useState(hhmm(record?.checkOut ?? null) || (fill?.checkOut ?? ''));
+  const [reason, setReason] = useState(lastReason);
   const [touched, setTouched] = useState(false);
+  // Said only while a filled-in time is still there.
+  const filled = !!fill && ((!record?.checkIn && checkIn === fill.checkIn && !!checkIn) || (!record?.checkOut && checkOut === fill.checkOut && !!checkOut));
   const errors = {
     checkIn: timeOk(checkIn) ? undefined : 'Use HH:MM.',
     checkOut: !timeOk(checkOut) ? 'Use HH:MM.' : checkOut && !checkIn ? 'Enter the check-in time too.' : undefined,
@@ -36,6 +80,7 @@ export function AdjustDialog({ orgId, employee, date, record, onClose, onDone }:
     setTouched(true);
     if (errors.checkIn || errors.checkOut || errors.reason) return;
     await command('attendance-adjust', { orgId, employeeId: employee.id, date, checkIn: checkIn || null, checkOut: checkOut || null, reason: reason.trim() });
+    lastReason = reason.trim();
     onDone();
     onClose();
   });
@@ -47,9 +92,128 @@ export function AdjustDialog({ orgId, employee, date, record, onClose, onDone }:
           <TextField label={ht.checkInTime} type="time" value={checkIn} onChange={setIn} error={touched ? errors.checkIn : undefined} />
           <TextField label={ht.checkOutTime} type="time" value={checkOut} onChange={setOut} error={touched ? errors.checkOut : undefined} />
         </div>
+        {filled && shift && <p className="field-hint">{ht.adjustShiftFilled(shift.start, shift.end)}</p>}
+        {(checkIn || checkOut) && (
+          <button
+            type="button"
+            className="btn btn-text"
+            onClick={() => {
+              setIn('');
+              setOut('');
+            }}
+          >
+            {ht.clearTimes}
+          </button>
+        )}
         <TextField label={t.reasonLabel} value={reason} onChange={setReason} error={touched ? errors.reason : undefined} />
         <FormError error={error} />
         <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+      </form>
+    </Dialog>
+  );
+}
+
+/** The month is closed: every other person of the same branch would be refused for the same reason. */
+const monthClosed = (e: unknown) => e instanceof ApiError && e.reason === 'MONTH_FINALIZED';
+
+/**
+ * One past day for several people (a day the punches were missed): each person gets their own shift's times,
+ * or the times set here, with one reason. Every person is their own command, a few at a time, so one refusal
+ * does not stop the others. `onSettled` hears who was adjusted and why the others were not (shown on their rows,
+ * here and on the board, which keeps them ticked).
+ */
+export function AdjustManyDialog({
+  orgId,
+  date,
+  people,
+  problems,
+  onClose,
+  onSettled,
+}: {
+  orgId: string;
+  date: string;
+  people: { employee: { id: string; fullName: string }; shift: ShiftHours | null }[];
+  problems: Readonly<Record<string, string>>;
+  onClose: () => void;
+  onSettled: (done: string[], problems: Record<string, string>) => void;
+}) {
+  const [ownShift, setOwnShift] = useState(true);
+  const [checkIn, setIn] = useState('');
+  const [checkOut, setOut] = useState('');
+  const [reason, setReason] = useState(lastReason);
+  const [touched, setTouched] = useState(false);
+  const errors = {
+    checkIn: ownShift ? undefined : !checkIn ? t.required : timeOk(checkIn) ? undefined : 'Use HH:MM.',
+    checkOut: ownShift || timeOk(checkOut) ? undefined : 'Use HH:MM.',
+    reason: reason.trim().length >= 3 ? undefined : t.required,
+  };
+  /** The times a person would get, or null when there are none to use (no shift, or its last night is not over). */
+  const timesFor = (shift: ShiftHours | null) => {
+    if (!ownShift) return { checkIn, checkOut };
+    const own = shiftDefault(date, shift, null);
+    return own?.checkOut ? own : null;
+  };
+  const { busy, error, submit } = useSubmit(async () => {
+    setTouched(true);
+    if (errors.checkIn || errors.checkOut || errors.reason) return;
+    const done: string[] = [];
+    const failed: Record<string, string> = {};
+    const ready = people.filter((p) => {
+      if (timesFor(p.shift)) return true;
+      failed[p.employee.id] = ht.adjustManyNoShift;
+      return false;
+    });
+    let closed = false;
+    const left = await runEach(
+      ready,
+      AT_ONCE,
+      (p) => {
+        const times = timesFor(p.shift)!;
+        return command('attendance-adjust', { orgId, employeeId: p.employee.id, date, checkIn: times.checkIn, checkOut: times.checkOut || null, reason: reason.trim() });
+      },
+      (p, failure) => {
+        if (failure) failed[p.employee.id] = errorText(failure);
+        else done.push(p.employee.id);
+      },
+      (failure) => (closed = monthClosed(failure)),
+    );
+    if (closed) for (const p of left) failed[p.employee.id] = ht.adjustManyStopped;
+    lastReason = reason.trim();
+    onSettled(done, failed);
+    if (!Object.keys(failed).length) onClose();
+  });
+  return (
+    <Dialog title={ht.adjustManyTitle(people.length, date)} onClose={onClose}>
+      <form onSubmit={submit} noValidate>
+        <p className="muted small">{ht.adjustManyHint}</p>
+        <ul className="plain-list">
+          {people.map(({ employee, shift }) => (
+            <li key={employee.id}>
+              <span>
+                {employee.fullName}
+                {problems[employee.id] && (
+                  <span className="field-error" role="alert">
+                    {' '}
+                    {problems[employee.id]}
+                  </span>
+                )}
+              </span>
+              <span className="muted small">{ownShift ? (shift ? `${shift.start}–${shift.end}` : ht.noShift) : checkIn ? `${checkIn}–${checkOut || '—'}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+        <label className="check">
+          <input type="checkbox" checked={ownShift} onChange={(e) => setOwnShift(e.target.checked)} /> {ht.useShiftTimes}
+        </label>
+        {!ownShift && (
+          <div className="form-grid">
+            <TextField label={ht.checkInTime} type="time" value={checkIn} onChange={setIn} error={touched ? errors.checkIn : undefined} />
+            <TextField label={ht.checkOutTime} type="time" value={checkOut} onChange={setOut} error={touched ? errors.checkOut : undefined} />
+          </div>
+        )}
+        <TextField label={t.reasonLabel} value={reason} onChange={setReason} error={touched ? errors.reason : undefined} />
+        <FormError error={error} />
+        <DialogActions busy={busy} submitLabel={ht.adjustSelected(people.length)} onCancel={onClose} disabled={!people.length} />
       </form>
     </Dialog>
   );
@@ -134,33 +298,24 @@ export function CorrectionRequestDialog({ orgId, defaultDate, onClose, onDone }:
   );
 }
 
-/** Approve or reject corrections (the reason is required to reject). */
-export function useCorrectionDecision(orgId: string, onDone: () => void) {
-  const [rejecting, setRejecting] = useState<Correction | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const approve = async (c: Correction) => {
-    setError(null);
-    try {
-      await command('attendance-decideCorrection', { orgId, correctionId: c.id, decision: 'APPROVE' });
-      onDone();
-    } catch (e) {
-      setError(errorText(e));
-    }
-  };
+/**
+ * Approve or reject corrections (the reason is required to reject), each with its own command. Several can be
+ * on their way at once: `busy(id)` marks a row, `failed[id]` is why it was refused. `onDone` hears about each
+ * correction decided, `onIdle` once nothing is on its way any more.
+ */
+export function useCorrectionDecision(orgId: string, onDone: (c: Correction) => void, onIdle?: () => void) {
+  const decision = useDecisions<Correction>((c, how, note) => command('attendance-decideCorrection', { orgId, correctionId: c.id, decision: how, ...(how === 'REJECT' ? { note } : {}) }), onDone, onIdle);
+  const { rejecting } = decision;
   const dialog = rejecting && (
     <ConfirmWithReason
       title={ht.rejectCorrectionTitle(rejecting.employeeName, rejecting.date)}
       body={ht.rejectCorrectionBody}
       confirmLabel={ht.reject}
-      onClose={() => setRejecting(null)}
-      onConfirm={async (note) => {
-        await command('attendance-decideCorrection', { orgId, correctionId: rejecting.id, decision: 'REJECT', note });
-        setRejecting(null);
-        onDone();
-      }}
+      onClose={() => decision.reject(null)}
+      onConfirm={decision.confirmReject}
     />
   );
-  return { approve, reject: setRejecting, dialog, error };
+  return { ...decision, dialog };
 }
 
 /** A month of one person's days. `onAdjust` adds an Adjust button per row. */

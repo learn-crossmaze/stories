@@ -128,11 +128,11 @@ line per failed document (`path`). Useful Cloud Logging filters: `jsonPayload.fn
 | | `documents-open` (query, audited) | as upload, or the employee |
 | Attendance | `shifts-save/archive`, `holidays-save/remove` | `hr.config` |
 | | `attendance-assignShift`, `attendance-adjust` (reason; never your own day) | `attendance.manage` at the employee's branch |
-| | `attendance-punch` (`punch: IN\|OUT`; own, or for someone else at the desk) | the employee; `attendance.manage` for others |
+| | `attendance-punch` (`punch: IN\|OUT`; own, or for someone else at the desk). Returns the day it wrote: `date` (a check-out can close yesterday's overnight day), `status`, `late`, `lateMinutes`, `earlyExit`, `missedCheckout`, `workedMinutes`, and `checkIn` / `checkOut` in milliseconds | the employee; `attendance.manage` for others |
 | | `attendance-requestCorrection` / `attendance-decideCorrection` | the employee / `corrections.approve` (never your own) |
 | | `attendance-finalize` (query; writes the month; refused while corrections or leave wait), `attendance-reopen` (refused while that month's payroll is submitted or approved) | `attendance.finalize` for the branch (org-wide for head office) |
 | Leave | `leaveTypes-save/archive` | `hr.config` |
-| | `leave-apply` (`typeId`, `from`, `to`, `halfDay: NONE\|FIRST\|SECOND`, reason; own, or `employeeId` for someone else) | the employee; `leave.approve` at the branch for others |
+| | `leave-apply` (`typeId`, `from`, `to`, `halfDay: NONE\|FIRST\|SECOND`, reason; own, or `employeeId` for someone else; `approve: true` approves leave recorded for someone else in the same step, never your own). Returns `leaveId`, `days`, `status` | the employee; `leave.approve` at the branch for others |
 | | `leave-decide` (`APPROVE` / `REJECT` with note; never your own) | `leave.approve` at the employee's branch |
 | | `leave-cancel` (note required for someone else's) | the employee (waiting, or approved and not started); `leave.adjust` for any |
 | | `leave-adjust` (`typeId`, `year`, `days` ±, reason; never your own) | `leave.adjust` at the employee's branch |

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { call, command, errorText } from '../../data/api';
 import { type ChecklistItem, type Employee, type PrivateProfile } from '../../data/hr';
-import { listStaff, type Org } from '../../data/org';
+import { getStaffMember, type Org } from '../../data/org';
 import { useAsync } from '../../shared/useAsync';
 import { when } from '../../shared/format';
 import { ROLES } from '../../generated/rbac';
@@ -26,24 +26,82 @@ export const Fact = ({ label, value }: { label: string; value: React.ReactNode }
   </>
 );
 
+/**
+ * Checklist ticks on their way to the server, per employee. They go one after another: each rewrites the whole
+ * list from the record it reads, so two at once would only collide and retry. Kept outside the component, so
+ * ticks still waiting are sent when the tab is switched.
+ */
+const tickQueues = new Map<string, Promise<void>>();
+
+/**
+ * `onChanged` refreshes the record: once after a burst of ticks, not after each. `onSaving` tells the page
+ * while ticks are on their way (a status change pressed then would not see them yet).
+ */
 export function Checklist({
   orgId,
   employee,
   list,
   editable,
   onChanged,
+  onSaving,
 }: {
   orgId: string;
   employee: Employee;
   list: 'onboarding' | 'offboarding';
   editable: boolean;
   onChanged: () => void;
+  onSaving?: (saving: boolean) => void;
 }) {
   const items = (employee[list] ?? []) as ChecklistItem[];
-  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Shows the tick at once; undone if the server refuses.
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [saving, setSaving] = useState(false);
+  const inFlight = useRef(0);
+  // Goes up when a tick fails: the ticks waiting behind it are dropped, not sent.
+  const round = useRef(0);
+  const latest = useRef({ onChanged, onSaving });
+  latest.current = { onChanged, onSaving };
+  // A fresh record with nothing on its way: the boxes follow the record again. (Not sooner, or a tick would flicker back.)
+  useEffect(() => {
+    if (!inFlight.current) setPending((p) => (Object.keys(p).length ? {} : p));
+  }, [employee]);
+
+  const tick = (key: string, value: boolean) => {
+    const queue = `${orgId}/${employee.id}`;
+    const mine = round.current;
+    // Its own request each time: tick, untick, tick of one box must never replay the first answer.
+    const requestId = crypto.randomUUID();
+    const undo = () => setPending(({ [key]: _, ...rest }) => rest);
+    setError(null);
+    setPending((p) => ({ ...p, [key]: value }));
+    inFlight.current += 1;
+    if (inFlight.current === 1) {
+      setSaving(true);
+      latest.current.onSaving?.(true);
+    }
+    const sent = (tickQueues.get(queue) ?? Promise.resolve())
+      .then(async () => {
+        if (mine !== round.current) return undo();
+        try {
+          await command('employees-checkItem', { orgId, employeeId: employee.id, list, key, done: value }, requestId);
+        } catch (err) {
+          round.current += 1;
+          undo();
+          setError(errorText(err));
+        }
+      })
+      .then(() => {
+        if (tickQueues.get(queue) === sent) tickQueues.delete(queue);
+        inFlight.current -= 1;
+        if (inFlight.current) return;
+        setSaving(false);
+        latest.current.onSaving?.(false);
+        // After a refusal this also puts the boxes back to what the server has.
+        latest.current.onChanged();
+      });
+    tickQueues.set(queue, sent);
+  };
   const isDone = (i: ChecklistItem) => pending[i.key] ?? i.done;
   const done = items.filter(isDone).length;
   return (
@@ -58,26 +116,7 @@ export function Checklist({
         {items.map((i) => (
           <li key={i.key}>
             <label className="check">
-              <input
-                type="checkbox"
-                checked={isDone(i)}
-                disabled={!editable || busyKey !== null}
-                onChange={async (e) => {
-                  const value = e.target.checked;
-                  setBusyKey(i.key);
-                  setError(null);
-                  setPending((p) => ({ ...p, [i.key]: value }));
-                  try {
-                    await command('employees-checkItem', { orgId, employeeId: employee.id, list, key: i.key, done: value });
-                    onChanged();
-                  } catch (err) {
-                    setPending(({ [i.key]: _, ...rest }) => rest);
-                    setError(errorText(err));
-                  } finally {
-                    setBusyKey(null);
-                  }
-                }}
-              />
+              <input type="checkbox" checked={isDone(i)} disabled={!editable} onChange={(e) => tick(i.key, e.target.checked)} />
               <span>
                 {i.label}
                 {i.required && <Badge tone="warn"> {ht.required}</Badge>}
@@ -87,6 +126,11 @@ export function Checklist({
           </li>
         ))}
       </ul>
+      {saving && (
+        <p className="muted small" role="status">
+          {t.saving}
+        </p>
+      )}
       <FormError error={error} />
     </section>
   );
@@ -151,17 +195,26 @@ export function BankPanel({
 
 export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: Employee; onChanged: () => void }) {
   const { claims } = useAuth();
-  const { branchName } = useWorkspace();
+  const { branches, branchName } = useWorkspace();
   const canStaff = can(claims, 'staff.view', org.id);
-  const membership = useAsync(async () => {
-    if (!employee.uid || !canStaff) return null;
-    // Branch-scoped staff may only list memberships at their branches (the rules allow that query shape).
-    return (await listStaff(org.id, branchScope(claims, org.id)).catch(() => [])).find((m) => m.uid === employee.uid) ?? null;
-  }, [org.id, employee.uid]);
+  // This person's roles only: one document, not the whole staff list. Null also when the viewer may not see them.
+  const membership = useAsync(
+    () => (employee.uid && canStaff ? getStaffMember(org.id, employee.uid).catch(() => null) : Promise.resolve(null)),
+    [org.id, employee.uid],
+  );
   const [linking, setLinking] = useState(false);
   const [roles, setRoles] = useState(false);
+  const [giving, setGiving] = useState(false);
   const [email, setEmail] = useState(employee.email ?? '');
   const canEdit = can(claims, 'employees.edit', org.id);
+  const canRoles = can(claims, 'staff.manageRoles', org.id);
+  // Roles in one step for someone with an email on record: saving them links the account too. Not tied to
+  // editing employees, which branch managers may not do. Link account stays for a different sign-in email.
+  const canGive = !employee.uid && !!employee.email && canRoles;
+  // Start from the employee's own branch, when it is one the viewer may give (a branch outside their own would be refused).
+  const scope = branchScope(claims, org.id);
+  const home = employee.branchId;
+  const startBranches = home && (scope === 'ALL' || scope.includes(home)) && branches.some((b) => b.id === home && b.status === 'ACTIVE') ? [home] : [];
   const link = useSubmit(async () => {
     await command('employees-linkAccount', { orgId: org.id, employeeId: employee.id, email: email.trim() });
     setLinking(false);
@@ -172,11 +225,18 @@ export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: 
     <section className="card">
       <h2>{ht.accessTitle}</h2>
       <p>{employee.uid ? ht.accountLinked(employee.email ?? '') : ht.accountNotLinked}</p>
-      {!employee.uid && canEdit && employee.status !== 'OFFBOARDED' && (
+      {!employee.uid && (canGive || canEdit) && employee.status !== 'OFFBOARDED' && (
         <div className="row">
-          <button type="button" className="btn btn-outlined" onClick={() => setLinking(true)}>
-            {ht.linkAccount}
-          </button>
+          {canGive && (
+            <button type="button" className="btn btn-filled" onClick={() => setGiving(true)}>
+              {t.staffGiveAccess}
+            </button>
+          )}
+          {canEdit && (
+            <button type="button" className="btn btn-outlined" onClick={() => setLinking(true)}>
+              {ht.linkAccount}
+            </button>
+          )}
         </div>
       )}
       {employee.uid && canStaff && (
@@ -191,7 +251,7 @@ export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: 
           ) : (
             <p className="muted">{employee.status === 'OFFBOARDED' ? ht.rolesOffboarded : ht.noRoles}</p>
           )}
-          {can(claims, 'staff.manageRoles', org.id) && employee.status !== 'OFFBOARDED' && (
+          {canRoles && employee.status !== 'OFFBOARDED' && (
             <div className="row">
               <button type="button" className="btn btn-outlined" onClick={() => setRoles(true)}>
                 {ht.manageRoles}
@@ -217,11 +277,25 @@ export function AccessPanel({ org, employee, onChanged }: { org: Org; employee: 
           org={org}
           member={m ?? undefined}
           email={m ? undefined : (employee.email ?? undefined)}
+          branchIds={m ? undefined : startBranches}
           onClose={() => setRoles(false)}
           onSaved={() => {
             membership.reload();
             onChanged();
           }}
+        />
+      )}
+      {giving && (
+        <RolesDialog
+          org={org}
+          email={employee.email ?? undefined}
+          branchIds={startBranches}
+          title={ht.giveAccessTitle}
+          intro={ht.giveAccessIntro}
+          cancelLabel={t.cancel}
+          onClose={() => setGiving(false)}
+          // The record is read again rather than assumed linked: the roles go to whoever signs in with this email.
+          onSaved={onChanged}
         />
       )}
     </section>

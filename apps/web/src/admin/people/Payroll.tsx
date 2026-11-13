@@ -33,11 +33,16 @@ export function PayrollPage() {
   const branchId = where === 'HO' ? null : where;
   const orgId = org?.id ?? '';
   const perm = (p: Permission) => (branchId ? can(claims, p, orgId, branchId) : can(claims, p, orgId) && scope === 'ALL');
+  // The run and the payslips are read apart: payslips change only when the run is prepared (or approved), so
+  // saving someone's inputs reads the run again and nothing else.
   const data = useAsync(async () => {
     if (!org) return null;
-    const [run, lock, slips] = await Promise.all([getRun(org.id, month, branchId), monthLock(org.id, month, branchId), perm('payslips.viewAll') ? runPayslips(org.id, month, branchId) : Promise.resolve([] as Payslip[])]);
-    return { run, finalized: lock?.status === 'FINALIZED', slips };
+    const [run, lock] = await Promise.all([getRun(org.id, month, branchId), monthLock(org.id, month, branchId)]);
+    return { run, finalized: lock?.status === 'FINALIZED' };
   }, [org?.id, month, where]);
+  const slips = useAsync(() => (org && perm('payslips.viewAll') ? runPayslips(org.id, month, branchId) : Promise.resolve([] as Payslip[])), [org?.id, month, where]);
+  // Inputs saved over this read of the run: it is out of date from that moment, before the run is read again.
+  const [inputsSavedOver, setInputsSavedOver] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { busy, error, run: runAction } = useAction();
   const [approving, setApproving] = useState(false);
@@ -52,11 +57,16 @@ export function PayrollPage() {
   const ownRun = !!run && (run.preparedBy === user?.uid || run.submittedBy === user?.uid || (!!user && !!run.contributors?.includes(user.uid)));
   const editable = status === 'NONE' || status === 'DRAFT';
   const whereLabel = choices.find((c) => c.value === where)?.label ?? '';
+  const stale = !!run && (run.stale || inputsSavedOver === data.data);
+  const reloadAll = () => {
+    data.reload();
+    slips.reload();
+  };
   const act = (fn: () => Promise<string | null>) =>
     runAction(async () => {
       setNotice(null);
       setNotice(await fn());
-      data.reload();
+      reloadAll();
     });
 
   return (
@@ -85,7 +95,7 @@ export function PayrollPage() {
         {canRun && editable && data.data?.finalized && (
           <button
             type="button"
-            className={status === 'NONE' || run?.stale ? 'btn btn-filled' : 'btn btn-outlined'}
+            className={status === 'NONE' || stale ? 'btn btn-filled' : 'btn btn-outlined'}
             disabled={busy}
             onClick={() =>
               void act(async () => {
@@ -97,7 +107,7 @@ export function PayrollPage() {
             {status === 'NONE' ? ht.prepareRun : ht.prepareAgain}
           </button>
         )}
-        {canRun && status === 'DRAFT' && !run?.stale && !run?.problemCount && (
+        {canRun && status === 'DRAFT' && !stale && !run?.problemCount && (
           <button type="button" className="btn btn-filled" disabled={busy} onClick={() => void act(async () => (await submitRun(org.id, month, branchId), null))}>
             {ht.submitRun}
           </button>
@@ -151,7 +161,7 @@ export function PayrollPage() {
                   {[ht.runPreparedBy(run.preparedByEmail), run.submittedByEmail && ht.runSubmittedBy(run.submittedByEmail), run.approvedByEmail && ht.runApprovedBy(run.approvedByEmail)].filter(Boolean).join(', ')} ·{' '}
                   {ht.settingsInForce(run.settingsFrom)}
                 </p>
-                {run.stale && editable && <Notice tone="warn">{ht.runStale}</Notice>}
+                {stale && editable && <Notice tone="warn">{ht.runStale}</Notice>}
                 {run.rejectNote && status === 'DRAFT' && <Notice tone="warn">{ht.runRejected(run.rejectNote)}</Notice>}
                 {status === 'SUBMITTED' && canApprove && ownRun && <p className="muted">{ht.ownRunNote}</p>}
                 {run.problemCount > 0 && (
@@ -169,65 +179,80 @@ export function PayrollPage() {
               </>
             )}
           </section>
-          {data.data.slips.length > 0 && (
-            <TableWrap>
-              <table className="table compact">
-                <thead>
-                  <tr>
-                    <th scope="col">{ht.colName}</th>
-                    <th scope="col" className="num">
-                      {ht.colPayable}
-                    </th>
-                    <th scope="col" className="num">
-                      {ht.colGross}
-                    </th>
-                    <th scope="col" className="num">
-                      {ht.colDeductions}
-                    </th>
-                    <th scope="col" className="num">
-                      {ht.colNet}
-                    </th>
-                    <th scope="col">
-                      <span className="sr-only">Actions</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.data.slips.map((s) => (
-                    <tr key={s.id}>
-                      <td>
-                        <Link to={paths.adminEmployee(s.employeeId)}>{s.employeeName}</Link>
-                        {s.missingSalary && <Badge tone="danger"> {ht.noSalary}</Badge>}
-                        {s.tds > 0 && <div className="muted small">TDS {rupees(s.tds)}</div>}
-                      </td>
-                      <td className="num">
-                        {s.days.payable}/{s.days.inMonth}
-                      </td>
-                      <td className="num">{rupees(s.gross)}</td>
-                      <td className="num">{rupees(s.deductions)}</td>
-                      <td className="num">
-                        <strong>{rupees(s.net)}</strong>
-                      </td>
-                      <td className="cell-actions">
-                        {canRun && editable && s.employeeUid !== user?.uid && (
-                          <button type="button" className="btn btn-text" onClick={() => setInputsFor(s)} aria-label={`${ht.inputs} ${s.employeeName}`}>
-                            {ht.inputs}
-                          </button>
-                        )}
-                        {!s.missingSalary && <PayslipButton orgId={org.id} slip={s} />}
-                      </td>
+          {slips.loading ? (
+            <SkeletonRows />
+          ) : slips.error && !slips.data ? (
+            <ErrorState message={slips.error} onRetry={slips.reload} />
+          ) : (
+            !!slips.data?.length && (
+              <TableWrap>
+                <table className="table compact">
+                  <thead>
+                    <tr>
+                      <th scope="col">{ht.colName}</th>
+                      <th scope="col" className="num">
+                        {ht.colPayable}
+                      </th>
+                      <th scope="col" className="num">
+                        {ht.colGross}
+                      </th>
+                      <th scope="col" className="num">
+                        {ht.colDeductions}
+                      </th>
+                      <th scope="col" className="num">
+                        {ht.colNet}
+                      </th>
+                      <th scope="col">
+                        <span className="sr-only">Actions</span>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </TableWrap>
+                  </thead>
+                  <tbody>
+                    {slips.data.map((s) => (
+                      <tr key={s.id}>
+                        <td>
+                          <Link to={paths.adminEmployee(s.employeeId)}>{s.employeeName}</Link>
+                          {s.missingSalary && <Badge tone="danger"> {ht.noSalary}</Badge>}
+                          {s.tds > 0 && <div className="muted small">TDS {rupees(s.tds)}</div>}
+                        </td>
+                        <td className="num">
+                          {s.days.payable}/{s.days.inMonth}
+                        </td>
+                        <td className="num">{rupees(s.gross)}</td>
+                        <td className="num">{rupees(s.deductions)}</td>
+                        <td className="num">
+                          <strong>{rupees(s.net)}</strong>
+                        </td>
+                        <td className="cell-actions">
+                          {canRun && editable && s.employeeUid !== user?.uid && (
+                            <button type="button" className="btn btn-text" onClick={() => setInputsFor(s)} aria-label={`${ht.inputs} ${s.employeeName}`}>
+                              {ht.inputs}
+                            </button>
+                          )}
+                          {!s.missingSalary && <PayslipButton orgId={org.id} slip={s} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+            )
           )}
         </>
       )}
       {inputsFor && (
-        <InputsDialog orgId={org.id} employee={{ id: inputsFor.employeeId, fullName: inputsFor.employeeName }} month={month} onClose={() => setInputsFor(null)} onDone={data.reload} />
+        <InputsDialog
+          orgId={org.id}
+          employee={{ id: inputsFor.employeeId, fullName: inputsFor.employeeName }}
+          month={month}
+          onClose={() => setInputsFor(null)}
+          onDone={() => {
+            setInputsSavedOver(data.data);
+            data.reload();
+          }}
+        />
       )}
-      {approving && run && <ApproveDialog orgId={org.id} month={month} branchId={branchId} employees={run.employees} net={run.totals.net} onClose={() => setApproving(false)} onDone={data.reload} />}
+      {approving && run && <ApproveDialog orgId={org.id} month={month} branchId={branchId} employees={run.employees} net={run.totals.net} onClose={() => setApproving(false)} onDone={reloadAll} />}
       {rejecting && (
         <ConfirmWithReason
           title={ht.rejectRunTitle(monthName(month))}
@@ -237,7 +262,7 @@ export function PayrollPage() {
           onConfirm={async (note) => {
             await command('payroll-decide', { orgId: org.id, month, branchId, decision: 'REJECT', note });
             setRejecting(false);
-            data.reload();
+            reloadAll();
           }}
         />
       )}

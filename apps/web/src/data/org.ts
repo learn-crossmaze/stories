@@ -133,6 +133,20 @@ export async function listStaff(orgId: string, scope: string[] | 'ALL'): Promise
   return snap.docs.map((d) => d.data() as StaffMembership).sort((a, b) => (a.displayName ?? a.email ?? '').localeCompare(b.displayName ?? b.email ?? ''));
 }
 
+/**
+ * One person's roles in an org: null when they have none there, or none the viewer may see. The rules decide
+ * from the membership's own fields, so a missing one is refused rather than "not found": both read as null.
+ */
+export async function getStaffMember(orgId: string, uid: string): Promise<StaffMembership | null> {
+  try {
+    const snap = await getDoc(doc(services().db, `users/${uid}/memberships/${orgId}`));
+    return snap.exists() ? (snap.data() as StaffMembership) : null;
+  } catch (e) {
+    if ((e as { code?: unknown } | null)?.code === 'permission-denied') return null;
+    throw e;
+  }
+}
+
 export const AUDIT_PAGE_SIZE = 25;
 
 /** One page of the audit log, newest first. Branch-scoped readers pass their branches. */

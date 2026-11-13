@@ -9,12 +9,11 @@ import { textFor } from '../../../../site/src/greetings/library';
 import { occasions } from '../../../../site/src/greetings/occasions';
 import { paletteFor } from '../../../../site/src/greetings/palettes';
 import type { Occasion } from '../../../../site/src/greetings/types';
-import { type CardPick, discardSite, getSite, type GreetingsDraft, publishSite, saveSite, todayInIndia } from '../../data/site';
-import { useAsync } from '../../shared/useAsync';
+import { type CardPick, type GreetingsDraft, todayInIndia } from '../../data/site';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { SelectField, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
-import { BookPicker, ImageField, PublishBar, savedLine, useEditor } from './kit';
+import { BookPicker, ImageField, PublishBar, useSiteItem } from './kit';
 
 const table = datesTable(dates.events, occasions);
 const emptyPick = (): CardPick => ({ hidden: false, words: '', picture: null, gen: null, books: [] });
@@ -61,23 +60,16 @@ function CardPreview({ o, year, pick, measure }: { o: Occasion; year: number; pi
  * asks for a new drawing, suggests books for the day, and sets the offer beside the card.
  */
 export function CardsPage() {
-  const item = useAsync(() => getSite<GreetingsDraft>('greetings'), []);
-  const initial = useMemo(() => item.data?.draft ?? null, [item.data]);
-  const e = useEditor<GreetingsDraft>(initial);
+  const item = useSiteItem<GreetingsDraft>({ kind: 'greetings' });
+  const { e } = item;
   const thisYear = Number(todayInIndia().slice(0, 4));
   const [year, setYear] = useState(thisYear);
   const [open, setOpen] = useState<string | null>(null);
   const measure = useMeasure();
   const d = e.draft;
   if (item.loading) return <SkeletonRows />;
-  if (item.error || !item.data || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  const info = item.data;
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   const today = todayInIndia();
-  const save = async () => {
-    await saveSite('greetings', d);
-    e.setDirty(false);
-    item.reload();
-  };
   const pickOf = (id: string): CardPick => d.picks[`${id}-${year}`] ?? emptyPick();
   const setPick = (id: string, patch: Partial<CardPick>) => {
     const key = `${id}-${year}`;
@@ -97,10 +89,10 @@ export function CardsPage() {
       <PublishBar
         kind="greetings"
         message={e.message}
-        state={{ status: info.status, dirty: e.dirty, busy: e.busy, canPublish: info.canPublish, isLive: info.isLive, changed: info.changed || !info.exists, updated: savedLine(info.updatedBy, info.updatedAt) }}
-        onSave={() => void e.run('save', save, st.saved)}
-        onPublish={() => void e.run('publish', async () => { if (e.dirty || !info.exists) await save(); await publishSite('greetings'); item.reload(); }, st.published)}
-        onDiscard={() => void e.run('discard', async () => { await discardSite('greetings'); item.reload(); }, st.discarded)}
+        state={item.state}
+        onSave={item.save}
+        onPublish={() => item.publish(st.published)}
+        onDiscard={item.discard}
       />
       <div className="editor-grid">
         <div className="editor-main">

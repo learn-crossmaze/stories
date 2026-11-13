@@ -103,6 +103,14 @@ Records without a branch (head office staff) need the permission across all bran
   their own branches). When the email belongs to an existing Stories account, an optional last step, **Give Stories
   access**, picks roles and branches (starting from the employee's branch); *Skip for now* leaves it for the
   profile's Access tab. The employee ID is set on the record only.
+  - The form opens at once: the department, job title and manager boxes fill in when their lists arrive (when
+    editing, the record's own values show meanwhile). The page reads the directory once and hands it to the form;
+    the backfill notice is worked out from that list and one read of the roles.
+  - **Add and add another** saves the person and keeps the form open with the placement (branch, department,
+    job title, manager, employment type, joining date) for the next one; name, email, phone and ID start empty.
+    Each person is a separate `employees-create` request. People added this way can be picked as the next
+    person's manager, the access step is not offered (the line that confirms the add says so when the person has
+    an account), and the list is read again once, when the form closes. Enter and **Add employee** behave as before.
 - **Employee profile** (`/admin/people/:id`) has six tabs:
   - Overview: job and contact details.
   - Personal: personal and statutory details, visible to HR and finance.
@@ -111,9 +119,17 @@ Records without a branch (head office staff) need the permission across all bran
     (`ifsc.razorpay.com`, no key; `apps/web/src/shared/ifsc.ts`) and shows the bank and branch under the field, filling
     *Bank* unless someone typed their own name. An unknown code is flagged but can still be saved (new branches take
     time to appear); if the directory can't be reached the form works as before. Reuse `IfscField` for any new IFSC input.
-  - Onboarding & exit: status actions and checklists.
-  - History: effective-dated changes.
-  - Access: link a Stories account, see and manage roles.
+  - Onboarding & exit: status actions and checklists. Ticks show at once and never lock the other boxes; they
+    are sent one after another (each its own `employees-checkItem` request), the record is read again once after
+    the last, and a refused tick is undone with the reason, together with any still waiting behind it. The status
+    buttons wait while ticks are being saved.
+  - History: effective-dated changes (read once per profile, and again after an edit, a status change or a change
+    on the Access tab).
+  - Access: see and manage roles, and link a Stories account. For someone not linked yet who has an email on
+    record, **Give access** sets roles and links the account in one step (`staff-setRoles`, §3), starting from
+    the employee's branch when the viewer may give it; it needs `staff.manageRoles`, not `employees.edit`, so a
+    branch manager can do it. **Link account** stays for linking without roles or under another sign-in email.
+    The tab reads this person's membership only (one document), not the staff list.
 - **Roles & access** (Organization): a review of everyone who can sign in, with roles and branches. It has no *Add*
   button and no employee ID field: *Manage* opens the person's profile on the Access tab (`?tab=access`); *Revoke*
   stays. Memberships without an employee record (older data) still open the roles dialog.
@@ -143,6 +159,11 @@ expiry dates. HR changes or adds types under **Settings → Document types**.
 
 - **Upload** (`documents-upload`): the file is a PDF, JPEG or PNG of 5 MB at most. The server checks the file's
   real type from its first bytes, not its name.
+  - The console makes a photo (JPEG or PNG) larger than about 1 MB smaller before sending it: re-encoded as a
+    JPEG of at most 2200 pixels on its long side, and named `.jpg`. So the stored file is not byte-for-byte the
+    one picked and carries no EXIF data. The original goes instead when that would not be smaller or the browser
+    cannot do it; what is still over 5 MB is refused in the form. PDFs and small images go unchanged. The
+    server's limit and type check are the same as before.
   - The server picks the document id: the file is stored under a new random id before the transaction (never over
     an existing file), and the record is created with that id (never over an existing record). If the record is
     not created, the file is deleted. A retried request returns the first result without storing anything.
@@ -150,6 +171,14 @@ expiry dates. HR changes or adds types under **Settings → Document types**.
   - An employee uploading a self-upload type, or HR staff uploading about themselves: it is **awaiting
     verification**.
 - **Review** (`documents-review`): verify, or reject with a reason. Nobody verifies a document they uploaded.
+  - **Review** on a row, or **Review pending (n)**, opens one dialog that goes through the documents waiting for
+    the viewer (never their own uploads): the file beside its details, then Verify, Reject (reason typed there)
+    or Skip, and on to the next. Each document shown is one `documents-open` (so one audit entry), fetched only
+    when it is its turn; *Open in a new tab* reuses the file already fetched. Verify and Reject wait until the
+    file is on screen. A document someone else reviewed meanwhile, or that was removed, is dropped with a note.
+  - On the Documents page a reviewed document leaves the pending list at once and the lists are read again once,
+    when the dialog closes; on a profile the tab is read again after each decision (it can tick an onboarding
+    item and replace an older copy).
 - **On verification:**
   - older verified or expired copies of the same type become **replaced**;
   - the matching onboarding checklist item is ticked (for example, a PAN card ticks "PAN recorded").
@@ -204,12 +233,24 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
   My attendance. The server sets the time.
   - A manager (`attendance.manage`) can record a check-in or check-out for someone at the desk.
   - A check-out after midnight closes an overnight shift that started the day before.
+  - The punch answers with the day it wrote (its date, times and flags), so the card shows it without reading the
+    day again. The card reads only today's record (the person's own, by account and date).
 - **Adjust** (`attendance-adjust`): a manager sets a day's times with a reason. It is audited, and nobody can adjust
   their own day.
+  - For a past day with a punch missing, the dialog starts from the person's current shift times (never for today,
+    and never over a full day of leave); **Clear times** empties both, which marks the day as not worked. The last
+    reason typed is offered again.
+  - On the Day tab, for a past day, people with nothing recorded can be ticked and adjusted together
+    (**Adjust selected**): each gets their own shift's times, or the times set in the dialog, with one reason. Every
+    person is still their own `attendance-adjust` command (a few at a time); someone who could not be adjusted
+    stays ticked with the reason. "Select everyone" leaves out people whose weekly off or holiday it was.
 - **Corrections:**
   - An employee asks with `attendance-requestCorrection`. A manager or HR decides with
     `attendance-decideCorrection`; approving applies the times.
   - Nobody decides their own correction, and rejecting one needs a reason.
+  - Several can be ticked and approved together (**Approve selected**). Each is still its own command, sent a few
+    at a time; a refused one stays on the list, ticked, with the reason, and one already decided by someone else
+    just leaves the list. Nothing is ticked to begin with. Rejecting stays one at a time, with its reason.
 - **Finalize** (`attendance-finalize`, `attendance.finalize`) runs per branch and month, or for head office staff.
   It only works on a month that is over, and never while corrections or leave requests are waiting.
   - It closes the month first: one transaction checks nothing is waiting and sets the lock to FINALIZING. From then
@@ -223,15 +264,21 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
     minutes…), never the punches or the leave on a day.
   - Each employee gets a summary with payable days. Summaries of people the branch's month no longer covers (they
     moved away) are deleted.
+  - The days are read ten employees at a time and written in batches of 400, four batches at a time. Every batch
+    that was started is waited for before a failure puts the lock back. Finalize one branch after another: two
+    branches at the same moment could remove each other's summary of someone who moved between them.
 - **Reopen** (`attendance-reopen`): unlocks the month with a reason and marks the summaries out of date until the
   month is finalized again. Payroll refuses out-of-date summaries.
 
 **Screens**
 
 - **Attendance** (Operations → My team for branch managers; Admin → Time & leave for HR):
-  - **Day**: who is in, check in or out at the desk, adjust, change a shift.
-  - **Month**: summaries, finalize and reopen.
-  - **Corrections**: approve or reject.
+  - **Day**: who is in, check in or out at the desk, adjust (one person, or several on a past day), change a shift.
+    Each row is punched on its own, so one person's check-in does not hold up the next. Changing the day reads
+    only that day's records.
+  - **Month**: summaries, finalize and reopen. Before Finalize is pressed it says how many corrections and leave
+    requests still wait for that month and branch (a reminder only; the server decides).
+  - **Corrections**: approve or reject, one or several. The tab's count leaves out your own request.
 - **Today** card on the dashboard, and **Attendance** in My employment (`/me/attendance`): check in and out, see the month, request a
   correction.
 - The employee profile's **Attendance** tab: shift, weekly offs, and the month with adjust.
@@ -286,9 +333,17 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
     the joining date.
   - Refused when the balance does not cover the days, unless the type is unlimited.
   - The days are held as `pending` until a decision.
+  - Leave recorded for someone else can be approved in the same step (`approve: true`; the **Approve it now** box
+    in the dialog, unticked unless the person ticks it). Recording already needs `leave.approve` at the branch, so
+    no permission is added. The request is written as APPROVED: the days are used at once (never held as pending),
+    a TAKEN ledger entry is written, the days are marked on attendance, the employee gets one notice, and the
+    audit log gets both `leave.apply` and `leave.approve`. Never for your own leave.
 - **Decide** (`leave-decide`, `leave.approve` at the employee's branch, never your own):
   - Approving moves the days from pending to used, writes a TAKEN ledger entry, and marks each day on attendance.
   - Rejecting needs a reason and releases the days.
+  - Several requests can be ticked and approved together (**Approve selected**): each is still its own command,
+    a few at a time; a refused one stays on the list, ticked, with the reason. Nothing is ticked to begin with,
+    and rejecting stays one at a time.
 - **Cancel** (`leave-cancel`): the employee can cancel waiting leave, or approved leave that has not started. HR
   (`leave.adjust`) can cancel anyone else's leave outside a finalized month, with a note. Approved days return with
   a RETURNED entry, and attendance for those days is worked out again (future days without punches are removed).
@@ -299,9 +354,10 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 **Screens**
 
 - **Leave** (Operations → My team → Leave requests; Admin → Time & leave → Leave):
-  - **Requests**: approve or reject.
+  - **Requests**: approve or reject, one or several.
   - **Away**: approved leave in a month, and who is on leave today.
-  - **Balances**: everyone's days left for a year, record leave, adjust, and **Credit leave**.
+  - **Balances**: everyone's days left for a year, record leave (and approve it in the same step), adjust, and
+    **Credit leave**.
 - **Leave** in My employment (`/me/leave`): balances, apply, cancel, and the ledger history.
 - The employee profile's **Leave** tab: balances, requests with decisions, the ledger, record and adjust.
 - **Settings → Leave types**.
@@ -348,6 +404,9 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
   (the employee's branch for a salary, every branch for settings) become stale.
 - **TDS and extras** (`payroll-setInputs`, `payroll.run`, never your own): per employee per month. A prepared draft
   becomes stale and must be prepared again.
+  - With nothing saved for the month yet, the dialog offers last month's TDS, marked as copied and not saved; it
+    is kept only when the person saves. One-off earnings and deductions are never carried over, and the server
+    carries nothing forward.
 - **Prepare** (`payroll-prepare`, `payroll.run`):
   - Runs per branch and month, or for head office staff, and only once attendance for that month is finalized.
     Out-of-date attendance summaries (`stale`) are refused.
@@ -397,7 +456,8 @@ The server already supports them. Files are capped at 5 MB, the size a callable 
 `at`, `expireAt`):
 
 - Functions write a notification (`functions/src/core/notify.ts`) when someone else acts on something of yours:
-  - **Leave:** approved, rejected, cancelled, or recorded for you.
+  - **Leave:** approved, rejected, cancelled, or recorded for you (one notice when it is recorded and approved in
+    the same step).
   - **Attendance:** a correction decided, or a day adjusted.
   - **Documents:** verified, or rejected with the reason.
   - **Payroll:** a run you prepared or submitted is approved or sent back. Each employee is also told their payslip

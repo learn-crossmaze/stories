@@ -1,14 +1,13 @@
-import { useMemo } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 
-import { deleteSite, getSite, listSite, PLACEMENTS, type PromotionDraft, publishSite, saveSite, todayInIndia, TONES, unpublishSite } from '../../data/site';
+import { listSite, PLACEMENTS, type PromotionDraft, todayInIndia, TONES } from '../../data/site';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { SelectField, TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
 import { useWorkspace } from '../Workspace';
-import { ImageField, PublishBar, savedLine, SiteStatusBadge, useEditor } from './kit';
+import { ImageField, PublishBar, savedLine, SiteStatusBadge, useSiteItem } from './kit';
 
 export function PromotionsPage() {
   const list = useAsync(() => listSite('promotion'), []);
@@ -73,24 +72,12 @@ const blank = (): PromotionDraft => {
 
 export function PromotionEditorPage() {
   const { promotionId = 'new' } = useParams();
-  const isNew = promotionId === 'new';
-  const navigate = useNavigate();
   const { branches } = useWorkspace();
-  const item = useAsync(() => (isNew ? Promise.resolve(null) : getSite<PromotionDraft>('promotion', promotionId)), [promotionId]);
-  const initial = useMemo(() => (isNew ? blank() : (item.data?.draft ?? null)), [isNew, item.data]);
-  const e = useEditor<PromotionDraft>(initial);
+  const item = useSiteItem<PromotionDraft>({ kind: 'promotion', id: promotionId, blank, pathOf: paths.adminWebsitePromotion });
+  const { e, isNew, saved: info } = item;
   const d = e.draft;
-  if (!isNew && item.loading) return <SkeletonRows />;
-  if (!isNew && (item.error || !item.data)) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  if (!d) return <SkeletonRows />;
-  const info = item.data;
-  const save = async () => {
-    const r = await saveSite('promotion', d, isNew ? undefined : promotionId);
-    e.setDirty(false);
-    if (isNew) navigate(paths.adminWebsitePromotion(r.id), { replace: true });
-    else item.reload();
-    return r.id;
-  };
+  if (item.loading) return <SkeletonRows />;
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   const activeBranches = branches.filter((b) => b.status === 'ACTIVE');
   return (
     <>
@@ -103,11 +90,11 @@ export function PromotionEditorPage() {
       <PublishBar
         kind="promotion"
         message={e.message}
-        state={{ status: info?.status ?? 'NONE', dirty: e.dirty, busy: e.busy, canPublish: true, isLive: info?.isLive ?? false, changed: info?.changed ?? true, updated: savedLine(info?.updatedBy ?? null, info?.updatedAt ?? null) }}
-        onSave={() => void e.run('save', save, st.saved)}
-        onPublish={() => void e.run('publish', async () => { const id = e.dirty || isNew ? await save() : promotionId; await publishSite('promotion', id); item.reload(); }, d.hidden ? st.takenDown : st.promoPublished(d.startOn, d.endOn))}
-        onUnpublish={info ? () => void e.run('unpublish', async () => { await unpublishSite('promotion', promotionId); item.reload(); }, st.takenDown) : undefined}
-        onDelete={info ? () => { if (confirm(st.deleteConfirm(d.title))) void e.run('delete', async () => { await deleteSite('promotion', promotionId); navigate(paths.adminWebsitePromotions); }); } : undefined}
+        state={item.state}
+        onSave={item.save}
+        onPublish={() => item.publish(d.hidden ? st.takenDown : st.promoPublished(d.startOn, d.endOn))}
+        onUnpublish={info ? item.unpublish : undefined}
+        onDelete={info ? () => item.remove(d.title, paths.adminWebsitePromotions) : undefined}
       />
       <div className="editor-grid">
         <section className="card editor-main" aria-label={st.promotion}>

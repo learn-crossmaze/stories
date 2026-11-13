@@ -1,15 +1,14 @@
 // Jobs (the Careers page) and Testimonials (the home page's "What readers say"): lists of items, each saved,
 // previewed and published like the rest of the website.
-import { useMemo } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 
-import { deleteSite, getSite, JOB_TYPES, type JobDraft, listSite, type ListItem, publishSite, saveSite, SITE_URL, type TestimonialDraft, unpublishSite } from '../../data/site';
+import { JOB_TYPES, type JobDraft, listSite, type ListItem, SITE_URL, type TestimonialDraft } from '../../data/site';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { SelectField, TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
-import { ListEditor, PublishBar, savedLine, SiteStatusBadge, useEditor } from './kit';
+import { ListEditor, PublishBar, savedLine, SiteStatusBadge, useSiteItem } from './kit';
 
 /** A list page in the crossmaze.in style: title, intro, an Add button, then the items with their status. */
 function ListPage({ kind, title, intro, addLabel, emptyTitle, emptyText, to, newTo, extra }: {
@@ -74,30 +73,18 @@ function ListPage({ kind, title, intro, addLabel, emptyTitle, emptyText, to, new
 }
 
 /** Editor plumbing shared by jobs and testimonials. */
-function useItem<D>(kind: 'job' | 'testimonial', id: string, blank: () => D, listPath: string, itemPath: (id: string) => string) {
-  const isNew = id === 'new';
-  const navigate = useNavigate();
-  const item = useAsync(() => (isNew ? Promise.resolve(null) : getSite<D>(kind, id)), [kind, id]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const initial = useMemo(() => (isNew ? blank() : (item.data?.draft ?? null)), [isNew, item.data]);
-  const e = useEditor<D>(initial);
-  const save = async () => {
-    const r = await saveSite(kind, e.draft as object, isNew ? undefined : id);
-    e.setDirty(false);
-    if (isNew) navigate(itemPath(r.id), { replace: true });
-    else item.reload();
-    return r.id;
-  };
-  const info = item.data;
+function useItem<D extends object>(kind: 'job' | 'testimonial', id: string, blank: () => D, listPath: string, itemPath: (id: string) => string) {
+  const item = useSiteItem<D>({ kind, id, blank, pathOf: itemPath });
+  const { e, isNew, saved } = item;
   const bar = (title: string, hidden: boolean, liveUrl: string | null) => (
     <PublishBar
       kind={kind}
       message={e.message}
-      state={{ status: info?.status ?? 'NONE', dirty: e.dirty, busy: e.busy, canPublish: true, isLive: info?.isLive ?? false, changed: info?.changed ?? true, liveUrl, updated: savedLine(info?.updatedBy ?? null, info?.updatedAt ?? null) }}
-      onSave={() => void e.run('save', save, st.saved)}
-      onPublish={() => void e.run('publish', async () => { const saved = e.dirty || isNew ? await save() : id; await publishSite(kind, saved); item.reload(); }, hidden ? st.takenDown : st.published)}
-      onUnpublish={info ? () => void e.run('unpublish', async () => { await unpublishSite(kind, id); item.reload(); }, st.takenDown) : undefined}
-      onDelete={info ? () => { if (confirm(st.deleteConfirm(title))) void e.run('delete', async () => { await deleteSite(kind, id); navigate(listPath); }); } : undefined}
+      state={{ ...item.state, liveUrl }}
+      onSave={item.save}
+      onPublish={() => item.publish(hidden ? st.takenDown : st.published)}
+      onUnpublish={saved ? item.unpublish : undefined}
+      onDelete={saved ? () => item.remove(title, listPath) : undefined}
     />
   );
   return { isNew, item, e, bar };
@@ -124,9 +111,8 @@ export function JobEditorPage() {
   const { jobId = 'new' } = useParams();
   const { isNew, item, e, bar } = useItem<JobDraft>('job', jobId, blankJob, paths.adminWebsiteJobs, paths.adminWebsiteJob);
   const d = e.draft;
-  if (!isNew && item.loading) return <SkeletonRows />;
-  if (!isNew && (item.error || !item.data)) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  if (!d) return <SkeletonRows />;
+  if (item.loading) return <SkeletonRows />;
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   return (
     <>
       <header className="page-header">
@@ -176,9 +162,8 @@ export function TestimonialEditorPage() {
   const { testimonialId = 'new' } = useParams();
   const { isNew, item, e, bar } = useItem<TestimonialDraft>('testimonial', testimonialId, blankTestimonial, paths.adminWebsiteTestimonials, paths.adminWebsiteTestimonial);
   const d = e.draft;
-  if (!isNew && item.loading) return <SkeletonRows />;
-  if (!isNew && (item.error || !item.data)) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  if (!d) return <SkeletonRows />;
+  if (item.loading) return <SkeletonRows />;
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   return (
     <>
       <header className="page-header">

@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import { type Correction, dayAfterPunch, employeeMonth, myCorrections, myDay, punch, type PunchedDay, timeOf } from '../../data/attendance';
+import { type Correction, dayAfterPunch, myCorrections, myDay, myMonth, punch, type PunchedDay, timeOf } from '../../data/attendance';
 import { monthIST, todayIST } from '../../shared/dates';
 import { type Employee, myEmployee } from '../../data/hr';
 import { paths } from '../../paths';
@@ -86,7 +86,7 @@ export function MyAttendancePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const me = useAsync(() => (org && user ? myEmployee(org.id, user.uid) : Promise.resolve(null)), [org?.id, user?.uid]);
   // Own records are found by the account, so neither read waits for the employee record.
-  const records = useAsync(() => (org && user ? employeeMonth(org.id, '', month, { ownUid: user.uid }) : Promise.resolve([])), [org?.id, user?.uid, month]);
+  const records = useAsync(() => (org && user ? myMonth(org.id, user.uid, month) : Promise.resolve([])), [org?.id, user?.uid, month]);
   const corrections = useAsync(() => (org && user ? myCorrections(org.id, user.uid) : Promise.resolve([])), [org?.id, user?.uid]);
   if (!org) return <NoOrgState />;
 

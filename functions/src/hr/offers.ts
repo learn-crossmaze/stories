@@ -141,19 +141,26 @@ function inputsFor(kind: LetterKind, input: OfferTerms | LetterInput, employee: 
   };
 }
 
-/** Reads everything and fills the template (reads only). */
-async function prepare(tx: Transaction, actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput) {
+/**
+ * Reads everything and fills the template (reads only). The employee, the permission and the state checks come
+ * first, one after another, so a caller who may not do this learns nothing else; what is left is then read
+ * together, with `also` (a further read of the caller's) alongside. Of those only the template can refuse.
+ */
+async function prepare<X = undefined>(tx: Transaction, actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput, also?: () => Promise<X>) {
   const employee = await loadEmployee(tx, input.orgId, input.employeeId);
   await requireIssuer(actor, input.orgId, employee, kind, tx);
   if (kind === 'OFFER') checkOfferTerms(input as OfferTerms, employee);
   else if (employee.get('status') === 'DRAFT') throw errors.conflict('NOT_STARTED', 'Start onboarding before issuing letters other than the offer.');
-  const template = await resolveTemplate(tx, input.orgId, kind, employee.get('branchId') ?? null, kind === 'OFFER' ? undefined : (input as LetterInput).templateId);
-  const ctx = await letterContext(tx, actor, input.orgId, employee);
+  const [template, ctx, extra] = await Promise.all([
+    resolveTemplate(tx, input.orgId, kind, employee.get('branchId') ?? null, kind === 'OFFER' ? undefined : (input as LetterInput).templateId),
+    letterContext(tx, actor, input.orgId, employee),
+    also?.(),
+  ]);
   const inputs = inputsFor(kind, input, employee);
   const today = dateKeyIST(new Date());
   const values = placeholderValues(inputs, { fullName: employee.get('fullName'), code: employee.get('code'), exitDate: employee.get('exitDate') ?? null }, ctx, today);
   requireValues(template, values);
-  return { employee, template, ctx, inputs, values, today };
+  return { employee, template, ctx, inputs, values, today, extra: extra as X };
 }
 
 function render(p: { employee: DocumentSnapshot; template: LetterTemplate; ctx: Context; values: Record<string, string>; today: string }, number: string) {
@@ -171,15 +178,14 @@ function render(p: { employee: DocumentSnapshot; template: LetterTemplate; ctx: 
 }
 
 async function previewPdf(actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput) {
-  const p = await db.runTransaction((tx) => prepare(tx, actor, kind, input));
+  const p = await db.runTransaction((tx) => prepare(tx, actor, kind, input), { readOnly: true });
   const pdf = await letterPdf(render(p, `${PREFIX[kind]}/${p.employee.get('code')}/${p.today.slice(0, 4)}/PREVIEW`), { orgName: p.ctx.orgName, branchLines: p.ctx.branchLines, preview: true });
   return { fileName: `${PREFIX[kind].toLowerCase()}-${p.employee.get('code')}-preview.pdf`, contentType: 'application/pdf', content: Buffer.from(pdf).toString('base64') };
 }
 
 /** Everything the letter says, numbered after the earlier letters of its kind (reads only). */
 async function compose(tx: Transaction, actor: Actor, kind: LetterKind, input: OfferTerms | LetterInput) {
-  const p = await prepare(tx, actor, kind, input);
-  const earlier = await tx.get(offersCol(input.orgId).where('employeeId', '==', input.employeeId));
+  const { extra: earlier, ...p } = await prepare(tx, actor, kind, input, () => tx.get(offersCol(input.orgId).where('employeeId', '==', input.employeeId)));
   const sameKind = earlier.docs.filter((d) => kindOf(d) === kind && (kind !== 'CUSTOM' || d.get('templateId') === p.template.id));
   const number = `${PREFIX[kind]}/${p.employee.get('code')}/${p.today.slice(0, 4)}/${sameKind.length + 1}`;
   return { ...p, sameKind, number, content: render(p, number) };

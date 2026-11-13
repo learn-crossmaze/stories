@@ -5,7 +5,7 @@
 //   blog.write (also Librarians): write their own posts and send them for review.
 import { randomBytes } from 'node:crypto';
 
-import { FieldValue, type Timestamp, type Transaction } from 'firebase-admin/firestore';
+import { FieldValue, type QueryDocumentSnapshot, Timestamp, type Transaction } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 import { recordAudit } from '../core/audit.js';
@@ -91,12 +91,12 @@ export const canWrite = (r: Rights) => !!r.manager || r.memberships.some((m) => 
 
 const postBranch = (d: Draft | null | undefined) => (d?.branch as PostDraft['branch'] | undefined) ?? null;
 /** Editing a post: website managers, its writer, and managers of the branch it is about. */
-function canEditPost(r: Rights, uid: string, doc: SiteDoc) {
+function canEditPost(r: Rights, uid: string, doc: Pick<SiteDoc, 'draft' | 'createdBy'>) {
   const b = postBranch(doc.draft);
   return !!r.manager || (doc.createdBy?.uid === uid && canWrite(r)) || (!!b && canEditBranch(r, b.orgId, b.branchId));
 }
 /** Publishing a post: website managers, and managers of the branch it is about. Writers send it for review. */
-function canPublishPost(r: Rights, doc: SiteDoc, draft: Draft) {
+function canPublishPost(r: Rights, draft: Draft) {
   const b = postBranch(draft);
   return !!r.manager || (!!b && canEditBranch(r, b.orgId, b.branchId));
 }
@@ -108,7 +108,7 @@ function canEdit(r: Rights, uid: string, kind: Kind, doc: SiteDoc | null, itemId
 }
 
 function canPublish(r: Rights, kind: Kind, doc: SiteDoc, itemId: string): boolean {
-  if (kind === 'post') return canPublishPost(r, doc, doc.draft);
+  if (kind === 'post') return canPublishPost(r, doc.draft);
   if (kind === 'branch') return !!doc.orgId && canEditBranch(r, doc.orgId, itemId);
   return !!r.manager;
 }
@@ -150,7 +150,8 @@ function parseDraft(kind: Kind, draft: unknown): Draft {
 /** Another item already uses (or shows at) this address. */
 async function slugTaken(tx: Transaction, kind: 'post' | 'branch', slug: string, itemId: string) {
   const col = db.collection(collectionOf[kind]);
-  const [a, b] = await Promise.all([tx.get(col.where('slug', '==', slug).limit(2)), tx.get(col.where('liveSlug', '==', slug).limit(2))]);
+  // Only the ids matter: `select()` reads no fields.
+  const [a, b] = await Promise.all([tx.get(col.where('slug', '==', slug).limit(2).select()), tx.get(col.where('liveSlug', '==', slug).limit(2).select())]);
   return [...a.docs, ...b.docs].some((d) => d.id !== itemId);
 }
 
@@ -158,7 +159,7 @@ const iso = (t: Timestamp | null | undefined) => (t ? t.toDate().toISOString() :
 const newToken = () => randomBytes(18).toString('base64url');
 
 /** How an item stands, for the console's lists. */
-export function statusOf(doc: Pick<SiteDoc, 'kind' | 'draft' | 'live' | 'isLive' | 'changed' | 'review'>, today = todayInIndia()) {
+export function statusOf(doc: Pick<SiteDoc, 'kind' | 'draft' | 'isLive' | 'changed'> & { live?: Draft | null; review?: unknown }, today = todayInIndia()) {
   if (doc.review && !doc.isLive) return 'IN_REVIEW';
   if (!doc.isLive) return doc.draft.hidden ? 'HIDDEN' : 'DRAFT';
   if (doc.kind === 'promotion' && doc.live) {
@@ -179,7 +180,7 @@ function logPublish(tx: Transaction, kind: Kind, itemId: string, title: string, 
 }
 
 /** The live copy and its index fields for the website's queries; `null` draft fields stay null. */
-function liveFields(kind: Kind, draft: Draft, prior: SiteDoc | null): Partial<SiteDoc> {
+function liveFields(kind: Kind, draft: Draft, prior: Pick<SiteDoc, 'liveOn'> | null): Partial<SiteDoc> {
   if (kind === 'post') {
     const d = draft as PostDraft;
     return { liveSlug: d.slug, liveOn: prior?.liveOn ?? todayInIndia(), liveBranchId: d.branch?.branchId ?? null };
@@ -193,17 +194,65 @@ function liveFields(kind: Kind, draft: Draft, prior: SiteDoc | null): Partial<Si
 }
 const notLive = { live: null, isLive: false, liveSlug: null, liveBranchId: null, liveStart: null, liveEnd: null };
 
-/** Publishes (or, for a hidden item, takes down) one item inside `tx`. Returns what happened. */
-function publishInTx(tx: Transaction, kind: Kind, itemId: string, doc: SiteDoc, by: Person): 'publish' | 'unpublish' | 'none' {
-  const ref = refOf(kind, itemId);
-  const hiding = doc.draft.hidden === true;
-  if (hiding && !doc.isLive) return 'none';
+type PublishAction = 'publish' | 'unpublish' | 'none';
+
+/**
+ * What publishing `draft` writes on the item: the live copy and its index fields, or, for a hidden draft, the
+ * take-down ('none': a hidden draft that isn't live, nothing to write). `prior` is the item before this request.
+ */
+function publishPatch(kind: Kind, draft: Draft, prior: Pick<SiteDoc, 'isLive' | 'liveOn'> | null, by: Person): { patch: Record<string, unknown>; action: PublishAction } {
+  const hiding = draft.hidden === true;
+  if (hiding && !prior?.isLive) return { patch: {}, action: 'none' };
   const stamp = { publishedBy: by, publishedAt: FieldValue.serverTimestamp(), changed: false, review: null };
-  if (hiding) tx.update(ref, { ...notLive, ...stamp });
-  else tx.update(ref, { live: doc.draft, isLive: true, ...liveFields(kind, doc.draft, doc), ...stamp });
-  logPublish(tx, kind, itemId, nameOf(kind, doc), hiding ? 'unpublish' : 'publish', by);
-  return hiding ? 'unpublish' : 'publish';
+  if (hiding) return { patch: { ...notLive, ...stamp }, action: 'unpublish' };
+  return { patch: { live: draft, isLive: true, ...liveFields(kind, draft, prior), ...stamp }, action: 'publish' };
 }
+
+/** Publishes (or, for a hidden item, takes down) one saved item inside `tx`. Returns what was written and what happened. */
+function publishInTx(tx: Transaction, kind: Kind, itemId: string, doc: SiteDoc, by: Person) {
+  const { patch, action } = publishPatch(kind, doc.draft, doc, by);
+  if (action === 'none') return { patch, action };
+  tx.update(refOf(kind, itemId), patch);
+  logPublish(tx, kind, itemId, nameOf(kind, doc), action, by);
+  return { patch, action };
+}
+
+/**
+ * The item as it reads once `write` lands on it. Server timestamps become the request time (the real one is not
+ * known inside the transaction), so the times in a command's answer can differ from the stored ones by a moment.
+ */
+function asWritten(prior: SiteDoc | null, write: Record<string, unknown>): SiteDoc {
+  const now = Timestamp.now();
+  return { ...prior, ...Object.fromEntries(Object.entries(write).map(([k, v]) => [k, v instanceof FieldValue ? now : v])) } as SiteDoc;
+}
+
+/**
+ * How an item stands and what the caller may do with it: what the bar at the top of an editor shows. `site-get`
+ * sends it with the draft; saving, publishing, taking down and asking for a review send it back without one, so
+ * the editor does not read the item again (and the stored idempotency result stays small).
+ */
+function viewOf(r: Rights, actor: Actor, kind: Kind, itemId: string, doc: SiteDoc, orgId: string | null) {
+  return {
+    id: itemId,
+    exists: true as const,
+    status: statusOf(doc),
+    isLive: !!doc.isLive,
+    changed: !!doc.changed,
+    liveSlug: doc.liveSlug ?? null,
+    liveOn: doc.liveOn ?? null,
+    previewToken: canEdit(r, actor.uid, kind, doc, itemId, orgId) ? (doc.previewToken ?? null) : null,
+    review: doc.review ? { by: doc.review.by.name, at: iso(doc.review.at) } : null,
+    updatedAt: iso(doc.updatedAt),
+    updatedBy: doc.updatedBy?.name ?? null,
+    publishedAt: iso(doc.publishedAt),
+    publishedBy: doc.publishedBy?.name ?? null,
+    canPublish: canPublish(r, kind, doc, itemId),
+    canDelete: kind === 'post' ? !!r.manager || (doc.createdBy?.uid === actor.uid && !doc.isLive) : kind !== 'branch' && !SINGLETONS[kind] && !!r.manager,
+  };
+}
+
+/** The refusal for someone who may save an item but not publish it. */
+const mayNotPublish = (kind: Kind) => errors.forbidden(kind === 'post' ? 'Send it for review: a branch manager or the website team publishes it.' : undefined);
 
 // ------------------------------------------------------------------ schemas
 
@@ -223,10 +272,11 @@ const resolveId = (k: Kind, itemId: string | undefined) => {
 export const overview = query('site-overview', z.strictObject({}), async ({ actor }) => {
   const r = await rightsOf(actor);
   if (!r.manager && !canWrite(r) && !r.memberships.some((m) => holds(m, 'website.branch'))) throw errors.forbidden();
-  const [changed, reviews, recent] = await Promise.all([
+  const [changed, reviews, recent, counts] = await Promise.all([
     Promise.all(KINDS.filter((k) => !SINGLETONS[k] || k === 'settings').map((k) => db.collection(collectionOf[k]).where('changed', '==', true).limit(100).get())),
     db.collection('sitePosts').where('review', '!=', null).limit(50).get(),
     db.collection('sitePublishLog').orderBy('at', 'desc').limit(12).get(),
+    inboxCounts(r),
   ]);
   const visible = (k: Kind, d: SiteDoc, itemId: string) => (k === 'post' ? canEditPost(r, actor.uid, d) : k === 'branch' ? !!d.orgId && canEditBranch(r, d.orgId, itemId) : !!r.manager);
   const pending = changed
@@ -242,7 +292,6 @@ export const overview = query('site-overview', z.strictObject({}), async ({ acto
       updatedBy: doc.updatedBy?.name ?? null,
       canPublish: canPublish(r, doc.kind, doc, itemId),
     }));
-  const counts = await inboxCounts(r);
   return {
     counts,
     rights: {
@@ -253,11 +302,27 @@ export const overview = query('site-overview', z.strictObject({}), async ({ acto
     pending,
     reviews: reviews.docs
       .map((d) => ({ id: d.id, doc: d.data() as SiteDoc }))
-      .filter(({ doc }) => canPublishPost(r, doc, doc.draft))
+      .filter(({ doc }) => canPublishPost(r, doc.draft))
       .map(({ id: itemId, doc }) => ({ id: itemId, title: titleOf('post', doc.draft), by: doc.review?.by.name ?? '', at: iso(doc.review?.at) })),
     recent: recent.docs.map((d) => ({ ...d.data(), id: d.id, at: iso(d.get('at') as Timestamp) })),
   };
 });
+
+/**
+ * The only fields `site-list` reads of each item (never the whole draft and live copy: a post can hold 20 long
+ * sections). A row may use nothing else: a field missing here comes back empty with no error, so add it here first.
+ */
+const LIST_FIELDS = [
+  'kind', 'draft.title', 'draft.name', 'draft.slug', 'draft.design', 'draft.placement', 'draft.startOn', 'draft.endOn', 'draft.hidden', 'draft.branch',
+  'live.startOn', 'live.endOn', 'isLive', 'changed', 'review', 'liveSlug', 'liveOn', 'createdBy', 'updatedAt', 'updatedBy',
+] as const;
+const BRANCH_LIST_FIELDS = ['kind', 'draft.slug', 'draft.hidden', 'isLive', 'changed', 'review', 'liveSlug', 'updatedAt', 'updatedBy'] as const;
+/** A list row's item: what the masks above leave of a stored one (`live` only where it was read, and then only its dates). */
+type ListDoc = Pick<SiteDoc, 'kind' | 'draft' | 'isLive' | 'changed' | 'review' | 'liveSlug' | 'liveOn' | 'createdBy' | 'updatedAt' | 'updatedBy'> & { live?: Draft | null };
+const listDoc = (d: QueryDocumentSnapshot): ListDoc => {
+  const doc = d.data() as ListDoc;
+  return { ...doc, draft: doc.draft ?? {} };
+};
 
 /** Lists one kind: posts, promotions or branch pages (every active branch the caller may edit, with or without a page). */
 export const list = query('site-list', z.strictObject({ kind: z.enum(LISTS) }), async ({ actor, input }) => {
@@ -269,9 +334,9 @@ export const list = query('site-list', z.strictObject({ kind: z.enum(LISTS) }), 
       : [...new Set(r.memberships.filter((m) => holds(m, 'website.branch')).map((m) => m.orgId))];
     const [branches, pages] = await Promise.all([
       Promise.all(orgs.map((o) => db.collection(`orgs/${o}/branches`).where('status', '==', 'ACTIVE').get())),
-      db.collection('siteBranches').get(),
+      db.collection('siteBranches').select(...BRANCH_LIST_FIELDS).get(),
     ]);
-    const byId = new Map(pages.docs.map((d) => [d.id, d.data() as SiteDoc]));
+    const byId = new Map(pages.docs.map((d) => [d.id, listDoc(d)]));
     return {
       items: branches
         .flatMap((s) => s.docs)
@@ -295,10 +360,10 @@ export const list = query('site-list', z.strictObject({ kind: z.enum(LISTS) }), 
   }
   if (input.kind !== 'post' && !r.manager) throw errors.forbidden();
   if (input.kind === 'post' && !canWrite(r)) throw errors.forbidden();
-  const snap = await db.collection(collectionOf[input.kind]).orderBy('updatedAt', 'desc').limit(300).get();
+  const snap = await db.collection(collectionOf[input.kind]).orderBy('updatedAt', 'desc').limit(300).select(...LIST_FIELDS).get();
   return {
     items: snap.docs
-      .map((d) => ({ id: d.id, doc: d.data() as SiteDoc }))
+      .map((d) => ({ id: d.id, doc: listDoc(d) }))
       .filter(({ doc }) => input.kind !== 'post' || canEditPost(r, actor.uid, doc))
       .map(({ id: itemId, doc }) => ({
         id: itemId,
@@ -348,36 +413,39 @@ export const get = query('site-get', z.strictObject({ ...itemRef, orgId: id.opti
       : SINGLETONS[input.kind]
         ? parseDraft(input.kind, {})
         : null);
+  const about = { kind: input.kind, orgId, branchName, draft, createdBy: doc?.createdBy?.name ?? null };
+  if (doc) return { ...about, ...viewOf(r, actor, input.kind, itemId, doc, orgId) };
+  // Nothing saved yet (a branch page or one of the single pages): a blank draft, and what the caller may do with it.
   return {
+    ...about,
     id: itemId,
-    kind: input.kind,
-    orgId,
-    branchName,
-    exists: !!doc,
-    draft,
-    status: doc ? statusOf(doc) : 'NONE',
-    isLive: doc?.isLive ?? false,
-    changed: doc?.changed ?? false,
-    liveSlug: doc?.liveSlug ?? null,
-    liveOn: doc?.liveOn ?? null,
-    previewToken: doc && canEdit(r, actor.uid, input.kind, doc, itemId, orgId) ? (doc.previewToken ?? null) : null,
-    review: doc?.review ? { by: doc.review.by.name, at: iso(doc.review.at) } : null,
-    createdBy: doc?.createdBy?.name ?? null,
-    updatedAt: iso(doc?.updatedAt),
-    updatedBy: doc?.updatedBy?.name ?? null,
-    publishedAt: iso(doc?.publishedAt),
-    publishedBy: doc?.publishedBy?.name ?? null,
-    canPublish: doc ? canPublish(r, input.kind, doc, itemId) : input.kind === 'post' ? !!r.manager : input.kind === 'branch' ? true : !!r.manager,
-    canDelete: input.kind === 'post' ? !!doc && (!!r.manager || (doc.createdBy?.uid === actor.uid && !doc.isLive)) : input.kind !== 'branch' && !SINGLETONS[input.kind] && !!r.manager,
+    exists: false,
+    status: 'NONE',
+    isLive: false,
+    changed: false,
+    liveSlug: null,
+    liveOn: null,
+    previewToken: null,
+    review: null,
+    updatedAt: null,
+    updatedBy: null,
+    publishedAt: null,
+    publishedBy: null,
+    canPublish: input.kind === 'branch' ? true : !!r.manager,
+    canDelete: input.kind !== 'branch' && !SINGLETONS[input.kind] && !!r.manager,
   };
 });
 
 // ------------------------------------------------------------------ writes
 
-/** Saves a draft (nothing changes on the website until it is published). New posts and promotions get an id. */
+/**
+ * Saves a draft (nothing changes on the website until it is published). New posts and promotions get an id.
+ * With `publish`, the saved draft also goes on the website in the same transaction ("Save and publish"): if the
+ * caller may not publish it, or its address is taken, nothing is saved either.
+ */
 export const save = command(
   'site-save',
-  z.strictObject({ ...itemRef, orgId: id.optional(), draft: z.record(z.string(), z.unknown()) }),
+  z.strictObject({ ...itemRef, orgId: id.optional(), draft: z.record(z.string(), z.unknown()), publish: z.boolean().optional() }),
   async ({ actor, input, requestId }, tx) => {
     const r = await rightsOf(actor, tx);
     const creating = isNewable(input.kind) && !input.id;
@@ -415,6 +483,12 @@ export const save = command(
     if (input.kind === 'promotion' && (draft.branchIds as string[]).length) {
       // Branch ids are checked loosely (any organization): an unknown id simply never matches a page.
     }
+    // Publishing too: who may publish is decided on the draft being saved (a post's branch can change with it).
+    // The address was checked just above, as `site-publish` checks it.
+    if (input.publish) {
+      const may = input.kind === 'post' ? canPublishPost(r, draft) : input.kind === 'branch' ? !!orgId && canEditBranch(r, orgId, itemId) : !!r.manager;
+      if (!may) throw mayNotPublish(input.kind);
+    }
 
     const by = personOf(actor);
     const live = doc?.live ?? null;
@@ -427,30 +501,39 @@ export const save = command(
       updatedBy: by,
       updatedAt: FieldValue.serverTimestamp(),
     };
-    if (doc) tx.update(ref, fields);
-    else {
-      tx.create(ref, {
-        ...fields,
-        ...notLive,
-        orgId: input.kind === 'branch' ? orgId : null,
-        branchId: input.kind === 'branch' ? itemId : null,
-        previewToken: input.kind === 'post' || input.kind === 'branch' ? newToken() : null,
-        review: null,
-        createdBy: by,
-        createdAt: FieldValue.serverTimestamp(),
-        publishedBy: null,
-        publishedAt: null,
-        liveOn: null,
-      });
+    const going = input.publish ? publishPatch(input.kind, draft, doc, by) : { patch: {}, action: 'none' as const };
+    // One write per item: the publish fields ride on the save.
+    const write = doc
+      ? { ...fields, ...going.patch }
+      : {
+          ...fields,
+          ...notLive,
+          orgId: input.kind === 'branch' ? orgId : null,
+          branchId: input.kind === 'branch' ? itemId : null,
+          previewToken: input.kind === 'post' || input.kind === 'branch' ? newToken() : null,
+          review: null,
+          createdBy: by,
+          createdAt: FieldValue.serverTimestamp(),
+          publishedBy: null,
+          publishedAt: null,
+          liveOn: null,
+          ...going.patch,
+        };
+    if (doc) tx.update(ref, write);
+    else tx.create(ref, write);
+    const auditCtx = { actorUid: actor.uid, actorEmail: actor.email, requestId };
+    const org = auditOrg(r, input.kind === 'branch' ? orgId : (b?.orgId ?? null));
+    const entity = { entityType: `site${input.kind}`, entityId: itemId, branchId: input.kind === 'branch' ? itemId : (b?.branchId ?? null), after: { title: titleOf(input.kind, draft) } };
+    recordAudit(tx, auditCtx, org, { action: `site.${input.kind}.save`, ...entity });
+    if (going.action !== 'none') {
+      logPublish(tx, input.kind, itemId, nameOf(input.kind, { draft, branchName }), going.action, by);
+      recordAudit(tx, auditCtx, org, { action: `site.${input.kind}.${going.action}`, ...entity });
+      // Tell the writer their post went live (a new post's writer is the person publishing: nobody to tell).
+      if (input.kind === 'post' && going.action === 'publish' && doc?.createdBy && org) {
+        notify(tx, doc.createdBy.uid, { orgId: org, kind: 'site.post.published', title: `Your post “${titleOf('post', draft)}” is on the website`, link: `/website/blog/${itemId}` }, actor.uid);
+      }
     }
-    recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, auditOrg(r, input.kind === 'branch' ? orgId : (b?.orgId ?? null)), {
-      action: `site.${input.kind}.save`,
-      entityType: `site${input.kind}`,
-      entityId: itemId,
-      branchId: input.kind === 'branch' ? itemId : (b?.branchId ?? null),
-      after: { title: titleOf(input.kind, draft) },
-    });
-    return { id: itemId, changed: fields.changed };
+    return { ...viewOf(r, actor, input.kind, itemId, asWritten(doc, write), orgId), ...(input.publish ? { result: going.action } : {}) };
   },
 );
 
@@ -467,12 +550,12 @@ export const publish = command('site-publish', itemInput, async ({ actor, input,
   const r = await rightsOf(actor, tx);
   const itemId = resolveId(input.kind, input.id);
   const doc = await load(tx, input.kind, itemId);
-  if (!canPublish(r, input.kind, doc, itemId)) throw errors.forbidden(input.kind === 'post' ? 'Send it for review: a branch manager or the website team publishes it.' : undefined);
+  if (!canPublish(r, input.kind, doc, itemId)) throw mayNotPublish(input.kind);
   if (input.kind === 'branch' || input.kind === 'post') {
     if (await slugTaken(tx, input.kind, doc.draft.slug as string, itemId)) throw errors.conflict('SLUG_TAKEN', 'Another item already uses this address. Change it, save, then publish.');
   }
   const by = personOf(actor);
-  const result = publishInTx(tx, input.kind, itemId, doc, by);
+  const { patch, action: result } = publishInTx(tx, input.kind, itemId, doc, by);
   if (result !== 'none') {
     const b = input.kind === 'post' ? postBranch(doc.draft) : null;
     recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, auditOrg(r, input.kind === 'branch' ? doc.orgId : (b?.orgId ?? null)), {
@@ -488,7 +571,7 @@ export const publish = command('site-publish', itemInput, async ({ actor, input,
       if (org) notify(tx, doc.createdBy.uid, { orgId: org, kind: 'site.post.published', title: `Your post “${titleOf('post', doc.draft)}” is on the website`, link: `/website/blog/${itemId}` }, actor.uid);
     }
   }
-  return { id: itemId, result };
+  return { ...viewOf(r, actor, input.kind, itemId, asWritten(doc, patch), doc.orgId ?? null), result };
 });
 
 /** Takes an item off the website (its draft stays, to publish again later). */
@@ -496,16 +579,17 @@ export const unpublish = command('site-unpublish', z.strictObject({ kind: z.enum
   const r = await rightsOf(actor, tx);
   const doc = await load(tx, input.kind, input.id);
   if (!canPublish(r, input.kind, doc, input.id)) throw errors.forbidden();
-  if (!doc.isLive) return { id: input.id, result: 'none' as const };
+  if (!doc.isLive) return { ...viewOf(r, actor, input.kind, input.id, doc, doc.orgId ?? null), result: 'none' as const };
   const by = personOf(actor);
-  tx.update(refOf(input.kind, input.id), { ...notLive, changed: isChanged(doc.draft, null), publishedBy: by, publishedAt: FieldValue.serverTimestamp() });
+  const write = { ...notLive, changed: isChanged(doc.draft, null), publishedBy: by, publishedAt: FieldValue.serverTimestamp() };
+  tx.update(refOf(input.kind, input.id), write);
   logPublish(tx, input.kind, input.id, nameOf(input.kind, doc), 'unpublish', by);
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, auditOrg(r, input.kind === 'branch' ? doc.orgId : postBranch(doc.draft)?.orgId), {
     action: `site.${input.kind}.unpublish`,
     entityType: `site${input.kind}`,
     entityId: input.id,
   });
-  return { id: input.id, result: 'unpublish' as const };
+  return { ...viewOf(r, actor, input.kind, input.id, asWritten(doc, write), doc.orgId ?? null), result: 'unpublish' as const };
 });
 
 /** Throws away unpublished changes: the draft goes back to what the website shows. */
@@ -543,22 +627,29 @@ export const requestReview = command('site-requestReview', z.strictObject({ id, 
   const doc = await load(tx, 'post', input.id);
   if (!canEditPost(r, actor.uid, doc)) throw errors.forbidden();
   if (!doc.changed) throw errors.conflict('NOTHING_TO_REVIEW', 'There are no changes to review: the website already shows this post.');
-  tx.update(refOf('post', input.id), { review: { by: personOf(actor), at: FieldValue.serverTimestamp(), note: input.note } });
-  return { id: input.id };
+  const by = personOf(actor);
+  tx.update(refOf('post', input.id), { review: { by, at: FieldValue.serverTimestamp(), note: input.note } });
+  return viewOf(r, actor, 'post', input.id, { ...doc, review: { by, at: Timestamp.now() } }, null);
 });
 
 /** Publishes everything with unpublished changes that the caller may publish (at most 100 at a time). */
 export const publishAll = command('site-publishAll', z.strictObject({}), async ({ actor, requestId }, tx) => {
-  const r = await rightsOf(actor, tx);
-  const snaps = await Promise.all((['settings', 'branch', 'post', 'promotion', 'job', 'testimonial'] as const).map((k) => tx.get(db.collection(collectionOf[k]).where('changed', '==', true).limit(100))));
+  // Every read in one stage. The changed items are read whole (their draft becomes the live copy); of what is
+  // already live only the address is needed.
+  const liveSlugs = (k: 'post' | 'branch') => tx.get(db.collection(collectionOf[k]).where('isLive', '==', true).select('liveSlug'));
+  const [r, snaps, livePosts, liveBranches] = await Promise.all([
+    rightsOf(actor, tx),
+    Promise.all((['settings', 'branch', 'post', 'promotion', 'job', 'testimonial'] as const).map((k) => tx.get(db.collection(collectionOf[k]).where('changed', '==', true).limit(100)))),
+    liveSlugs('post'),
+    liveSlugs('branch'),
+  ]);
   const by = personOf(actor);
   const done: { kind: Kind; id: string; result: string }[] = [];
   const blocked: { kind: Kind; id: string; title: string; reason: string }[] = [];
   const items = snaps.flatMap((s) => s.docs).map((d) => ({ id: d.id, doc: d.data() as SiteDoc }));
   // Addresses must stay unique among what goes live.
   const slugs = new Map<string, string>();
-  for (const k of ['post', 'branch'] as const) {
-    const live = await tx.get(db.collection(collectionOf[k]).where('isLive', '==', true));
+  for (const [k, live] of [['post', livePosts], ['branch', liveBranches]] as const) {
     for (const d of live.docs) slugs.set(`${k}:${d.get('liveSlug') as string}`, d.id);
   }
   for (const { id: itemId, doc } of items.slice(0, 100)) {
@@ -572,7 +663,7 @@ export const publishAll = command('site-publishAll', z.strictObject({}), async (
       }
       if (!doc.draft.hidden) slugs.set(key, itemId);
     }
-    const result = publishInTx(tx, doc.kind, itemId, doc, by);
+    const { action: result } = publishInTx(tx, doc.kind, itemId, doc, by);
     if (result !== 'none') done.push({ kind: doc.kind, id: itemId, result });
   }
   if (done.length) {

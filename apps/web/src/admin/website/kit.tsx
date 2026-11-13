@@ -1,13 +1,19 @@
 // Building blocks of the Website section's editors: pictures, repeatable lists, book picking, the status pill and
 // the bar with Save / Preview / Publish that sits at the top of every editor.
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { useNavigate } from 'react-router';
 
 import { errorText } from '../../data/api';
 import { type Book, getBook, searchBooks } from '../../data/catalogue';
-import { type BookRef, type Kind, type SiteImage, type SiteStatus, uploadSiteImage } from '../../data/site';
+import {
+  type BookRef, deleteSite, discardSite, getSite, type Item, type ItemView, type Kind, type ListKind, publishSite, requestReview, saveSite, type SiteImage,
+  type SiteStatus, unpublishSite, uploadSiteImage,
+} from '../../data/site';
 import { BookCover } from '../../shared/BookCover';
+import { reportError } from '../../shared/reportError';
 import { Badge, Icon, type Tone } from '../../shared/ui';
 import { TextField } from '../../shared/fields';
+import { t } from '../../strings';
 import { st } from '../../strings/site';
 import './website.css';
 
@@ -58,25 +64,55 @@ export function ImageField({ label, value, onChange, hint }: { label: string; va
   );
 }
 
+/** Pictures sent at once: each is a megabyte or two on the way up and a whole photo in memory while it is shrunk. */
+const UPLOADS_AT_ONCE = 3;
+
 /** A list of pictures (the first is the cover), with descriptions, order and removal. */
 export function ImagesField({ label, value, onChange, max, hint }: { label: string; value: SiteImage[]; onChange: (v: SiteImage[]) => void; max: number; hint?: string }) {
   const input = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const add = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setBusy(true);
+  // The list and the page's handler as they are now, not as they were when the photos were picked: an upload
+  // takes a while, and descriptions, the order and other fields of the page can change meanwhile.
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const busy = !!progress;
+  const add = async (picked: FileList | null) => {
+    if (!picked?.length || busy) return;
+    const files = [...picked].filter((f) => f.type.startsWith('image/')).slice(0, Math.max(0, max - value.length));
+    if (!files.length) return setError(st.notAPicture);
     setError(null);
-    try {
-      const room = Math.max(0, max - value.length);
-      const urls: SiteImage[] = [];
-      for (const f of [...files].slice(0, room)) if (f.type.startsWith('image/')) urls.push({ url: await uploadSiteImage(f), alt: '' });
-      onChange([...value, ...urls]);
-    } catch (e) {
-      setError(errorText(e, st.uploadFailed));
-    } finally {
-      setBusy(false);
-    }
+    setProgress({ done: 0, total: files.length });
+    // A few at a time, each kept at its place: the order chosen is the order shown (the first is the cover).
+    const urls: (string | null)[] = files.map(() => null);
+    const why: string[] = [];
+    let next = 0;
+    const worker = async () => {
+      while (next < files.length) {
+        const i = next++;
+        try {
+          urls[i] = await uploadSiteImage(files[i]);
+        } catch (e) {
+          why.push(errorText(e, st.uploadFailed));
+        }
+        if (mounted.current) setProgress((p) => p && { ...p, done: p.done + 1 });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(UPLOADS_AT_ONCE, files.length) }, worker));
+    if (!mounted.current) return;
+    // Added once, when all are through: those that worked are kept even if others failed.
+    const added = urls.flatMap((url) => (url ? [{ url, alt: '' }] : []));
+    if (added.length) latest.current.onChange([...latest.current.value, ...added].slice(0, max));
+    const failed = files.filter((_, i) => !urls[i]).map((f) => f.name);
+    if (failed.length) setError(failed.length === 1 ? `${failed[0]}: ${why[0]}` : st.uploadsFailed(failed));
+    setProgress(null);
   };
   return (
     <fieldset className="choices">
@@ -101,7 +137,8 @@ export function ImagesField({ label, value, onChange, max, hint }: { label: stri
           <Icon name="plus" /> {busy ? st.uploading : st.addPictures}
         </button>
       )}
-      {error && <span className="field-error">{error}</span>}
+      <span className="muted small" role="status">{progress ? st.uploadingOf(Math.min(progress.done + 1, progress.total), progress.total) : ''}</span>
+      {error && <span className="field-error" role="alert">{error}</span>}
     </fieldset>
   );
 }
@@ -337,15 +374,13 @@ export function PublishBar({ kind, state, onSave, onPublish, onUnpublish, onDisc
 }
 
 /** Editor state shared by every editor: the draft, whether it was changed, and the actions with their messages. */
-export function useEditor<D>(initial: D | null) {
+export function useEditor<D>(initial: D | null = null) {
   const [draft, setDraft] = useState<D | null>(initial);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  useEffect(() => {
-    setDraft(initial);
-    setDirty(false);
-  }, [initial]);
+  // Counts changes to the draft, so a save that ends after more typing does not call that typing saved.
+  const edits = useRef(0);
   // Leaving with unsaved changes asks first.
   useEffect(() => {
     if (!dirty) return;
@@ -354,9 +389,26 @@ export function useEditor<D>(initial: D | null) {
     return () => removeEventListener('beforeunload', warn);
   }, [dirty]);
   const update = (patch: Partial<D>) => {
+    edits.current += 1;
     setDraft((d) => (d ? { ...d, ...patch } : d));
     setDirty(true);
     setMessage(null);
+  };
+  /**
+   * Puts a draft on screen as the saved one. Only for an item that was just read, or whose changes were just
+   * thrown away: never after a save, where the person may have typed on.
+   */
+  const reset = (next: D | null) => {
+    edits.current += 1;
+    setDraft(next);
+    setDirty(false);
+  };
+  /** Call before sending the draft; call what it returns once the save is through: "unsaved" clears unless something changed meanwhile. */
+  const mark = () => {
+    const sent = edits.current;
+    return () => {
+      if (edits.current === sent) setDirty(false);
+    };
   };
   const run = async (key: string, fn: () => Promise<unknown>, ok?: string) => {
     setBusy(key);
@@ -372,7 +424,143 @@ export function useEditor<D>(initial: D | null) {
       setBusy(null);
     }
   };
-  return { draft, setDraft, update, dirty, setDirty, busy, run, message, setMessage };
+  return { draft, update, reset, mark, dirty, busy, run, message, setMessage };
+}
+
+/** What an editor knows of its item besides the draft, which the editor itself holds. */
+export type ItemInfo = Omit<Item<unknown>, 'draft'>;
+
+/**
+ * An editor's item: read once, then kept in step from what each save, publish, take-down and review request
+ * answers, so nothing is read again behind the person's back (a second read used to replace what they had typed
+ * meanwhile). The draft on screen is replaced only when an item is first read and after "Go back to the live version".
+ */
+export function useSiteItem<D extends object>({ kind, id, orgId, blank, readNew = false, pathOf }: {
+  kind: Kind;
+  /** The item; 'new' for one not saved yet; nothing for the single pages (site settings, page sections, festival greetings). */
+  id?: string;
+  orgId?: string;
+  /** A new item's first draft. */
+  blank?: () => D;
+  /** A new item is still read once, for what the person may do with it (posts). */
+  readNew?: boolean;
+  /** Where a new item is edited once its first save gave it an id. */
+  pathOf?: (id: string) => string;
+}) {
+  const navigate = useNavigate();
+  const isNew = id === 'new';
+  const itemId = isNew ? undefined : id;
+  const e = useEditor<D>();
+  const [info, setInfo] = useState<ItemInfo | null>(null);
+  const [read, setRead] = useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+  const [tick, setTick] = useState(0);
+  // The id this editor's first save gave its new item. The address then changes from "new" to that id, which must
+  // not read the item again: it is on screen already, perhaps with more typed since.
+  const created = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (id && created.current === id) {
+      created.current = null;
+      return;
+    }
+    let live = true;
+    setRead({ loading: true, error: null });
+    (isNew && !readNew ? Promise.resolve(null) : getSite<D>(kind, itemId, orgId)).then(
+      (item) => {
+        if (!live) return;
+        const { draft = null, ...rest } = item ?? {};
+        const first = isNew ? (blank?.() ?? null) : draft;
+        setInfo(item ? (rest as ItemInfo) : null);
+        e.reset(first);
+        setRead({ loading: false, error: first ? null : st.notFound });
+      },
+      (err: unknown) => {
+        reportError(err, 'load');
+        if (live) setRead({ loading: false, error: errorText(err, t.errorLoad) });
+      },
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, id, orgId, tick]);
+
+  /** The item once it has been saved (a new item, or a page nobody has saved yet, is not). */
+  const saved = info?.exists ? info : null;
+  const patch = (view: ItemView) => {
+    if (mounted.current) setInfo((i) => ({ kind, orgId: orgId ?? null, branchName: null, createdBy: null, ...i, ...view }));
+  };
+  /** One request: the draft is saved and, with `publish`, put on the website with it. */
+  const send = async (publish: boolean) => {
+    const done = e.mark();
+    const view = await saveSite(kind, e.draft as object, itemId, orgId, publish);
+    if (!mounted.current) return view.id;
+    done();
+    patch(view);
+    if (isNew && pathOf) {
+      created.current = view.id;
+      navigate(pathOf(view.id), { replace: true });
+    }
+    return view.id;
+  };
+
+  const state: EditorState = {
+    status: saved?.status ?? 'NONE',
+    dirty: e.dirty,
+    busy: e.busy,
+    canPublish: info?.canPublish ?? true,
+    isLive: saved?.isLive ?? false,
+    changed: saved?.changed ?? true,
+    updated: savedLine(saved?.updatedBy ?? null, saved?.updatedAt ?? null),
+  };
+  return {
+    e,
+    isNew,
+    /** What was read of the item, saved or not (a branch page nobody has saved still has its branch's name). */
+    info,
+    saved,
+    loading: read.loading,
+    error: read.error,
+    reload: () => setTick((n) => n + 1),
+    /** For the publish bar; editors add their links (`liveUrl`, `previewUrl`). */
+    state,
+    save: () => void e.run('save', () => send(false), st.saved),
+    /** Unsaved changes (or an item never saved) are saved and published in one request; otherwise the saved draft is published. */
+    publish: (ok: string) =>
+      void e.run('publish', async () => {
+        if (e.dirty || !saved) await send(true);
+        else patch(await publishSite(kind, itemId));
+      }, ok),
+    unpublish: () => void e.run('unpublish', async () => patch(await unpublishSite(kind as ListKind, itemId!)), st.takenDown),
+    review: () =>
+      void e.run('review', async () => {
+        const postId = e.dirty || !saved ? await send(false) : itemId!;
+        patch(await requestReview(postId));
+      }, st.reviewSent),
+    /** Throws unpublished changes away: the one time the item is read again, to put the live copy back on screen. */
+    discard: () =>
+      void e.run('discard', async () => {
+        await discardSite(kind, itemId);
+        const { draft, ...rest } = await getSite<D>(kind, itemId, orgId);
+        if (!mounted.current) return;
+        setInfo(rest);
+        e.reset(draft);
+      }, st.discarded),
+    remove: (title: string, listPath: string) => {
+      if (!confirm(st.deleteConfirm(title))) return;
+      void e.run('delete', async () => {
+        await deleteSite(kind as Exclude<ListKind, 'branch'>, itemId!);
+        navigate(listPath);
+      });
+    },
+  };
 }
 
 /** "Saved by Priya, 10 Nov, 4:05 pm". */

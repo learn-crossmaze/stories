@@ -187,7 +187,10 @@ const NO_VALUES: Record<LetterField, string> = { designation: '', department: ''
  */
 export function IssueLetterDialog({ orgId, employee, candidates, onClose, onIssued }: { orgId: string; employee?: Employee; candidates?: Employee[]; onClose: () => void; onIssued: (msg: string) => void }) {
   const { branchName } = useWorkspace();
-  const data = useAsync(async () => ({ templates: await listTemplates(orgId), defaults: await templateDefaults(orgId) }), [orgId]);
+  const data = useAsync(async () => {
+    const [templates, defaults] = await Promise.all([listTemplates(orgId), templateDefaults(orgId)]);
+    return { templates, defaults };
+  }, [orgId]);
   const [employeeId, setEmployeeId] = useState(employee?.id ?? '');
   const [choice, setChoice] = useState('APPOINTMENT');
   const [f, setF] = useState<Record<LetterField, string>>(NO_VALUES);

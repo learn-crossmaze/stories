@@ -1,15 +1,16 @@
 // Pieces shared by the payroll pages: status badge, line editors, salary and inputs dialogs, payslip lists.
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { command } from '../../data/api';
 import { monthIST } from '../../shared/dates';
-import { type Adjustment, type Component, downloadPayslip, getInputs, monthName, type Payslip, type Salary } from '../../data/payroll';
+import { previousMonth } from '../../data/attendance';
+import { type Component, downloadPayslip, getInputs, type MonthInputs, monthName, type Payslip, type Salary } from '../../data/payroll';
 import { rupees } from '../../shared/format';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { Dialog, DialogActions, FormError, TextField, useAction, useSubmit } from '../components/Dialog';
-import { Badge, makeStatusBadge } from '../../shared/ui';
+import { Badge, makeStatusBadge, SkeletonRows } from '../../shared/ui';
 
 export const RunBadge = makeStatusBadge<string>({ NONE: 'muted', DRAFT: 'info', SUBMITTED: 'warn', APPROVED: 'ok' }, ht.runStatus);
 
@@ -125,18 +126,53 @@ export function SalaryDialog({ orgId, employee, latest, onClose, onDone }: { org
   );
 }
 
-/** TDS and one-off earnings or deductions for a month. */
+/**
+ * TDS and one-off earnings or deductions for a month. The dialog opens at once and fills in when the month's
+ * inputs arrive. With nothing saved for the month yet, last month's TDS is offered (TDS only, and said to be
+ * unsaved): it is usually the same, and nothing is kept until the person saves.
+ */
 export function InputsDialog({ orgId, employee, month, onClose, onDone }: { orgId: string; employee: { id: string; fullName: string }; month: string; onClose: () => void; onDone: () => void }) {
-  const current = useAsync(() => getInputs(orgId, employee.id, month), [orgId, employee.id, month]);
-  if (current.loading) return null;
-  return <InputsForm orgId={orgId} employee={employee} month={month} initial={current.data ?? null} onClose={onClose} onDone={onDone} />;
+  const before = previousMonth(month);
+  // A read that fails counts as nothing saved, as before (a month with no inputs yet cannot be read by branch staff).
+  const current = useAsync(async () => {
+    const [now, last] = await Promise.all([getInputs(orgId, employee.id, month).catch(() => null), getInputs(orgId, employee.id, before).catch(() => null)]);
+    return { now, copiedTds: !now && last && last.tds > 0 ? last.tds : null };
+  }, [orgId, employee.id, month]);
+  return (
+    <Dialog title={ht.inputsTitle(employee.fullName, monthName(month))} onClose={onClose}>
+      {current.loading ? (
+        <SkeletonRows rows={3} />
+      ) : (
+        <InputsForm orgId={orgId} employee={employee} month={month} initial={current.data?.now ?? null} copied={current.data?.copiedTds ? { tds: current.data.copiedTds, from: before } : null} onClose={onClose} onDone={onDone} />
+      )}
+    </Dialog>
+  );
 }
 
-function InputsForm({ orgId, employee, month, initial, onClose, onDone }: { orgId: string; employee: { id: string; fullName: string }; month: string; initial: { tds: number; otherEarnings: Adjustment[]; otherDeductions: Adjustment[] } | null; onClose: () => void; onDone: () => void }) {
-  const [tds, setTds] = useState(String(initial?.tds ?? 0));
+function InputsForm({
+  orgId,
+  employee,
+  month,
+  initial,
+  copied,
+  onClose,
+  onDone,
+}: {
+  orgId: string;
+  employee: { id: string; fullName: string };
+  month: string;
+  initial: MonthInputs | null;
+  copied: { tds: number; from: string } | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [tds, setTds] = useState(String(initial?.tds ?? copied?.tds ?? 0));
   const [earn, setEarn] = useState(toRows(initial?.otherEarnings ?? []));
   const [ded, setDed] = useState(toRows(initial?.otherDeductions ?? []));
   const [touched, setTouched] = useState(false);
+  // The dialog was already open (and focused) while this loaded: the first field takes over.
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => form.current?.querySelector('input')?.focus(), []);
   const { busy, error, submit } = useSubmit(async () => {
     setTouched(true);
     if (!whole(tds) || !rowsOk(earn) || !rowsOk(ded)) return;
@@ -145,16 +181,21 @@ function InputsForm({ orgId, employee, month, initial, onClose, onDone }: { orgI
     onClose();
   });
   return (
-    <Dialog title={ht.inputsTitle(employee.fullName, monthName(month))} onClose={onClose}>
-      <form onSubmit={submit} noValidate>
-        <p className="muted small">{ht.inputsHint}</p>
-        <TextField label={ht.tds} type="number" value={tds} onChange={setTds} error={touched && !whole(tds) ? 'Whole rupees.' : undefined} />
-        <LineRows legend={ht.otherEarnings} rows={earn} onChange={setEarn} addLabel={ht.addLine} touched={touched} />
-        <LineRows legend={ht.otherDeductions} rows={ded} onChange={setDed} addLabel={ht.addLine} touched={touched} />
-        <FormError error={error} />
-        <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
-      </form>
-    </Dialog>
+    <form ref={form} onSubmit={submit} noValidate>
+      <p className="muted small">{ht.inputsHint}</p>
+      <TextField
+        label={ht.tds}
+        type="number"
+        value={tds}
+        onChange={setTds}
+        hint={copied && tds === String(copied.tds) ? ht.tdsCopied(monthName(copied.from)) : undefined}
+        error={touched && !whole(tds) ? 'Whole rupees.' : undefined}
+      />
+      <LineRows legend={ht.otherEarnings} rows={earn} onChange={setEarn} addLabel={ht.addLine} touched={touched} />
+      <LineRows legend={ht.otherDeductions} rows={ded} onChange={setDed} addLabel={ht.addLine} touched={touched} />
+      <FormError error={error} />
+      <DialogActions busy={busy} submitLabel={t.save} onCancel={onClose} />
+    </form>
   );
 }
 

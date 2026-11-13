@@ -1,11 +1,8 @@
-import { useMemo } from 'react';
-
-import { discardSite, getSite, publishSite, saveSite, type SectionsDraft, SITE_URL, type Tile } from '../../data/site';
-import { useAsync } from '../../shared/useAsync';
+import { type SectionsDraft, SITE_URL, type Tile } from '../../data/site';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
-import { ListEditor, PublishBar, savedLine, useEditor } from './kit';
+import { ListEditor, PublishBar, useSiteItem } from './kit';
 
 /** A list of title + text items; an empty list keeps the page's built-in words. */
 function TileList({ legend, hint, items, onChange, max, addLabel }: { legend: string; hint: string; items: Tile[]; onChange: (v: Tile[]) => void; max: number; addLabel: string }) {
@@ -26,18 +23,11 @@ function TileList({ legend, hint, items, onChange, max, addLabel }: { legend: st
  * reader groups, How it works' steps and questions, the franchise and careers pages' points.
  */
 export function SectionsPage() {
-  const item = useAsync(() => getSite<SectionsDraft>('sections'), []);
-  const initial = useMemo(() => item.data?.draft ?? null, [item.data]);
-  const e = useEditor<SectionsDraft>(initial);
+  const item = useSiteItem<SectionsDraft>({ kind: 'sections' });
+  const { e } = item;
   const d = e.draft;
   if (item.loading) return <SkeletonRows />;
-  if (item.error || !item.data || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  const info = item.data;
-  const save = async () => {
-    await saveSite('sections', d);
-    e.setDirty(false);
-    item.reload();
-  };
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   return (
     <>
       <header className="page-header">
@@ -47,10 +37,10 @@ export function SectionsPage() {
       <PublishBar
         kind="sections"
         message={e.message}
-        state={{ status: info.status, dirty: e.dirty, busy: e.busy, canPublish: info.canPublish, isLive: info.isLive, changed: info.changed || !info.exists, liveUrl: SITE_URL, updated: savedLine(info.updatedBy, info.updatedAt) }}
-        onSave={() => void e.run('save', save, st.saved)}
-        onPublish={() => void e.run('publish', async () => { if (e.dirty || !info.exists) await save(); await publishSite('sections'); item.reload(); }, st.published)}
-        onDiscard={() => void e.run('discard', async () => { await discardSite('sections'); item.reload(); }, st.discarded)}
+        state={{ ...item.state, liveUrl: SITE_URL }}
+        onSave={item.save}
+        onPublish={() => item.publish(st.published)}
+        onDiscard={item.discard}
       />
       <div className="editor-main">
         <section className="card" aria-labelledby="h-home">

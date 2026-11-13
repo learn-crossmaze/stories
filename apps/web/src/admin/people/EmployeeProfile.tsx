@@ -45,12 +45,15 @@ export function EmployeeProfilePage() {
     () => (e && (canPrivate || canBank) ? getPrivateProfile(orgId, e.id) : Promise.resolve({} as PrivateProfile)),
     [orgId, e?.id, canPrivate, canBank],
   );
-  const history = useAsync(() => (e ? listHistory(orgId, e.id) : Promise.resolve([])), [orgId, e?.id, employee.data]);
+  // Read once per employee; what writes history (edit, a status change, linking the account) reloads it below.
+  const history = useAsync(() => (e ? listHistory(orgId, e.id) : Promise.resolve([])), [orgId, e?.id]);
   // ?tab=access (from Staff access) opens a tab directly.
   const [search] = useSearchParams();
   const [tab, setTab] = useState<Tab>((search.get('tab') as Tab | null) ?? 'overview');
   const [dialog, setDialog] = useState<'edit' | 'personal' | Transition | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Checklist ticks still on their way: a status change pressed now would not see them yet.
+  const [ticking, setTicking] = useState(false);
 
   if (!org) return <NoOrgState />;
   if (employee.loading && !employee.data) return <SkeletonRows rows={5} />;
@@ -215,7 +218,7 @@ export function EmployeeProfilePage() {
                     type="button"
                     className={`btn ${i === 0 ? 'btn-filled' : 'btn-outlined'}`}
                     onClick={() => setDialog(step)}
-                    disabled={e.uid === user?.uid && !claims.sa}
+                    disabled={ticking || (e.uid === user?.uid && !claims.sa)}
                   >
                     {ht.steps[step]}
                   </button>
@@ -226,7 +229,7 @@ export function EmployeeProfilePage() {
             )}
           </section>
           {openList ? (
-            <Checklist orgId={orgId} employee={e} list={openList} editable={canLifecycle} onChanged={employee.reload} />
+            <Checklist key={e.id} orgId={orgId} employee={e} list={openList} editable={canLifecycle} onChanged={employee.reload} onSaving={setTicking} />
           ) : (
             <>
               <p className="muted">{ht.checklistClosed}</p>
@@ -266,7 +269,16 @@ export function EmployeeProfilePage() {
           </ol>
         ))}
 
-      {tab === 'access' && <AccessPanel org={org} employee={e} onChanged={employee.reload} />}
+      {tab === 'access' && (
+        <AccessPanel
+          org={org}
+          employee={e}
+          onChanged={() => {
+            employee.reload();
+            history.reload();
+          }}
+        />
+      )}
 
       {dialog === 'edit' && (
         <EmployeeDialog
@@ -289,6 +301,7 @@ export function EmployeeProfilePage() {
           onDone={() => {
             setNotice(`${ht.steps[dialog]} ✓`);
             employee.reload();
+            history.reload();
           }}
         />
       )}

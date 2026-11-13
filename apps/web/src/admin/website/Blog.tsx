@@ -1,17 +1,15 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { useState } from 'react';
+import { Link, useParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
-import {
-  deleteSite, DESIGNS, getSite, listSite, liveUrl, type PostDraft, previewUrl, publishSite, requestReview, saveSite, slugify, unpublishSite,
-} from '../../data/site';
+import { DESIGNS, listSite, liveUrl, type PostDraft, previewUrl, slugify } from '../../data/site';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
 import { SelectField, TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
 import { useWorkspace } from '../Workspace';
-import { BookPicker, ImageField, ListEditor, PublishBar, RichField, savedLine, SiteStatusBadge, useEditor, WordsField } from './kit';
+import { BookPicker, ImageField, ListEditor, PublishBar, RichField, savedLine, SiteStatusBadge, useSiteItem, WordsField } from './kit';
 
 export function BlogPage() {
   const list = useAsync(() => listSite('post'), []);
@@ -86,25 +84,13 @@ export function PostEditorPage() {
   const isNew = postId === 'new';
   const { user } = useAuth();
   const { org, myBranches } = useWorkspace();
-  const navigate = useNavigate();
-  const item = useAsync(() => getSite<PostDraft>('post', isNew ? undefined : postId), [postId]);
-  const initial = useMemo(() => (isNew ? (item.data ? blank(user?.displayName ?? '') : null) : (item.data?.draft ?? null)), [isNew, item.data, user?.displayName]);
-  const e = useEditor<PostDraft>(initial);
+  // A new post is read once too: who may publish it depends on the person.
+  const item = useSiteItem<PostDraft>({ kind: 'post', id: postId, blank: () => blank(user?.displayName ?? ''), readNew: true, pathOf: paths.adminWebsitePost });
   const [slugTouched, setSlugTouched] = useState(!isNew);
+  const { e, saved: info } = item;
   const d = e.draft;
   if (item.loading) return <SkeletonRows />;
-  if (item.error || !item.data) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  if (!d) return <SkeletonRows />;
-  const info = item.data.exists ? item.data : null;
-  const mayPublish = item.data.canPublish;
-
-  const save = async () => {
-    const r = await saveSite('post', d, isNew ? undefined : postId);
-    e.setDirty(false);
-    if (isNew) navigate(paths.adminWebsitePost(r.id), { replace: true });
-    else item.reload();
-    return r.id;
-  };
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   const branchOptions = [{ value: '', label: st.noBranch }, ...myBranches.map((b) => ({ value: `${org?.id}|${b.id}`, label: b.name }))];
   const branchValue = d.branch ? `${d.branch.orgId}|${d.branch.branchId}` : '';
   const designNote = st.designs[d.design];
@@ -120,15 +106,12 @@ export function PostEditorPage() {
       <PublishBar
         kind="post"
         message={e.message}
-        state={{
-          status: info?.status ?? 'NONE', dirty: e.dirty, busy: e.busy, canPublish: mayPublish, isLive: info?.isLive ?? false, changed: info?.changed ?? true,
-          liveUrl: liveUrl('post', info?.liveSlug ?? null), previewUrl: info ? previewUrl('post', info.id, info.previewToken) : null, updated: savedLine(info?.updatedBy ?? null, info?.updatedAt ?? null),
-        }}
-        onSave={() => void e.run('save', save, st.saved)}
-        onPublish={() => void e.run('publish', async () => { const id = e.dirty || isNew ? await save() : postId; await publishSite('post', id); item.reload(); }, d.hidden ? st.takenDown : st.published)}
-        onReview={() => void e.run('review', async () => { const id = e.dirty || isNew ? await save() : postId; await requestReview(id); item.reload(); }, st.reviewSent)}
-        onUnpublish={info ? () => void e.run('unpublish', async () => { await unpublishSite('post', postId); item.reload(); }, st.takenDown) : undefined}
-        onDelete={info?.canDelete ? () => { if (confirm(st.deleteConfirm(d.title))) void e.run('delete', async () => { await deleteSite('post', postId); navigate(paths.adminWebsiteBlog); }); } : undefined}
+        state={{ ...item.state, liveUrl: liveUrl('post', info?.liveSlug ?? null), previewUrl: info ? previewUrl('post', info.id, info.previewToken) : null }}
+        onSave={item.save}
+        onPublish={() => item.publish(d.hidden ? st.takenDown : st.published)}
+        onReview={item.review}
+        onUnpublish={info ? item.unpublish : undefined}
+        onDelete={info?.canDelete ? () => item.remove(d.title, paths.adminWebsiteBlog) : undefined}
       />
       {info?.review && <p className="notice notice-warn">{st.reviewAsked(info.review.by, savedLine(null, info.review.at) ?? '')}</p>}
 

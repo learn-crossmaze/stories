@@ -133,6 +133,10 @@ export async function ledgerFor(orgId: string, employeeId: string, year: string,
   return snap.docs.map((d) => ({ ...(d.data() as Omit<LedgerEntry, 'id' | 'at'>), id: d.id, at: toDate(d.get('at')) })).sort((a, b) => (b.at?.getTime() ?? 0) - (a.at?.getTime() ?? 0));
 }
 
+/** The signed-in person's own requests and ledger for a year: found by their account, so they do not wait for their employee record. */
+export const myRequests = (orgId: string, uid: string, year: string) => employeeRequests(orgId, '', year, { ownUid: uid });
+export const myLedger = (orgId: string, uid: string, year: string) => ledgerFor(orgId, '', year, { ownUid: uid });
+
 /**
  * Applies for leave, or records it for `employeeId`. `approve` (only for someone else's leave) approves it in
  * the same step; it is sent only when true, so recording without it works against an older backend too.

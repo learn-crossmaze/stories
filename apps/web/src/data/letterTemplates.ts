@@ -40,7 +40,22 @@ export async function listTemplates(orgId: string): Promise<LetterTemplate[]> {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LetterTemplate).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export const templateDefaults = (orgId: string) => call<TemplateDefaults>('letterTemplates-defaults', { orgId });
+// The built-in wording is the same on every call, so it is asked for once per organization (the server still
+// checks the caller there on that first call). The promise is kept, not the answer, so two dialogs opening
+// together share one call; a failed call is forgotten, so Retry asks again.
+const defaults = new Map<string, Promise<TemplateDefaults>>();
+export function templateDefaults(orgId: string): Promise<TemplateDefaults> {
+  let asked = defaults.get(orgId);
+  if (!asked) {
+    asked = call<TemplateDefaults>('letterTemplates-defaults', { orgId });
+    defaults.set(orgId, asked);
+    const mine = asked;
+    mine.catch(() => {
+      if (defaults.get(orgId) === mine) defaults.delete(orgId);
+    });
+  }
+  return asked;
+}
 
 export const saveTemplate = (orgId: string, t: TemplateText & { templateId?: string; branchId: string | null }) =>
   command<{ templateId: string }>('letterTemplates-save', { orgId, ...t });

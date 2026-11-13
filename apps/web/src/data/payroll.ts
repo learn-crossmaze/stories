@@ -150,6 +150,9 @@ export async function employeePayslips(orgId: string, employeeId: string, opts: 
   return snap.docs.map((d) => ({ ...(d.data() as Omit<Payslip, 'id'>), id: d.id })).sort((a, b) => b.month.localeCompare(a.month));
 }
 
+/** The signed-in person's own published payslips: found by their account, so they do not wait for their employee record. */
+export const myPayslips = (orgId: string, uid: string) => employeePayslips(orgId, '', { ownUid: uid });
+
 /** Preparing writes a payslip per employee; it is not a replayed command. */
 export async function prepareRun(orgId: string, month: string, branchId: string | null) {
   return call<{ runId: string; employees: number; problems: number }>('payroll-prepare', { orgId, month, branchId });

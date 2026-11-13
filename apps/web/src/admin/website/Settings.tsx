@@ -1,26 +1,16 @@
-import { useMemo } from 'react';
-
-import { discardSite, getSite, publishSite, saveSite, type SettingsDraft, SITE_URL } from '../../data/site';
-import { useAsync } from '../../shared/useAsync';
+import { type SettingsDraft, SITE_URL } from '../../data/site';
 import { ErrorState, SkeletonRows } from '../../shared/ui';
 import { TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
-import { ImageField, ImagesField, ListEditor, PublishBar, RichField, savedLine, useEditor } from './kit';
+import { ImageField, ImagesField, ListEditor, PublishBar, RichField, useSiteItem } from './kit';
 
 /** Site settings (as on crossmaze.in): contact details, the home page's banner, the About page and its people, social links. */
 export function SiteSettingsPage() {
-  const item = useAsync(() => getSite<SettingsDraft>('settings'), []);
-  const initial = useMemo(() => item.data?.draft ?? null, [item.data]);
-  const e = useEditor<SettingsDraft>(initial);
+  const item = useSiteItem<SettingsDraft>({ kind: 'settings' });
+  const { e } = item;
   const d = e.draft;
   if (item.loading) return <SkeletonRows />;
-  if (item.error || !item.data || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  const info = item.data;
-  const save = async () => {
-    await saveSite('settings', d);
-    e.setDirty(false);
-    item.reload();
-  };
+  if (item.error || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   const about = d.about;
   const setAbout = (patch: Partial<SettingsDraft['about']>) => e.update({ about: { ...about, ...patch } });
   return (
@@ -32,10 +22,10 @@ export function SiteSettingsPage() {
       <PublishBar
         kind="settings"
         message={e.message}
-        state={{ status: info.status, dirty: e.dirty, busy: e.busy, canPublish: info.canPublish, isLive: info.isLive, changed: info.changed || !info.exists, liveUrl: `${SITE_URL}/about`, updated: savedLine(info.updatedBy, info.updatedAt) }}
-        onSave={() => void e.run('save', save, st.saved)}
-        onPublish={() => void e.run('publish', async () => { if (e.dirty || !info.exists) await save(); await publishSite('settings'); item.reload(); }, st.published)}
-        onDiscard={() => void e.run('discard', async () => { await discardSite('settings'); item.reload(); }, st.discarded)}
+        state={{ ...item.state, liveUrl: `${SITE_URL}/about` }}
+        onSave={item.save}
+        onPublish={() => item.publish(st.published)}
+        onDiscard={item.discard}
       />
       <div className="editor-main">
         <section className="card" aria-labelledby="h-contact">

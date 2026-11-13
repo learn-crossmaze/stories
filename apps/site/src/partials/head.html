@@ -15,4 +15,7 @@
     <meta property="og:site_name" content="Stories for All" />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://storiesforall.in/icon-512.png" />
+    <!-- The page's live data (plans, branches, offers), asked for while the script below is still on its way.
+         It must match the request in src/data.ts (loadSnapshot) exactly, or the data would be fetched twice. -->
+    <link rel="preload" href="/api/public" as="fetch" crossorigin="anonymous" vite-ignore />
     <script type="module" src="/src/main.ts"></script>

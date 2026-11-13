@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 
 import { services } from '../../data/services';
 import {
+  addTemplates,
   fillSamples,
   fixedWords,
   LANGUAGES,
@@ -15,15 +16,19 @@ import {
   saveConnection,
   saveTemplate,
   sendTest,
+  type SubmitAllResult,
+  submitAllTemplates,
   submitTemplate,
+  switchTemplates,
   syncTemplates,
+  templateActions,
 } from '../../data/whatsapp';
 import { when } from '../../shared/format';
 import { EmptyState, ErrorState, makeStatusBadge, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { wt } from '../../strings/messaging';
-import { Dialog, DialogActions, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
+import { Dialog, FormError, SelectField, TextField, useAction, useSubmit } from '../components/Dialog';
 import { NeedBranch, Notice } from '../components/kit';
 import { useWorkspace } from '../Workspace';
 
@@ -180,12 +185,33 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
       el.setSelectionRange(at + token.length, at + token.length);
     });
   };
+  const store = () => saveTemplate(orgId, branchId, { event: event.key, ...f, body: f.body.trim(), name: f.name.trim() });
   const save = useSubmit(async () => {
     if (unknown.length) return;
-    await saveTemplate(orgId, branchId, { event: event.key, ...f, body: f.body.trim(), name: f.name.trim() });
+    await store();
     onSaved();
     onClose();
   });
+  // Save, then send to Meta in the same go. If Meta refuses, the dialog stays open with its message: the wording
+  // is saved by then, so pressing the button again only sends it.
+  const [savedOnly, setSavedOnly] = useState(false);
+  const saveAndSubmit = useSubmit(async () => {
+    if (unknown.length) return;
+    setSavedOnly(false);
+    await store();
+    try {
+      await submitTemplate(orgId, branchId, event.key);
+    } catch (e) {
+      setSavedOnly(true);
+      throw e;
+    } finally {
+      onSaved();
+    }
+    onClose();
+  });
+  const saving = save.busy || saveAndSubmit.busy;
+  // Meta limits changes to an approved template: it is sent again only when its wording, name or language changed.
+  const reworded = f.name.trim() !== initial.name || f.language !== initial.language || f.body.trim() !== initial.body;
   const run = (key: string, fn: () => Promise<string>, close = false) => {
     setDone(null);
     return action.run(async () => {
@@ -244,8 +270,21 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
           <SelectField label={wt.language} value={f.language} onChange={(language) => setF({ ...f, language })} options={LANGUAGES.map(([value, label]) => ({ value, label: `${label} (${value})` }))} />
         </div>
         <p className="muted small">{wt.changedNote}</p>
-        <FormError error={save.error} />
-        <DialogActions busy={save.busy} submitLabel={event.added ? t.save : wt.addThis} onCancel={onClose} />
+        {savedOnly && <Notice tone="warn">{wt.savedNotSubmitted}</Notice>}
+        <FormError error={save.error ?? saveAndSubmit.error} />
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-text" onClick={onClose} disabled={saving}>
+            {t.cancel}
+          </button>
+          {connected && (
+            <button type="button" className="btn btn-outlined" disabled={saving || (tpl.status === 'APPROVED' && !reworded)} onClick={() => void saveAndSubmit.submit()}>
+              {saveAndSubmit.busy ? t.saving : wt.saveAndSubmit}
+            </button>
+          )}
+          <button type="submit" className="btn btn-filled" disabled={saving}>
+            {save.busy ? t.saving : event.added ? t.save : wt.addThis}
+          </button>
+        </div>
       </form>
 
       {event.added && (
@@ -295,23 +334,72 @@ function TemplateDialog({ orgId, branchId, event, connected, onClose, onSaved }:
   );
 }
 
-/** Every notification the branch can add, grouped by kind of transaction. */
-function AddDialog({ events, onPick, onClose }: { events: MessageEvent[]; onPick: (e: MessageEvent) => void; onClose: () => void }) {
+/**
+ * Every notification the branch can add, grouped by kind of transaction: all of them or a whole group in one go
+ * (default wording, switched off), or one picked to word it first.
+ */
+function AddDialog({
+  orgId,
+  branchId,
+  events,
+  onPick,
+  onAdded,
+  onClose,
+}: {
+  orgId: string;
+  branchId: string;
+  events: MessageEvent[];
+  onPick: (e: MessageEvent) => void;
+  onAdded: (count: number) => void;
+  onClose: () => void;
+}) {
   const left = events.filter((e) => !e.added);
+  const action = useAction();
+  const busy = action.pending;
+  const addMany = (key: string, list: MessageEvent[]) =>
+    action.run(async () => {
+      const { added } = await addTemplates(orgId, branchId, list.map((e) => e.key));
+      onAdded(added.length);
+      onClose();
+    }, key);
   return (
     <Dialog title={wt.addTitle} onClose={onClose}>
       {left.length === 0 ? (
         <p className="muted">{wt.allAdded}</p>
       ) : (
+        <>
+          <p className="muted small">{wt.addIntro}</p>
+          {left.length > 1 && (
+            <button type="button" className="btn btn-filled" disabled={busy !== null} onClick={() => void addMany('all', left)}>
+              {busy === 'all' ? t.saving : wt.addAll(left.length)}
+            </button>
+          )}
+          {action.error && <Notice tone="error">{action.error}</Notice>}
+        </>
+      )}
+      {left.length > 0 &&
         GROUPS.filter((g) => left.some((e) => e.group === g)).map((g) => (
           <section key={g} className="wa-add-group" aria-label={wt.groups[g]}>
-            <h3>{wt.groups[g]}</h3>
+            <div className="page-header-row">
+              <h3>{wt.groups[g]}</h3>
+              {left.some((e) => e.group !== g) && (
+                <button
+                  type="button"
+                  className="btn btn-text"
+                  disabled={busy !== null}
+                  aria-label={`${wt.addThese}: ${wt.groups[g]}`}
+                  onClick={() => void addMany(g, left.filter((e) => e.group === g))}
+                >
+                  {busy === g ? t.saving : wt.addThese}
+                </button>
+              )}
+            </div>
             <ul className="wa-add-list">
               {left
                 .filter((e) => e.group === g)
                 .map((e) => (
                   <li key={e.key}>
-                    <button type="button" className="wa-add-item" onClick={() => onPick(e)}>
+                    <button type="button" className="wa-add-item" disabled={busy !== null} onClick={() => onPick(e)}>
                       <span className="wa-add-label">{e.label}</span>
                       <span className="muted small">
                         {wt.audience[e.audience]} · {e.when}
@@ -321,10 +409,9 @@ function AddDialog({ events, onPick, onClose }: { events: MessageEvent[]; onPick
                 ))}
             </ul>
           </section>
-        ))
-      )}
+        ))}
       <div className="dialog-actions">
-        <button type="button" className="btn btn-text" onClick={onClose}>
+        <button type="button" className="btn btn-text" onClick={onClose} disabled={busy !== null}>
           {t.cancel}
         </button>
       </div>
@@ -350,6 +437,26 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
   };
   const connected = !!data.settings;
   const added = data.events.filter((e) => e.added);
+  const { toSubmit, toSwitchOn } = templateActions(data.events);
+  // "Submit all to Meta": how far it is, and what Meta did not take.
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [failed, setFailed] = useState<SubmitAllResult['failed']>([]);
+  // Sending takes a while and writes each notification back as it was read: nothing may be added or edited meanwhile.
+  const sendingAll = busy === 'submitAll';
+  const submitAll = () => {
+    setDone(null);
+    setFailed([]);
+    return action.run(async () => {
+      try {
+        const r = await submitAllTemplates(orgId, branchId, (n, total) => setProgress({ done: n, total }));
+        setFailed(r.failed);
+        setDone(wt.submittedAll(r.sent.length, r.failed.length));
+      } finally {
+        setProgress(null);
+        onChanged();
+      }
+    }, 'submitAll');
+  };
   const toggle = (e: MessageEvent) =>
     run(`toggle-${e.key}`, async () => {
       const tpl = e.template;
@@ -376,13 +483,46 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
               {busy === 'sync' ? t.loading : wt.checkApprovals}
             </button>
           )}
-          <button type="button" className="btn btn-filled" onClick={() => setAdding(true)} disabled={added.length === data.events.length}>
+          {connected && (toSubmit.length > 0 || sendingAll) && (
+            <button type="button" className="btn btn-outlined" disabled={busy !== null} aria-busy={sendingAll} onClick={() => void submitAll()}>
+              {!sendingAll ? wt.submitAll(toSubmit.length) : progress ? wt.submittingAll(progress.done, progress.total) : wt.submitAllChecking}
+            </button>
+          )}
+          {toSwitchOn.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-outlined"
+              disabled={busy !== null}
+              onClick={() =>
+                void run('switchOn', async () => {
+                  setFailed([]);
+                  const r = await switchTemplates(orgId, branchId, toSwitchOn.map((e) => e.key), true);
+                  return wt.switchedOn(r.switched.length);
+                })
+              }
+            >
+              {busy === 'switchOn' ? t.saving : wt.switchOnApproved(toSwitchOn.length)}
+            </button>
+          )}
+          <button type="button" className="btn btn-filled" onClick={() => setAdding(true)} disabled={sendingAll || added.length === data.events.length}>
             {wt.add}
           </button>
         </div>
       </div>
       <p className="muted">{wt.messagesIntro}</p>
       {done && <Notice tone="ok">{done}</Notice>}
+      {failed.length > 0 && (
+        <div className="notice notice-warn" role="status">
+          {wt.submitFailed(failed.length)}
+          <ul>
+            {failed.map((f) => (
+              <li key={f.event}>
+                <strong>{f.label}:</strong> {f.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {action.error && <Notice tone="error">{action.error}</Notice>}
       {added.length === 0 ? (
         <p className="muted">{wt.noneAdded}</p>
@@ -392,7 +532,7 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
             const tpl = e.template;
             return (
               <li key={e.key} className="wa-row">
-                <button type="button" className="wa-row-main" onClick={() => setEditing(e)} aria-label={`${wt.edit}: ${e.label}`}>
+                <button type="button" className="wa-row-main" disabled={sendingAll} onClick={() => setEditing(e)} aria-label={`${wt.edit}: ${e.label}`}>
                   <span className="wa-row-label">{e.label}</span>
                   <span className="muted small">
                     {wt.audience[e.audience]} · {wt.groups[e.group]}
@@ -404,7 +544,7 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
                   <input type="checkbox" role="switch" checked={tpl.enabled} disabled={busy !== null} onChange={() => void toggle(e)} aria-label={`${wt.sendThis}: ${e.label}`} />
                   <span className="small">{tpl.enabled ? wt.on : wt.off_}</span>
                 </label>
-                <button type="button" className="btn btn-text" onClick={() => setEditing(e)}>
+                <button type="button" className="btn btn-text" disabled={sendingAll} onClick={() => setEditing(e)}>
                   {wt.editShort}
                 </button>
               </li>
@@ -414,11 +554,18 @@ function TemplatesCard({ orgId, branchId, data, onChanged }: { orgId: string; br
       )}
       {adding && (
         <AddDialog
+          orgId={orgId}
+          branchId={branchId}
           events={data.events}
           onClose={() => setAdding(false)}
           onPick={(e) => {
             setAdding(false);
             setEditing(e);
+          }}
+          onAdded={(count) => {
+            setFailed([]);
+            setDone(wt.addedMany(count));
+            onChanged();
           }}
         />
       )}
@@ -479,13 +626,23 @@ function LogCard({ orgId, branchId, events }: { orgId: string; branchId: string;
 }
 
 function BranchWhatsApp({ orgId, branchId }: { orgId: string; branchId: string }) {
+  const { reloadBranches } = useWorkspace();
   const data = useAsync(() => loadOverview(orgId, branchId), [orgId, branchId]);
   if (data.loading && !data.data) return <SkeletonRows rows={6} />;
   if (data.error) return <ErrorState message={data.error} onRetry={data.reload} />;
   if (!data.data) return <EmptyState icon="tune" title={wt.nav} message="" />;
   return (
     <>
-      <ConnectionCard orgId={orgId} branchId={branchId} data={data.data} onSaved={data.reload} />
+      <ConnectionCard
+        orgId={orgId}
+        branchId={branchId}
+        data={data.data}
+        onSaved={() => {
+          data.reload();
+          // The connection is kept on the branch itself: the copy the console holds (the menu reads it) is read again.
+          reloadBranches();
+        }}
+      />
       <TemplatesCard orgId={orgId} branchId={branchId} data={data.data} onChanged={data.reload} />
       {data.data.settings && <LogCard orgId={orgId} branchId={branchId} events={data.data.events} />}
     </>

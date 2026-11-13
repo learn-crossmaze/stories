@@ -10,12 +10,13 @@ import { accrueLeave, approvedLeaveIn, available, balancesFor, daysLabel, listLe
 import type { Permission } from '../../generated/rbac';
 import { paths } from '../../paths';
 import { EmptyState, ErrorState, NoOrgState, SkeletonRows, TableWrap } from '../../shared/ui';
-import { useAsync } from '../../shared/useAsync';
+import { type AsyncState, useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { ht } from '../../strings/hr';
 import { Dialog, DialogActions, FormError, TextField, useSubmit } from '../components/Dialog';
 import { Notice, Tabs } from '../components/kit';
 import { useWorkspace } from '../Workspace';
+import { DecideButtons, DecisionNotices, useHidden, useTicks } from './decisions';
 import { AdjustBalanceDialog, ApplyLeaveDialog, CancelLeaveDialog, RequestTable, useLeaveDecision } from './leaveKit';
 
 type Tab = 'requests' | 'away' | 'balances';
@@ -28,39 +29,55 @@ function usePermFor(orgId: string, scope: Scope) {
   return (p: Permission, branchId: string | null) => (branchId ? can(claims, p, orgId, branchId) : can(claims, p, orgId) && scope === 'ALL');
 }
 
-function RequestsView({ orgId, scope, onChanged }: { orgId: string; scope: Scope; onChanged: () => void }) {
+type PendingList = AsyncState<LeaveRequest[]>;
+
+/** Leave waiting for a decision. The page owns the list (it also counts it for the tab) and the decisions. */
+function RequestsView({ orgId, scope, list, rows, decision }: { orgId: string; scope: Scope; list: PendingList; rows: LeaveRequest[]; decision: ReturnType<typeof useLeaveDecision> }) {
   const { user } = useAuth();
   const { branchName } = useWorkspace();
   const permFor = usePermFor(orgId, scope);
-  const list = useAsync(() => pendingLeave(orgId, scope), [orgId, JSON.stringify(scope)]);
-  const decision = useLeaveDecision(orgId, () => {
-    list.reload();
-    onChanged();
-  });
+  // A convenience only: the server decides who may approve what (never your own leave).
+  const mayDecide = (r: LeaveRequest) => r.employeeUid !== user?.uid && permFor('leave.approve', r.branchId);
+  const ticks = useTicks(rows.filter(mayDecide));
   if (list.loading) return <SkeletonRows />;
-  if (list.error) return <ErrorState message={list.error} onRetry={list.reload} />;
-  if (!list.data?.length) return <EmptyState icon="check" title={ht.pendingLeaveEmpty} message="" />;
+  if (list.error && !list.data) return <ErrorState message={list.error} onRetry={list.reload} />;
+  const sending = ticks.chosen.length > 0 && ticks.chosen.every((r) => decision.busy(r.id));
   return (
     <>
-      <FormError error={decision.error} />
-      <RequestTable
-        requests={list.data}
-        empty={ht.pendingLeaveEmpty}
-        who={(r) => (r.branchId ? branchName(r.branchId) : ht.headOffice)}
-        actions={(r) =>
-          r.employeeUid !== user?.uid &&
-          permFor('leave.approve', r.branchId) && (
-            <>
-              <button type="button" className="btn btn-text" onClick={() => void decision.approve(r)} aria-label={ht.approveLeave(r.employeeName)}>
-                {ht.approve}
+      {list.error && <Notice tone="error">{list.error}</Notice>}
+      <DecisionNotices decision={decision} rows={rows} name={(r) => `${r.employeeName}, ${ht.leaveDates(r.from, r.to)}`} />
+      {!rows.length ? (
+        <EmptyState icon="check" title={ht.pendingLeaveEmpty} message="" />
+      ) : (
+        <>
+          {rows.some(mayDecide) && (
+            <div className="toolbar">
+              <button type="button" className="btn btn-filled" disabled={!ticks.chosen.length || sending} onClick={() => void decision.approveMany(ticks.chosen)}>
+                {sending ? t.saving : ht.approveSelected(ticks.chosen.length)}
               </button>
-              <button type="button" className="btn btn-text" onClick={() => decision.reject(r)} aria-label={ht.rejectLeave(r.employeeName)}>
-                {ht.reject}
-              </button>
-            </>
-          )
-        }
-      />
+            </div>
+          )}
+          <RequestTable
+            requests={rows}
+            empty={ht.pendingLeaveEmpty}
+            who={(r) => (r.branchId ? branchName(r.branchId) : ht.headOffice)}
+            select={rows.some(mayDecide) ? { can: mayDecide, ...ticks } : undefined}
+            busy={decision.busy}
+            problem={(r) => decision.failed[r.id]}
+            actions={(r) =>
+              mayDecide(r) && (
+                <DecideButtons
+                  busy={decision.busy(r.id)}
+                  onApprove={() => void decision.approve(r)}
+                  onReject={() => decision.reject(r)}
+                  approveLabel={ht.approveLeave(r.employeeName)}
+                  rejectLabel={ht.rejectLeave(r.employeeName)}
+                />
+              )
+            }
+          />
+        </>
+      )}
       {decision.dialog}
     </>
   );
@@ -131,7 +148,7 @@ function AccrualDialog({ orgId, onClose, onDone }: { orgId: string; onClose: () 
   );
 }
 
-function BalancesView({ orgId, scope }: { orgId: string; scope: Scope }) {
+function BalancesView({ orgId, scope, onRecorded }: { orgId: string; scope: Scope; onRecorded: () => void }) {
   const { claims, user } = useAuth();
   const permFor = usePermFor(orgId, scope);
   const [year, setYear] = useState(todayIST().slice(0, 4));
@@ -237,9 +254,11 @@ function BalancesView({ orgId, scope }: { orgId: string; scope: Scope }) {
           balance={data.data.balances.get(recording.id) ?? null}
           employee={recording}
           onClose={() => setRecording(null)}
-          onDone={(days) => {
-            setNotice(ht.leaveApplied(daysLabel(days)));
+          onDone={(days, approved) => {
+            setNotice(approved ? ht.leaveRecordedApproved(daysLabel(days)) : ht.leaveApplied(daysLabel(days)));
             data.reload();
+            // Recorded without approval: one more request waits under Requests.
+            if (!approved) onRecorded();
           }}
         />
       )}
@@ -252,8 +271,17 @@ export function LeavePage() {
   const { org } = useWorkspace();
   const scope = org ? branchScope(claims, org.id) : 'ALL';
   const [tab, setTab] = useState<Tab>('requests');
-  const counts = useAsync(() => (org ? pendingLeave(org.id, scope) : Promise.resolve([])), [org?.id, JSON.stringify(scope)]);
+  // One read of what waits, for the tab's count and for the Requests tab.
+  const list = useAsync(() => (org ? pendingLeave(org.id, scope) : Promise.resolve([])), [org?.id, JSON.stringify(scope)]);
+  // A decided request leaves the list at once; the list is read again once nothing is on its way.
+  const { shown, hide } = useHidden(list.data);
+  const decision = useLeaveDecision(org?.id ?? '', (r) => hide(r.id), list.reload);
   if (!org) return <NoOrgState />;
+  const pick = (next: Tab) => {
+    // Coming back to the requests: someone may have applied meanwhile.
+    if (next === 'requests' && tab !== 'requests' && !decision.working) list.reload();
+    setTab(next);
+  };
   return (
     <>
       <header className="page-header">
@@ -262,16 +290,16 @@ export function LeavePage() {
       </header>
       <Tabs
         value={tab}
-        onChange={setTab}
+        onChange={pick}
         tabs={[
-          { value: 'requests' as const, label: ht.tabRequests, count: counts.data?.filter((r) => r.employeeUid !== user?.uid).length },
+          { value: 'requests' as const, label: ht.tabRequests, count: list.loading ? undefined : shown?.filter((r) => r.employeeUid !== user?.uid).length },
           { value: 'away' as const, label: ht.tabAway },
           { value: 'balances' as const, label: ht.tabBalances },
         ]}
       />
-      {tab === 'requests' && <RequestsView orgId={org.id} scope={scope} onChanged={counts.reload} />}
+      {tab === 'requests' && <RequestsView orgId={org.id} scope={scope} list={list} rows={shown ?? []} decision={decision} />}
       {tab === 'away' && <AwayView orgId={org.id} scope={scope} />}
-      {tab === 'balances' && <BalancesView orgId={org.id} scope={scope} />}
+      {tab === 'balances' && <BalancesView orgId={org.id} scope={scope} onRecorded={list.reload} />}
     </>
   );
 }

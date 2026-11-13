@@ -159,7 +159,8 @@ export interface Pending {
   canPublish: boolean;
 }
 export interface Overview {
-  counts: { newSubmissions: number | null; callsThisWeek: number | null; openJobs: number | null };
+  /** `alertRecipients`: how many people are on the enquiry alerts list (Connections); null unless a website manager. */
+  counts: { newSubmissions: number | null; callsThisWeek: number | null; openJobs: number | null; alertRecipients: number | null };
   rights: Rights;
   pending: Pending[];
   reviews: { id: string; title: string; by: string; at: string | null }[];
@@ -208,25 +209,89 @@ export interface Item<D> {
   canDelete: boolean;
 }
 
-export const siteOverview = () => call<Overview>('site-overview', {});
+/**
+ * How a saved item stands and what the person may do with it: what the bar at the top of an editor shows. Saving,
+ * publishing, taking down and asking for a review all answer with it, so the editor never reads the item again.
+ */
+export type ItemView = Pick<
+  Item<unknown>,
+  'id' | 'status' | 'isLive' | 'changed' | 'liveSlug' | 'liveOn' | 'previewToken' | 'review' | 'updatedAt' | 'updatedBy' | 'publishedAt' | 'publishedBy' | 'canPublish' | 'canDelete'
+> & { exists: true };
+/** What publishing did: put it on the website, took it off (a hidden draft), or nothing (hidden and never on it). */
+export type PublishResult = 'publish' | 'unpublish' | 'none';
+
+// ------------------------------------------------------------------ the overview, read once and shared
+
+/** Sent on `window` after anything in the Website section was saved, published, deleted or followed up. */
+export const SITE_CHANGED = 'stories:site-changed';
+/** How long one read of the overview serves everyone who asks (the menu, the Publish button, the Website dashboard). */
+const OVERVIEW_FRESH_MS = 30_000;
+let overview: { uid: string; at: number; promise: Promise<Overview> } | null = null;
+
+/**
+ * The Website overview: what waits to be published or reviewed, new enquiries, what the person may do. The menu's
+ * counts, the top bar's Publish button and the Website dashboard all need it, so with `uid` (the signed-in
+ * person's) they share one request: a read under way or under 30 seconds old is reused, never another person's,
+ * and never a failed one. Without `uid` it is a plain read, shared with nobody.
+ */
+export function siteOverview(uid?: string | null): Promise<Overview> {
+  if (!uid) return call<Overview>('site-overview', {});
+  if (overview && overview.uid === uid && Date.now() - overview.at < OVERVIEW_FRESH_MS) return overview.promise;
+  const promise = call<Overview>('site-overview', {});
+  const entry = { uid, at: Date.now(), promise };
+  overview = entry;
+  // A failure is not kept: "Try again" and the next caller read afresh.
+  promise.catch(() => {
+    if (overview === entry) overview = null;
+  });
+  return promise;
+}
+
+/**
+ * Forgets the shared overview (a read still under way included, so what it started with is never served later),
+ * then tells whoever shows it to read again. Every change below calls it; nothing else needs to.
+ */
+export function invalidateSiteOverview(): void {
+  overview = null;
+  window.dispatchEvent(new Event(SITE_CHANGED));
+}
+
+/** Calls `onChange` whenever the Website section changed (see `invalidateSiteOverview`); returns how to stop. */
+export function onSiteOverviewChange(onChange: () => void): () => void {
+  window.addEventListener(SITE_CHANGED, onChange);
+  return () => window.removeEventListener(SITE_CHANGED, onChange);
+}
+
+/** A change to the Website section: whether it worked or not (a failed one may still have happened), the overview is stale. */
+const changing = <R>(change: Promise<R>): Promise<R> => change.finally(invalidateSiteOverview);
+
 export const listSite = (kind: ListKind) => call<{ items: ListItem[] }>('site-list', { kind }).then((r) => r.items);
 export const getSite = <D>(kind: Kind, id?: string, orgId?: string) => call<Item<D>>('site-get', { kind, ...(id ? { id } : {}), ...(orgId ? { orgId } : {}) });
 
-export const saveSite = (kind: Kind, draft: object, id?: string, orgId?: string) =>
-  command<{ id: string; changed: boolean }>('site-save', { kind, draft, ...(id ? { id } : {}), ...(orgId ? { orgId } : {}) });
-export const publishSite = (kind: Kind, id?: string) => command<{ id: string; result: 'publish' | 'unpublish' | 'none' }>('site-publish', { kind, ...(id ? { id } : {}) });
-export const unpublishSite = (kind: ListKind, id: string) => command('site-unpublish', { kind, id });
-export const discardSite = (kind: Kind, id?: string) => command('site-discard', { kind, ...(id ? { id } : {}) });
-export const deleteSite = (kind: Exclude<ListKind, 'branch'>, id: string) => command('site-delete', { kind, id });
-export const requestReview = (id: string, note = '') => command('site-requestReview', { id, note });
-export const publishAll = () => command<{ published: { kind: Kind; id: string; result: string }[]; blocked: { title: string; reason: string }[] }>('site-publishAll', {});
+/**
+ * Saves a draft. With `publish` the saved draft also goes on the website in the same request ("Save and publish":
+ * `result` says what happened); if it can't be published, nothing is saved either.
+ */
+export const saveSite = (kind: Kind, draft: object, id?: string, orgId?: string, publish = false) =>
+  changing(command<ItemView & { result?: PublishResult }>('site-save', { kind, draft, ...(id ? { id } : {}), ...(orgId ? { orgId } : {}), ...(publish ? { publish: true } : {}) }));
+export const publishSite = (kind: Kind, id?: string) => changing(command<ItemView & { result: PublishResult }>('site-publish', { kind, ...(id ? { id } : {}) }));
+export const unpublishSite = (kind: ListKind, id: string) => changing(command<ItemView & { result: PublishResult }>('site-unpublish', { kind, id }));
+export const discardSite = (kind: Kind, id?: string) => changing(command('site-discard', { kind, ...(id ? { id } : {}) }));
+export const deleteSite = (kind: Exclude<ListKind, 'branch'>, id: string) => changing(command('site-delete', { kind, id }));
+export const requestReview = (id: string, note = '') => changing(command<ItemView>('site-requestReview', { id, note }));
+export const publishAll = () =>
+  changing(command<{ published: { kind: Kind; id: string; result: string }[]; blocked: { title: string; reason: string }[] }>('site-publishAll', {}));
 
 /** Longest side of a picture for the website: sharp on large screens, small enough for phones. */
 const MAX_SIDE = 1800;
-/** Shrinks a photo and stores it for the website; returns its address. */
+/**
+ * Shrinks a photo and stores it for the website; returns its address. A dropped connection is tried again as the
+ * same request (the server names the file after it, so a retry writes the same file, never a second one).
+ */
 export async function uploadSiteImage(file: File): Promise<string> {
   const image = await shrinkToJpeg(file, MAX_SIDE);
-  const { url } = await call<{ url: string }>('site-uploadImage', { image, requestId: crypto.randomUUID() });
+  // The id is given here so that `command` never builds its own key from the picture's bytes.
+  const { url } = await command<{ url: string }>('site-uploadImage', { image }, crypto.randomUUID());
   return url;
 }
 
@@ -273,9 +338,14 @@ export interface Submission {
   note?: string;
   createdAt: string | null;
 }
-export const listSubmissions = () => call<{ items: Submission[] }>('site-submissions', {}).then((r) => r.items);
-export const markHandled = (id: string, handled: boolean, note = '') => command('site-markHandled', { id, handled, note });
-export const deleteSubmission = (id: string) => command('site-deleteSubmission', { id });
+/** Enquiries, newest first: with `open`, only those still to follow up; otherwise the newest 500, handled or not. */
+export const listSubmissions = (open: boolean) => call<{ items: Submission[] }>('site-submissions', { open }).then((r) => r.items);
+/** One enquiry (the page a notification opens). */
+export const getSubmission = (id: string) => call<Submission>('site-submission', { id });
+/** Marks an enquiry as followed up (or not). Without `note` its note stays as it is; with one (even empty) it is replaced. */
+export const markHandled = (id: string, handled: boolean, note?: string) =>
+  changing(command('site-markHandled', { id, handled, ...(note === undefined ? {} : { note }) }));
+export const deleteSubmission = (id: string) => changing(command('site-deleteSubmission', { id }));
 /** Downloads an applicant's CV (it is never public). */
 export async function downloadResume(id: string) {
   const f = await call<{ name: string; type: string; data: string }>('site-resume', { id });

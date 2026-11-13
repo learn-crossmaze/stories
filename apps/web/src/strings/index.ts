@@ -395,6 +395,12 @@ export const t = {
   auditActor: 'By',
   auditDetails: 'Details',
   auditSystem: 'System (automatic)',
+  auditMyBranches: 'All my branches',
+  auditNoMatch: 'Nothing recorded for this choice.',
+  auditOnlyThis: 'Show only this record',
+  auditOneRecord: 'Showing changes to one record:',
+  auditOneRecordHint: 'These are the changes saved against this record itself. A member’s loans and payments are on the member’s page, under History.',
+  auditShowAll: 'Show all records',
   loadMore: 'Load more',
 
   setupTitle: 'Set up administration',

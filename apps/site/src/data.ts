@@ -110,9 +110,13 @@ export interface PublicSnapshot {
 
 let pending: Promise<PublicSnapshot> | null = null;
 
-/** Fetches the snapshot once per page view (the CDN caches it for 15 minutes). */
+/**
+ * Fetches the snapshot once per page view (the CDN caches it for 5 minutes). Every page's head preloads it
+ * (partials/head.html), so the request is already under way when this runs: it must stay a plain GET with no
+ * headers or options, or the browser would not reuse the preloaded answer and would fetch it again.
+ */
 export function loadSnapshot(fetcher: typeof fetch = fetch): Promise<PublicSnapshot> {
-  pending ??= fetcher('/api/public', { headers: { Accept: 'application/json' } }).then(async (res) => {
+  pending ??= fetcher('/api/public').then(async (res) => {
     if (!res.ok) throw new Error(`/api/public answered ${res.status}`);
     return (await res.json()) as PublicSnapshot;
   });

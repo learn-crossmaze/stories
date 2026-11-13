@@ -6,6 +6,8 @@ export const routes = {
   'whatsapp-overview': settings.overview,
   'whatsapp-saveConnection': settings.saveConnection,
   'whatsapp-saveTemplate': settings.saveTemplate,
+  'whatsapp-addTemplates': settings.addTemplates,
+  'whatsapp-switchTemplates': settings.switchTemplates,
   'whatsapp-removeTemplate': settings.removeTemplate,
   'whatsapp-submitTemplate': settings.submitTemplate,
   'whatsapp-syncTemplates': settings.syncTemplates,

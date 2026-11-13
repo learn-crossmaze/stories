@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { errorText } from '../../data/api';
-import { publishAll, SITE_URL, siteOverview, type Kind, type Pending } from '../../data/site';
+import { onSiteOverviewChange, publishAll, SITE_URL, siteOverview, type Kind, type Pending } from '../../data/site';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { EmptyState, ErrorState, Icon, SkeletonRows, TableWrap } from '../../shared/ui';
@@ -22,8 +22,22 @@ export function editPath(kind: Kind, id: string, orgId?: string | null) {
   return paths.adminWebsiteSettings;
 }
 
+/**
+ * The Website overview, from the read the menu, the top bar and the dashboard share (data/site.ts): one request
+ * serves them all for 30 seconds, and it is read again as soon as anything in the Website section changes.
+ * `deps`: when else to ask again (a fresh enough answer is reused, so asking is cheap).
+ */
+export function useSiteOverview(deps: unknown[]) {
+  const { user } = useAuth();
+  const uid = user?.uid;
+  const data = useAsync(() => siteOverview(uid), [uid, ...deps]);
+  const { reload } = data;
+  useEffect(() => onSiteOverviewChange(reload), [reload]);
+  return data;
+}
+
 /** Publishes every saved change the person may publish: the Dashboard's card and the top bar's button. */
-export function usePublishAll(onDone?: () => void) {
+export function usePublishAll() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const run = async () => {
@@ -32,7 +46,6 @@ export function usePublishAll(onDone?: () => void) {
     try {
       const r = await publishAll();
       setMessage({ tone: r.blocked.length ? 'error' : 'ok', text: [st.publishedCount(r.published.length), ...r.blocked.map((b) => `${b.title}: ${b.reason}`)].join(' ') });
-      onDone?.();
     } catch (e) {
       setMessage({ tone: 'error', text: errorText(e) });
     } finally {
@@ -45,9 +58,10 @@ export function usePublishAll(onDone?: () => void) {
 /** The top bar's Publish button (as on crossmaze.in): how many saved changes wait, and publishing them all. */
 export function PublishButton() {
   const { pathname } = useLocation();
-  const data = useAsync(siteOverview, [pathname]);
+  // Asked again on every page of the section, so other people's changes show too (within the shared read's 30 seconds).
+  const data = useSiteOverview([pathname]);
   const waiting = (data.data?.pending ?? []).filter((p) => p.canPublish).length;
-  const { busy, message, run } = usePublishAll(data.reload);
+  const { busy, message, run } = usePublishAll();
   if (!data.data) return null;
   return (
     <div className="publish-top">
@@ -65,8 +79,8 @@ export function PublishButton() {
  */
 export function WebsiteOverviewPage() {
   const { user } = useAuth();
-  const data = useAsync(siteOverview, []);
-  const publish = usePublishAll(() => data.reload());
+  const data = useSiteOverview([]);
+  const publish = usePublishAll();
   const o = data.data;
   const m = !!o?.rights.manager;
   const branchy = !!o && (m || o.rights.branches.length > 0);

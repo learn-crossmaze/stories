@@ -58,7 +58,17 @@ export function EmployeeAttendancePanel({ orgId, employee, canManage, onChanged 
           <MonthRecords records={records.data ?? []} onAdjust={canManage && !self ? setAdjusting : undefined} />
         )}
       </section>
-      {adjusting && <AdjustDialog orgId={orgId} employee={employee} date={adjusting.date} record={adjusting} onClose={() => setAdjusting(null)} onDone={records.reload} />}
+      {adjusting && (
+        <AdjustDialog
+          orgId={orgId}
+          employee={employee}
+          date={adjusting.date}
+          record={adjusting}
+          shift={shifts.data?.find((s) => s.id === employee.shiftId) ?? null}
+          onClose={() => setAdjusting(null)}
+          onDone={records.reload}
+        />
+      )}
       {editingShift && (
         <ShiftDialog orgId={orgId} employee={employee} shifts={shifts.data ?? []} onClose={() => setEditingShift(false)} onDone={onChanged} />
       )}

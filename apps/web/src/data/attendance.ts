@@ -129,6 +129,9 @@ export async function employeeMonth(orgId: string, employeeId: string, month: st
   return snap.docs.map((d) => toRecord(d.id, d.data())).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** The signed-in person's own month: found by their account, so it does not wait for their employee record. */
+export const myMonth = (orgId: string, uid: string, month: string) => employeeMonth(orgId, '', month, { ownUid: uid });
+
 /**
  * The signed-in person's own record for one day, or null before anything is recorded for it. A query, not a
  * read by id: the rules prove it is their own from the `employeeUid` filter (and a read by id of a day with no

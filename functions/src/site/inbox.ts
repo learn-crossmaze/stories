@@ -203,27 +203,51 @@ async function submissionRights(uid: string, actor: Parameters<typeof rightsOf>[
   return { r, sees: (s: { orgId?: string | null; branchId?: string | null }) => !!r.manager || (!!s.orgId && !!s.branchId && canEditBranch(r, s.orgId, s.branchId)), uid };
 }
 
-/** Enquiries, newest first: website managers see all, branch managers their branches'. */
-export const submissions = query('site-submissions', z.strictObject({ limit: z.number().int().min(1).max(2000).default(500) }), async ({ actor, input }) => {
+/** An enquiry as the console gets it: dates as text, and of the CV only its name (never where it is stored). */
+const submissionRow = (s: Record<string, unknown> & { id: string }) => ({
+  ...s,
+  createdAt: iso(s.createdAt as Timestamp),
+  handledAt: iso(s.handledAt as Timestamp | undefined),
+  resume: s.resume ? { name: (s.resume as { name: string }).name } : null,
+});
+
+/**
+ * Enquiries, newest first: website managers see all, branch managers their branches'. With `open`, only those
+ * still to follow up: the same single-field query the menu's count uses (so the two agree, and no composite index
+ * is needed), sorted here. Beyond `limit` unhandled enquiries it holds an arbitrary `limit` of them, as the count does.
+ */
+export const submissions = query('site-submissions', z.strictObject({ limit: z.number().int().min(1).max(2000).default(500), open: z.boolean().default(false) }), async ({ actor, input }) => {
   const { sees } = await submissionRights(actor.uid, actor);
-  const snap = await db.collection('siteSubmissions').orderBy('createdAt', 'desc').limit(input.limit).get();
+  const all = db.collection('siteSubmissions');
+  const snap = await (input.open ? all.where('handled', '==', false) : all.orderBy('createdAt', 'desc')).limit(input.limit).get();
+  const millis = (d: (typeof snap.docs)[number]) => (d.get('createdAt') as Timestamp | undefined)?.toMillis() ?? 0;
+  const docs = input.open ? [...snap.docs].sort((a, b) => millis(b) - millis(a)) : snap.docs;
   return {
-    items: snap.docs
+    items: docs
       .map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as Record<string, unknown> & { id: string })
       .filter((s) => sees(s as { orgId?: string; branchId?: string }))
-      .map((s) => ({ ...s, createdAt: iso(s.createdAt as Timestamp), handledAt: iso(s.handledAt as Timestamp | undefined), resume: s.resume ? { name: (s.resume as { name: string }).name } : null })),
+      .map(submissionRow),
   };
 });
 
-/** Marks an enquiry as followed up (or not). */
-export const markHandled = command('site-markHandled', z.strictObject({ id, handled: z.boolean(), note: z.string().trim().max(500).default('') }), async ({ actor, input, requestId }, tx) => {
+/** One enquiry (the page a notification opens). Someone else's branch's enquiry reads as not found. */
+export const submissionOne = query('site-submission', z.strictObject({ id }), async ({ actor, input }) => {
+  const { sees } = await submissionRights(actor.uid, actor);
+  const snap = await db.doc(`siteSubmissions/${input.id}`).get();
+  const s = snap.data() as (Record<string, unknown> & { orgId?: string; branchId?: string }) | undefined;
+  if (!s || !sees(s)) throw errors.notFound('Submission');
+  return submissionRow({ ...s, id: snap.id });
+});
+
+/** Marks an enquiry as followed up (or not). The note changes only when one is sent (the list's button sends none). */
+export const markHandled = command('site-markHandled', z.strictObject({ id, handled: z.boolean(), note: z.string().trim().max(500).optional() }), async ({ actor, input, requestId }, tx) => {
   const r = await rightsOf(actor, tx);
   const ref = db.doc(`siteSubmissions/${input.id}`);
   const snap = await tx.get(ref);
   if (!snap.exists) throw errors.notFound('Submission');
   const s = snap.data() as { orgId?: string; branchId?: string };
   if (!r.manager && !(s.orgId && s.branchId && canEditBranch(r, s.orgId, s.branchId))) throw errors.forbidden();
-  tx.update(ref, { handled: input.handled, handledBy: input.handled ? { uid: actor.uid, name: actor.profile?.displayName || actor.email || 'Staff' } : null, handledAt: input.handled ? FieldValue.serverTimestamp() : null, note: input.note });
+  tx.update(ref, { handled: input.handled, handledBy: input.handled ? { uid: actor.uid, name: actor.profile?.displayName || actor.email || 'Staff' } : null, handledAt: input.handled ? FieldValue.serverTimestamp() : null, ...(input.note === undefined ? {} : { note: input.note }) });
   recordAudit(tx, { actorUid: actor.uid, actorEmail: actor.email, requestId }, s.orgId ?? r.manager?.orgId ?? null, { action: `site.submission.${input.handled ? 'handled' : 'reopened'}`, entityType: 'siteSubmission', entityId: input.id, branchId: s.branchId ?? null });
   return { id: input.id };
 });
@@ -354,28 +378,35 @@ export const admins = query('site-admins', z.strictObject({}), async ({ actor })
   };
 });
 
-/** For the dashboard and the menu: enquiries waiting (website managers: all; branch managers: their branches'), taps this week. */
+/**
+ * For the dashboard and the menu: enquiries waiting (website managers: all; branch managers: their branches'), taps
+ * this week, and, for website managers, how many people are on the enquiry alerts list (Connections): none means
+ * nobody at head office hears about a new enquiry.
+ */
 export async function inboxCounts(r: Awaited<ReturnType<typeof rightsOf>>) {
   if (!r.manager) {
     const branchRoles = r.memberships.filter((m) => holds(m, 'website.branch'));
-    if (!branchRoles.length) return { newSubmissions: null, callsThisWeek: null, openJobs: null };
+    if (!branchRoles.length) return { newSubmissions: null, callsThisWeek: null, openJobs: null, alertRecipients: null };
     const open = await db.collection('siteSubmissions').where('handled', '==', false).limit(500).get();
     const mine = open.docs.filter((d) => {
       const s = d.data() as { orgId?: string; branchId?: string };
       return !!s.orgId && !!s.branchId && canEditBranch(r, s.orgId, s.branchId);
     });
-    return { newSubmissions: mine.length, callsThisWeek: null, openJobs: null };
+    return { newSubmissions: mine.length, callsThisWeek: null, openJobs: null, alertRecipients: null };
   }
-  const [subs, taps, jobs] = await Promise.all([
+  const [subs, taps, jobs, conn] = await Promise.all([
     db.collection('siteSubmissions').where('handled', '==', false).count().get(),
     db.collection('siteCalls').where('createdAt', '>=', Timestamp.fromMillis(Date.now() - 7 * 86_400_000)).count().get(),
     db.collection('siteJobs').where('isLive', '==', true).count().get(),
+    db.doc('siteContent/connections').get(),
   ]);
-  return { newSubmissions: subs.data().count, callsThisWeek: taps.data().count, openJobs: jobs.data().count };
+  const alerts = conn.get('alerts') as unknown[] | undefined;
+  return { newSubmissions: subs.data().count, callsThisWeek: taps.data().count, openJobs: jobs.data().count, alertRecipients: Array.isArray(alerts) ? alerts.length : 0 };
 }
 
 export const routes = {
   'site-submissions': submissions,
+  'site-submission': submissionOne,
   'site-markHandled': markHandled,
   'site-deleteSubmission': deleteSubmission,
   'site-resume': resumeFile,

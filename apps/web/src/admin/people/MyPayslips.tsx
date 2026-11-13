@@ -1,7 +1,7 @@
 // A staff member's own payslips (account menu → My payslips).
 import { useAuth } from '../../auth/AuthContext';
 import { myEmployee } from '../../data/hr';
-import { employeePayslips } from '../../data/payroll';
+import { myPayslips } from '../../data/payroll';
 import { EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
@@ -14,8 +14,9 @@ export function MyPayslipsPage() {
   const { org } = useWorkspace();
   const data = useAsync(async () => {
     if (!org || !user) return null;
-    const me = await myEmployee(org.id, user.uid);
-    return me ? { me, slips: await employeePayslips(org.id, me.id, { ownUid: user.uid }) } : { me: null, slips: [] };
+    // Own payslips are found by the account, so both reads start together.
+    const [me, slips] = await Promise.all([myEmployee(org.id, user.uid), myPayslips(org.id, user.uid)]);
+    return { me, slips: me ? slips : [] };
   }, [org?.id, user?.uid]);
   if (!org) return <NoOrgState />;
   return (

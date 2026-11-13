@@ -1,13 +1,12 @@
-import { useMemo } from 'react';
 import { Link, useParams } from 'react-router';
 
-import { AMENITIES, type BranchDraft, discardSite, getSite, type Librarian, listSite, liveUrl, previewUrl, publishSite, saveSite, todayInIndia, unpublishSite } from '../../data/site';
+import { AMENITIES, type BranchDraft, type Librarian, listSite, liveUrl, previewUrl, todayInIndia } from '../../data/site';
 import { paths } from '../../paths';
 import { useAsync } from '../../shared/useAsync';
 import { EmptyState, ErrorState, SkeletonRows, TableWrap } from '../../shared/ui';
 import { TextArea, TextField } from '../../shared/fields';
 import { st } from '../../strings/site';
-import { BookPicker, ImageField, ImagesField, ListEditor, PublishBar, RichField, savedLine, SiteStatusBadge, useEditor, WordsField } from './kit';
+import { BookPicker, ImageField, ImagesField, ListEditor, PublishBar, RichField, savedLine, SiteStatusBadge, useSiteItem, WordsField } from './kit';
 
 /** Every branch the caller may edit, with how its page stands. */
 export function BranchPagesPage() {
@@ -61,18 +60,11 @@ const blankLibrarian = (): Librarian => ({ name: '', title: 'Head librarian', ph
 
 export function BranchPageEditorPage() {
   const { orgId = '', branchId = '' } = useParams();
-  const item = useAsync(() => getSite<BranchDraft>('branch', branchId, orgId), [orgId, branchId]);
-  const initial = useMemo(() => item.data?.draft ?? null, [item.data]);
-  const e = useEditor<BranchDraft>(initial);
+  const item = useSiteItem<BranchDraft>({ kind: 'branch', id: branchId, orgId });
+  const { e, info } = item;
   const d = e.draft;
   if (item.loading) return <SkeletonRows />;
-  if (item.error || !item.data || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
-  const info = item.data;
-  const save = async () => {
-    await saveSite('branch', d, branchId, orgId);
-    e.setDirty(false);
-    item.reload();
-  };
+  if (item.error || !info || !d) return <ErrorState message={item.error ?? st.notFound} onRetry={item.reload} />;
   const lib = d.librarian;
   const setLib = (patch: Partial<Librarian>) => e.update({ librarian: { ...(lib ?? blankLibrarian()), ...patch } });
   const today = todayInIndia();
@@ -89,14 +81,11 @@ export function BranchPageEditorPage() {
       <PublishBar
         kind="branch"
         message={e.message}
-        state={{
-          status: info.status, dirty: e.dirty, busy: e.busy, canPublish: info.canPublish, isLive: info.isLive, changed: info.changed || !info.exists,
-          liveUrl: liveUrl('branch', info.liveSlug), previewUrl: previewUrl('branch', info.id, info.previewToken), updated: savedLine(info.updatedBy, info.updatedAt),
-        }}
-        onSave={() => void e.run('save', save, st.saved)}
-        onPublish={() => void e.run('publish', async () => { if (e.dirty || !info.exists) await save(); await publishSite('branch', branchId); item.reload(); }, d.hidden ? st.takenDown : st.published)}
-        onUnpublish={() => void e.run('unpublish', async () => { await unpublishSite('branch', branchId); item.reload(); }, st.takenDown)}
-        onDiscard={() => void e.run('discard', async () => { await discardSite('branch', branchId); item.reload(); }, st.discarded)}
+        state={{ ...item.state, liveUrl: liveUrl('branch', info.liveSlug), previewUrl: previewUrl('branch', info.id, info.previewToken) }}
+        onSave={item.save}
+        onPublish={() => item.publish(d.hidden ? st.takenDown : st.published)}
+        onUnpublish={item.unpublish}
+        onDiscard={item.discard}
       />
 
       <div className="editor-grid">

@@ -6,7 +6,7 @@ import { branchScope, can } from '../../auth/claims';
 import { dayRecords, pendingCorrections } from '../../data/attendance';
 import { monthIST, todayIST } from '../../shared/dates';
 import { listEmployees } from '../../data/hr';
-import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
+import { pendingDocuments } from '../../data/hrDocuments';
 import { approvedLeaveIn, daysLabel, pendingLeave } from '../../data/leave';
 import { approvedRuns, monthName, submittedRuns } from '../../data/payroll';
 import type { Permission } from '../../generated/rbac';
@@ -71,7 +71,8 @@ export function PeopleOverviewPage() {
       optional(may('attendance.view'), () => dayRecords(orgId, todayIST(), scope)),
       optional(may('leave.approve'), () => pendingLeave(orgId, scope)),
       optional(may('corrections.approve'), () => pendingCorrections(orgId, scope)),
-      optional(may('documents.verify'), async () => documentQueue(orgId, scope, await listDocumentTypes(orgId))),
+      // Only the documents waiting (the viewer's own uploads are taken out below, so a count would not do).
+      optional(may('documents.verify'), () => pendingDocuments(orgId, scope)),
       optional(may('payroll.approve'), () => submittedRuns(orgId, scope)),
       optional(may('attendance.view'), () => approvedLeaveIn(orgId, month, scope)),
       optional(may('salary.view'), () => approvedRuns(orgId, scope)),
@@ -93,7 +94,7 @@ export function PeopleOverviewPage() {
   const waiting = [
     { n: notMine(d.leave), label: ht.todoLeave, to: paths.adminLeave },
     { n: notMine(d.corrections), label: ht.todoCorrections, to: paths.adminAttendance },
-    { n: d.docs?.pending.filter((x) => x.uploadedBy !== user?.uid).length ?? 0, label: ht.todoDocsPending, to: paths.adminDocuments },
+    { n: d.docs?.filter((x) => x.uploadedBy !== user?.uid).length ?? 0, label: ht.todoDocsPending, to: paths.adminDocuments },
     { n: d.runs?.filter((r) => r.preparedBy !== user?.uid && r.submittedBy !== user?.uid).length ?? 0, label: ht.todoPayroll, to: paths.adminPayroll },
   ].filter((w) => w.n > 0);
 
