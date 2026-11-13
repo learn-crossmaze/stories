@@ -121,6 +121,8 @@ export function SendToBranches({
     );
     return () => {
       current = false;
+      // A check given up half-way (the panel was closed) must not leave "Checking…" up when it is opened again.
+      setCheck((c) => (c.busy ? { busy: false, error: null } : c));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unsureKey, recheck]);

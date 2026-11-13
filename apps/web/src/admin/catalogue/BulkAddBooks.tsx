@@ -69,6 +69,38 @@ export function BulkAddBooksPage() {
   }, [at, shelves, shelfKey]);
   /** Every copy received on this page since it was opened or cleared: for the labels, and for sending on. */
   const [received, setReceived] = useState<ReceivedCopy[]>([]);
+  // Kept for this browser tab, so the list (and its label links, one per branch) is still here after printing a
+  // sheet and coming back. Copies not yet sent on are read again before they are offered for sending.
+  const keptKey = org ? `stories.received.${org.id}` : '';
+  const kept = useRef({ key: '', restored: false });
+  useEffect(() => {
+    if (!keptKey || kept.current.key === keptKey) return;
+    kept.current = { key: keptKey, restored: false };
+    try {
+      const list: unknown = JSON.parse(sessionStorage.getItem(keptKey) ?? 'null');
+      const ok = (c: unknown): c is ReceivedCopy =>
+        !!c && typeof c === 'object' && ['id', 'code', 'title', 'bookId', 'branchId'].every((k) => typeof (c as Record<string, unknown>)[k] === 'string');
+      if (Array.isArray(list) && list.length && list.every(ok)) {
+        kept.current.restored = true;
+        setReceived((now) => (now.length ? now : list.map((c) => (c.to ? c : { ...c, unsure: true }))));
+      }
+    } catch {
+      /* nothing kept, or storage unavailable */
+    }
+  }, [keptKey]);
+  useEffect(() => {
+    if (!keptKey || kept.current.key !== keptKey) return;
+    if (kept.current.restored) {
+      kept.current.restored = false; // this run still sees the list from before the restore
+      return;
+    }
+    try {
+      if (received.length) sessionStorage.setItem(keptKey, JSON.stringify(received));
+      else sessionStorage.removeItem(keptKey);
+    } catch {
+      /* storage unavailable: the list just isn't kept */
+    }
+  }, [keptKey, received]);
   // What a new title starts as: the choices last made in this browser (shared with the New book form).
   const [defaults, setDefaults] = useState<NewTitleDefaults>(() => newTitleDefaults.get());
   const choose = (change: Partial<NewTitleDefaults>) => {
