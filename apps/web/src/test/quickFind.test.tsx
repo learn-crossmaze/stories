@@ -412,6 +412,17 @@ describe('find box: failures and late answers', () => {
     expect(reported).toEqual([broken]);
   });
 
+  it('does not open a title for ten digits on its own when the member lookup failed', async () => {
+    // The number may be a mobile: with the members unknown, the title is offered, not opened.
+    world.members = new ApiError('Check your connection.', 'NETWORK');
+    world.titles = [title('k1', 'Some Book', { isbn: '9789876500005' })];
+    const user = open();
+    await find(user, '9876500007');
+    expect(await screen.findByRole('alert')).toHaveTextContent(lt.findPartFailed);
+    expect(within(screen.getByRole('region', { name: lt.findTitles })).getByRole('link', { name: /Some Book/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Home' })).toBeInTheDocument();
+  });
+
   it('ignores an answer that arrives after the box was closed', async () => {
     let release = () => undefined as void;
     world.gate = new Promise<void>((r) => (release = r));

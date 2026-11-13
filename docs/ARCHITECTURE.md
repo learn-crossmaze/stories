@@ -268,6 +268,14 @@ stories/
     when the field goes away are dropped. The field never takes focus from a dialog that has opened over it.
   - **Remembered choices** (last shelf, last rider) go through `shared/remember.ts`: kept in the browser per
     organization and branch, checked against what is still on offer when read, never anything personal.
+  - **Find box** (`admin/QuickFind.tsx`, in the console header): a button, Ctrl+K / ⌘K, or `/` outside any field
+    and dialog opens a dialog with one field; Enter looks up a copy, a member or a title with the pages' own
+    reads and goes there (order and rules in [LIBRARY.md](LIBRARY.md), Search). It offers only what the person's
+    menu has, never opens or takes focus by itself, and closes in the same step as it navigates so the arriving
+    page takes focus as usual.
+  - **Search words** (`shared/searchWords.ts`, no database code; re-exported by `data/common.ts`): how typed text
+    becomes the words matched against `searchTokens` (`queryWords`), which one the database is asked for
+    (`primaryWord`) and how the others narrow (`matchesAll`). Title search and the pickers use it.
 - Web pages live with their feature; anything used by two features moves to `shared/` (UI), `admin/components/`
   (console-only UI) or `data/` (reads and calls).
 - **Shared helpers:** server calls go through `command` (replay-safe writes) or `call` (reads and jobs) in

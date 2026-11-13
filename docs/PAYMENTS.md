@@ -62,7 +62,17 @@ Amounts are integers in **paise**; currency INR.
   while the link was being made, the new link is recorded CANCELLED and cancelled at Razorpay.
 - The dialog watches the request live. **The browser is never trusted to report success:** the payment is applied
   only from Razorpay's signed webhook (HMAC-SHA256 of the raw body with the branch's webhook secret) or from
-  *Check payment status*, which asks Razorpay's API directly (use it when the webhook isn't set up).
+  a status check (`payments-checkRequest`), which asks Razorpay's API directly.
+- **The dialog checks by itself** while a request is open, so the counter does not wait for the webhook (served by
+  a function of its own that is usually asleep, and sometimes late or not set up): first about 4 seconds after the
+  request is shown, then every 3 seconds for a minute, every 6 seconds up to 2 minutes, then no more
+  (`AUTO_CHECK` in `apps/web/src/admin/members/OnlinePayments.tsx`). It also stops when the request is paid or
+  cancelled, at its expiry and when the dialog closes; it waits while the tab is hidden or while *Cancel* or
+  *Check payment status* is running, asks one question at a time, says nothing when a check fails, and gives up
+  after three failures in a row or when the person may not see payments at the branch. A check only makes the
+  server look: what the dialog shows always comes from the request document, so "paid" and "paid but needs
+  attention" arrive together. *Check payment status* stays for anything the automatic check misses. A check and
+  the webhook arriving together record the money once (the second finds the request already paid).
 - Applying a payment reuses the counter-payment logic in one transaction: payment record (method `ONLINE_LINK` /
   `ONLINE_UPI_QR`, reference = Razorpay payment id, `gateway` ids), subscription activated, deposit collected into
   the ledger, audit entry. It is **idempotent** (a repeated webhook does nothing). Money that can't be applied —

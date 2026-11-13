@@ -172,10 +172,10 @@ function FindDialog({ orgId, branchId, scope, onClose }: { orgId: string; branch
       const member = members.find((m) => m.code === code);
       if (member) return go(paths.adminMember(member.id));
       // 3. The title with this ISBN. Ten digits that pass the ISBN check are often a mobile number: with a member
-      //    matching as well, the person chooses.
+      //    matching as well (or the member lookup not answering), the person chooses.
       const isbn = normalizeIsbn(v);
       const byIsbn = isbn ? titles.find((b) => b.isbn === isbn) : undefined;
-      if (byIsbn && (v.replace(/[\s-]/g, '').length === 13 || !members.length)) return go(paths.adminBook(byIsbn.id));
+      if (byIsbn && (v.replace(/[\s-]/g, '').length === 13 || (!members.length && !failed))) return go(paths.adminBook(byIsbn.id));
       // 4. A single match opens; several are listed.
       if (!failed && members.length + titles.length === 1) return go(members[0] ? paths.adminMember(members[0].id) : paths.adminBook(titles[0].id));
       const list: Found = {

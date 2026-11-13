@@ -40,3 +40,13 @@ chooser), `memberSearch.test.ts` (search words and narrowing, codes made of digi
 first, focus while a batch runs). The one-step sale's money rules are in
 `functions/test/emulator/speedMembers.test.ts`. A browser walkthrough is still needed for a member with no deposit
 yet and for a branch-scoped librarian.
+
+Finding things has component tests as well: `quickFind.test.tsx` (the header's find box: its shortcuts are ignored
+in fields, over dialogs and mid-scan; copy before member code before ISBN before a list; a mobile number that
+passes the ISBN check still finds the member; nothing offered that the person's menu lacks; no working branch; a
+copy at another branch or not found; a failed or late lookup; the arriving page takes focus), `searchWords.test.ts`
+(the words of a search and the one asked of the database), `bookSearch.test.ts` (title search against a stand-in
+database: narrowing by every word, where reading stops, the cursor, ISBN in any form and its fallback, the best few
+for pickers) and `bookSearchPages.test.tsx` (*Keep looking* on the Catalogue and Explore pages, the Catalogue
+landing in its search box, what the title picker asks for). The find box still needs a walkthrough in a browser
+with a real scanner and at phone width.

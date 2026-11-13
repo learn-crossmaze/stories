@@ -75,21 +75,20 @@ const stock = (here: number, north = 0) => ({
 const placed = () => calls.filter((c) => c.action === 'reservations-place');
 /** A person holding only these permissions, at these branches. */
 async function signInWith(permissions: string[], branches = ['b1']) {
-  const { PERMISSIONS } = await import('../generated/rbac');
-  const bits = new Uint8Array(Math.ceil(PERMISSIONS.length / 8));
-  for (const p of permissions) {
-    const at = (PERMISSIONS as readonly string[]).indexOf(p);
-    if (at < 0) throw new Error(`unknown permission ${p}`);
-    bits[at >> 3] |= 1 << (at & 7);
-  }
-  world.claims = { v: 1, o: { o1: { r: [], b: branches, p: btoa(String.fromCharCode(...bits)) } } };
+  const { PERMISSION_CODES } = await import('../generated/rbac');
+  const codes = permissions.map((p) => {
+    const code = (PERMISSION_CODES as Record<string, string>)[p];
+    if (!code) throw new Error(`unknown permission ${p}`);
+    return code;
+  });
+  world.claims = { v: 1, sa: false, o: { o1: { r: [], b: branches, p: codes.join('') } } };
 }
 const page = (path: string, element: React.ReactNode, at: string) =>
   render(<RouterProvider router={createMemoryRouter([{ path, element }, { path: '*', element: <p>elsewhere</p> }], { initialEntries: [at] })} />);
 
 beforeEach(() => {
   calls.length = 0;
-  world.respond = () => ({});
+  world.respond = (data: Sent) => (data.action === 'copies-availability' ? stock(0) : {});
   world.claims = { v: 1, sa: true, o: {} };
   world.branch = { id: 'b1', name: 'Central' };
   world.book = { id: 'bk1', code: 'BOOK-000001', title: 'Treasure Island', subtitle: '', authorNames: ['R. L. Stevenson'], genres: [], categoryNames: [], language: 'en', ageGroup: 'ADULTS', readingLevel: 'INTERMEDIATE', status: 'ACTIVE' } as unknown as Book;

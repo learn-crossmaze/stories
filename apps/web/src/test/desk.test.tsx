@@ -339,6 +339,8 @@ describe('member desk', () => {
     expect((await screen.findAllByRole('button', { name: new RegExp(`^${lt.recordPayment}`) })).length).toBeGreaterThan(0);
     expect(screen.getByText('Book 3')).toBeInTheDocument();
     expect(screen.getByText(lt.blockedNoPlan)).toBeInTheDocument();
+    // The Subscribe button went with the step it started: the keyboard is not left on nothing.
+    await waitFor(() => expect(box).toHaveFocus());
   });
 
   it('takes a pending payment at the desk: the scanned books stay and can then be issued', async () => {

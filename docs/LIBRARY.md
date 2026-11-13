@@ -23,9 +23,20 @@ Catalogue page filters by Active / Archived.
 | `status` | ACTIVE / ARCHIVED (soft delete — history and copies stay) |
 
 **Search** (`functions/src/catalogue/search.ts`): `searchTokens` holds normalized words of title, subtitle, authors,
-ISBN, code and keywords plus their 2–12 character prefixes. The app queries one token with `array-contains`
-(prefix search), optionally with an age-group filter, ordered by title. The same scheme powers member search (name,
-member code, mobile). A dedicated search service can replace it later behind the same query functions.
+ISBN, code and keywords plus their 2–12 character prefixes. The same scheme powers member search (name, member
+code, mobile). A dedicated search service can replace it later behind the same query functions.
+Title search (`searchBooks` in `apps/web/src/data/catalogue.ts`; word helpers in `apps/web/src/shared/searchWords.ts`)
+narrows by **every** typed word. The database is asked for one word with `array-contains` (the longest, passing over
+"the", "and", "of", "in", "for", "a", "an" when anything else was typed), optionally with status and age-group
+filters, ordered by title, 25 at a time; the other words are matched against each title's own `searchTokens`. A
+search of several words reads on until it has 25 matches, the titles end, or it has read 4 pages (8 while nothing
+has matched), and returns every match it met; the paging cursor is the last title read. When it stops with nothing
+found and more to read, the Catalogue and the member's Explore page say "Nothing found yet" with a *Keep looking*
+button instead of "No books match". An ISBN typed in any form (ISBN-10, hyphens, spaces) is first looked up exactly
+(`isbn ==`, one read; status and age group applied to the result) and falls back to the word search when we have no
+such title. Lists stay alphabetical; only the short pickers with no "Load more" (the reserve dialog's title picker
+and the find box, via `findBooks`) put titles that start with the typed text first, and the reserve picker asks for
+active titles only. No extra index is needed.
 Member search (`searchMembers` in `apps/web/src/data/members.ts`) narrows by **every** typed word: the database is
 asked for the longest word (up to 50 members; the next word as well when that page is full) and the rest are matched
 against each member's own `searchTokens`. A mobile number is one word however it is typed (spaces, `+91`, a leading
@@ -33,6 +44,23 @@ against each member's own `searchTokens`. A mobile number is one word however it
 branch can number members `{YYYY}-{SEQ:6}`), so they are looked up both ways at once: as one number and as the
 code's separate words. On the Members page, Enter (a scanned member card ends with
 one) opens the member whose code was typed in full, or the only match.
+
+**Find box** (`apps/web/src/admin/QuickFind.tsx`): a *Find* button in the console header (icon only on phones) opens
+a dialog with one field, from any page. It also opens with Ctrl+K / ⌘K, or with `/` when no field has the keyboard,
+no dialog is open and no scan is arriving; it never opens or takes focus by itself, so each page still lands on its
+own scan or search field. Nothing is looked up until Enter. Then, side by side and each only if the person's menu
+has the page (Inventory, Members, Catalogue) and their roles cover the working branch: the copy with that code or
+barcode at the branch (`findCopy`), the branch's members (`searchMembers`) and the best five titles (`findBooks`,
+which finds an ISBN exactly). Where the answer leads, in this order: the exact copy opens the copy page; else the
+member whose code was typed in full opens that member; else the title with that ISBN opens (for ten digits, which
+are often a mobile number, only when no member matched and every lookup answered); else a single match opens and
+several are listed as links under *Members* and *Titles*. Only when nothing matched and the text looks like a copy
+code is the server asked where the copy is (`copies-locate`): the copy opens if the person may open it, otherwise
+the line "… is at <branch>" with a link to the book is shown. With no working branch only titles and
+`copies-locate` are used. One failed lookup does not blank the others (a warning says something may be missing),
+and answers that arrive after a newer search or after closing are dropped. The dialog closes in the same step as
+the move, so the arriving page takes focus itself. The reads are the same rule-guarded queries the three pages
+make; there is no new action, rule or index. The Catalogue's search box is the field that page lands on.
 
 **Find book details (new books):** type a title (optionally with the author) or an ISBN at the top of the *New book*
 form and press *Search*. An ISBN is looked for in **our own catalogue first** (one read, no outside lookup): a title
@@ -255,7 +283,10 @@ Members carry `planName` and `renewalDueAt` (end of the latest paid term, pushed
 after expiry), written when a payment activates a subscription. Every way of creating a member must write both
 fields (as `null` until a plan is paid for): the "never subscribed" list asks for `renewalDueAt == null`, which does
 not match a member without the field. `renewalsDueCount` (`apps/web/src/data/members.ts`) asks for the "renewal
-due" count alone, with the same bounds as the chip, for the menu.
+due" count alone, with the same bounds as the chip, for the menu. Members registered before the list had these
+fields get them filled once per branch by `members-indexList` (flagged by `memberListIndexedAt` on the branch): the
+Members page asks for it behind the list, which shows at once, and reads the list and its counts again only when
+something was filled in. The search box has the keyboard on arrival.
 
 ## Transfers
 

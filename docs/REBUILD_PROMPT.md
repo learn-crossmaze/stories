@@ -122,7 +122,8 @@ writes. Branch-scoped list queries must filter on the branch field the rules che
 ### 0.5 Data model (Firestore)
 
 `users/{uid}` (+ `memberships/{orgId}`), `orgs/{o}` (type CORPORATE | FRANCHISE), `orgs/{o}/branches/{b}` (code,
-name, address, contact, hours, weekly offs, `numbering`, `payments.razorpay` public settings) with `locations/{l}`, `counters/*` and `private/razorpay` (secrets, rules-denied),
+name, address, contact, hours, weekly offs, `numbering`, `payments.razorpay` public settings,
+`memberListIndexedAt`) with `locations/{l}`, `counters/*` and `private/razorpay` (secrets, rules-denied),
 `orgs/{o}/departments`, `books/{id}` (shared catalogue; `searchTokens`, `titleNormalized`, author/publisher/category
 names denormalized, `coverUrl`/`coverPath`, `status` ACTIVE | ARCHIVED), `authors`, `publishers`, `categories`,
 `config/numbering`, `counters/books`, `isbnIndex`, `orgs/{o}/copies/{c}` (+ `events`), `orgs/{o}/barcodes`,
@@ -195,7 +196,8 @@ action asks for a reason (audited).
    "ended yesterday"), books out, status; subscription chips with counts (All, Active, Renewal due in 15 days,
    Expired, Never subscribed) plus status and age filters; search combined with filters (every typed word must
    match; a mobile number is one word however typed, and digits with dashes are also tried as a member code; Enter or a scanned card opens the exact or only match). Members
-   are created with `planName`/`renewalDueAt` null and payments keep them current. Registering lands on the new
+   are created with `planName`/`renewalDueAt` null and payments keep them current; members from before those fields
+   get them filled once per branch by `members-indexList`, asked for behind the list. Registering lands on the new
    member's page with the plan chooser open; *Subscribe* / *Renew* shows fee, deposit top-up and total and takes the
    counter payment in the same step (`subscriptions-create` with `payment`), or saves it unpaid. Register /
    edit (phone unique per org, guardian required under 18, optional **Aadhaar** — Verhoeff-checked, unique per org,

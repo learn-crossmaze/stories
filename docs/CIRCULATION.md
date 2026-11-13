@@ -67,11 +67,30 @@ which then sees ISSUED and fails with "not available". Tested.
   the server decides.
 - **Renew and pay at the desk:** a member with no term in force, or with a payment pending, gets the member page's
   subscription card under their name (Subscribe, Record payment, Collect online, with the same permissions at the
-  member's home branch). The scanned books stay; afterwards only the plan and the member's counts are read again.
+  member's home branch). The scanned books stay; afterwards only the plan and the member's counts are read again,
+  and the scan box has the keyboard again (also after a payment taken while a term is still in force).
+- **Opening the desk with the member chosen** (`paths.adminDeskFor(memberId)`, `/ops/desk?member=<id>`): *Issue /
+  return* on a member's page (shown with `loans.issue`, when the branch being worked at is the member's home
+  branch and the membership is not closed) and *Hand over* on each row of *Awaiting pickup* on the Reservations
+  page. The desk reads that member by id and opens them with the scan box ready. Members borrow at their home
+  branch, which the find box sees to by searching this branch only; a member opened by id is therefore checked
+  on the page (`homeBranchId` must be the desk's branch, otherwise a notice and the find box). The server does
+  not make this check. A member who is missing or can't be read also lands on the find box with a notice. The
+  link is used once: the parameter is taken out of the address so *Change member* or a change of tab does not
+  open the same member again.
+- **Books held for the member** are listed on their card. A book held at this branch has an **Add** button that
+  puts it on the list to issue without a scan: the copy is read by its id and goes through the same checks as a
+  scanned one, and is refused if it is no longer held for this reservation (the holds are then read again). A
+  hold at another branch is shown with the branch name and no button. Scanning stays the usual way; the server
+  still refuses a copy held for someone else.
+- **Reserve a title** on the member's card (with `reservations.manage` at the branch, a term in force and an
+  active membership) opens the reserve dialog with the member and the scanned books kept; see *Reservations*.
 - **Quick return:** any number of books; they are sent 30 to a call, and the books of a call that went through
   leave the list even when a later call is refused. Each row can be taken off the list.
 - **Inspection:** every waiting copy is ticked; **Back on the shelf (N)** passes the ticked ones in one call
   (`copies-inspectMany`). *Damaged* stays one copy at a time. Staff still decide: untick a book to leave it waiting.
+  One stale row (a copy since moved to another branch, or removed) makes the server refuse the whole batch: the
+  list is then read again and the rows that left it are named, so the next click passes the rest.
 
 ## Reservations (M1.6)
 
@@ -80,6 +99,23 @@ which then sees ISSUED and fails with "not available". Tested.
 - **Place** (`reservations.manage`): needs an active term; one open reservation per member per title;
   `waitingCount + allocatedCount < plan limit` (D2). If a copy is on the shelf it is **allocated immediately**
   (copy → RESERVED, held `reservationHoldHours`, default 48 — D3, `orgs/{o}/config/circulation`); otherwise WAITING.
+  `placeReservation` (shared by `reservations-place` and `me-reserve`) reads in two waves, each awaited with
+  `inOrder`: first the member, branch, title, the "already reserved" query, the shelf query and the config, as
+  plain reads; then the permission check together with the member's term. Nothing read in the first wave is
+  judged or told to the caller before the permission check has passed, and the refusals keep their order: member
+  not found, FORBIDDEN, branch not found, MEMBER_INACTIVE, NO_ACTIVE_SUBSCRIPTION, title not found,
+  ALREADY_RESERVED, RESERVATION_LIMIT (`functions/test/emulator/speedReservations.test.ts`). Cancelling a held
+  copy reads the copy, the next member waiting and the config alongside the permission check, which is listed
+  first; a closed reservation is still NOT_OPEN only after that check.
+- **Where staff reserve:** *Reserve a title* at the desk (on the open member's card), on a member's page, on the
+  Reservations page (member first, then the title) and *Reserve for a member* on a book's page (the title is
+  fixed, the member is found in the dialog; shown with `reservations.manage` and `members.view` at the branch
+  being worked at, for an active title). All use one dialog (`ReserveDialog` in
+  `apps/web/src/admin/members/memberDialogs.tsx`) and the same `reservations-place`, at the branch being worked
+  at. Once a title is picked the dialog says what the shelf holds, from `copies-availability` ("1 on the shelf
+  here: a copy will be held for pickup", or "None on the shelf here: the member joins the waiting list", with the
+  other branches that have it). It stays open after each title, lists what was reserved, and each title is its
+  own request.
 - **Allocation** happens atomically whenever a copy becomes available at the branch (acquired or received,
   passed inspection, repaired, transfer received, hold released): the oldest WAITING reservation for the title gets
   it. Every path uses the one helper `allocate()` (`circulation/allocation.ts`), so the copy, reservation and member
