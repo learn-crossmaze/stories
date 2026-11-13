@@ -103,6 +103,7 @@ export const lt = {
   shelveBackFailed: (shelf: string, why: string) => `Nothing was put on ${shelf}. ${why}`,
   shelveShelfSet: (shelf: string) => `Shelf chosen: ${shelf}.`,
   shelveRefresh: 'Check for more books',
+  shelveLabels: (n: number) => `Print labels for ticked (${n})`,
   shelveEmpty: 'Every book here is on a shelf.',
   shelveMore: (n: number) => `Showing the first ${n}. Shelve these to see the rest.`,
   shelveScannedOther: (code: string, where: string) => `${code} is already on ${where}; ticked to move it.`,
@@ -136,6 +137,9 @@ export const lt = {
   note: 'Note (optional)',
   labelsTitle: 'Labels',
   labelsHint: 'Print on A4 label sheets (3 × 8). Use your browser’s print dialog.',
+  labelsCount: (n: number, sheets: number) => `${n} ${n === 1 ? 'label' : 'labels'}, ${sheets} ${sheets === 1 ? 'sheet' : 'sheets'}.`,
+  labelsMissing: (n: number) => `${n} ${n === 1 ? 'label' : 'labels'} could not be read and ${n === 1 ? 'is' : 'are'} left out. Print ${n === 1 ? 'it' : 'them'} from the book's page.`,
+  labelsNone: 'No labels to print.',
   print: 'Print',
   // members
   membersTitle: 'Members',
@@ -541,6 +545,29 @@ export const lt = {
       allocated ? ` ${allocated} went straight to members waiting for them.` : ''
     }`,
   receiveLabels: (n: number) => `Print ${n} ${n === 1 ? 'label' : 'labels'}`,
+  receiveLabelsFor: (n: number, branch: string) => `Print ${n} ${n === 1 ? 'label' : 'labels'} for ${branch}`,
+  receiveLabelsHere: (n: number) => `Print ${n} ${n === 1 ? 'label' : 'labels'} for the books staying here`,
+  receiveOnto: (shelf: string) => `going on shelf ${shelf}`,
+  receiveCamera: 'Scan ISBNs with the camera',
+  // Sending a delivery on to other branches from the Receive books page
+  sendTitle: 'Send to branches',
+  sendIntro:
+    'Type how many copies of each title go to each branch. Send them before you stick the labels on: you then print one sheet of labels per branch, and each book gets the label of a copy that was sent there.',
+  sendBook: 'Title',
+  sendCanGo: 'Can be sent',
+  sendStays: 'Staying here',
+  sendKept: (n: number) => `${n} held for a member or not on the shelf`,
+  sendCell: (title: string, branch: string) => `Copies of ${title} for ${branch}`,
+  sendOver: (n: number) => `Only ${n} can be sent.`,
+  sendWhole: 'Use whole numbers.',
+  sendChecking: 'Checking which copies can be sent…',
+  sendSubmit: (n: number) => (n ? `Send ${n} ${n === 1 ? 'copy' : 'copies'}` : 'Send'),
+  sendSaving: (branch: string) => `Sending to ${branch}…`,
+  sendDone: (n: number, branch: string) => `${n} ${n === 1 ? 'copy' : 'copies'} sent to ${branch}.`,
+  sendFailed: (branch: string, why: string) => `Not everything was sent to ${branch}. ${why}`,
+  sendGone: (n: number) =>
+    `${n} ${n === 1 ? 'copy is' : 'copies are'} no longer free to send (held for a member, or taken from the shelf) and ${n === 1 ? 'was' : 'were'} left out. Check the numbers and send again.`,
+  sendNothing: 'Every copy received here has been sent, or is held for a member.',
   bulkIntro: 'Type or scan one ISBN per row (Enter moves to the next), or paste a list. Each row is checked and looked up straight away; add the good ones with one click.',
   bulkDefaults: 'For every book',
   bulkIsbnLabel: (n: number) => `ISBN, row ${n}`,
@@ -564,6 +591,7 @@ export const lt = {
   bulkSubmit: (n: number) => (n ? `Add ${n} book${n === 1 ? '' : 's'}` : 'Add books'),
   bulkSaving: (done: number, total: number) => `Adding ${done} of ${total}…`,
   bulkCovers: (done: number, total: number) => `Adding covers ${done} of ${total}…`,
+  bulkAgeGuessed: 'From the book details. Check it.',
   bulkDone: (added: number, skipped: number) => `Added ${added} book${added === 1 ? '' : 's'} to the catalogue${skipped ? `; ${skipped} skipped` : ''}.`,
   bulkNextStep: 'Next: open a book to add copies to a shelf.',
   // book details lookup
@@ -662,4 +690,6 @@ export const lt = {
   camBusy: 'The camera is in use by another app (e.g. a video call). Close it and try again.',
   camInsecure: 'The camera only works on the secure (https) site.',
   camFailed: "The camera couldn't be started.",
+  camHintIsbn: 'Hold the ISBN barcode on the back cover inside the frame, 15–25 cm from the camera so it looks sharp. For several copies of one book, type the number under Copies.',
+  camNotIsbn: 'That barcode is not an ISBN. Scan the one on the back cover that starts with 978 or 979.',
 };

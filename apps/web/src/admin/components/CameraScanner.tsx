@@ -25,7 +25,13 @@ function cameraProblem(e: unknown): string {
  * closes after the first code. A code counts only after two matching reads
  * within 1.5 s, and the same code isn't reported again while it stays in view.
  */
-export function CameraScanner({ onDetect, onClose, continuous = true }: { onDetect: (text: string) => void; onClose: () => void; continuous?: boolean }) {
+export function CameraScanner({ onDetect, onClose, continuous = true, hint = lt.camHint }: {
+  onDetect: (text: string) => void;
+  onClose: () => void;
+  continuous?: boolean;
+  /** What to hold up to the camera (a copy's label unless said otherwise). */
+  hint?: string;
+}) {
   const video = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
@@ -164,7 +170,7 @@ export function CameraScanner({ onDetect, onClose, continuous = true }: { onDete
       )}
       <div className="camera-bar">
         <span className="small muted" aria-live="polite">
-          {last ? lt.camScanned(last) : error ? '' : lt.camHint}
+          {last ? lt.camScanned(last) : error ? '' : hint}
         </span>
         {cameras.length > 1 && (
           <select value={deviceId ?? ''} onChange={(e) => setDeviceId(e.target.value || undefined)} aria-label={lt.camChoose}>

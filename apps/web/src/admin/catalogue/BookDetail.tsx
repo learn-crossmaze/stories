@@ -18,7 +18,7 @@ import { Notice } from '../components/kit';
 import { lt } from '../../strings/library';
 import { useWorkspace } from '../Workspace';
 import { BookDialog, useCanAddBooks, useCanDeleteBooks, useCanEditCatalogue } from './Catalogue';
-import { CopyStatusBadge } from '../inventory/Inventory';
+import { CopyStatusBadge, labelsLink } from '../inventory/Inventory';
 
 function AcquireDialog({ orgId, branchId, book, onClose, onDone }: { orgId: string; branchId: string; book: Book; onClose: () => void; onDone: (n: number) => void }) {
   const locations = useAsync(() => listLocations(orgId, branchId), [orgId, branchId]);
@@ -240,7 +240,7 @@ export function BookDetailPage() {
             </h2>
             <div className="row">
               {!!copies.data?.length && (
-                <Link className="btn btn-outlined" to={`${paths.adminLabels}?copies=${copies.data.map((c) => c.id).join(',')}`}>
+                <Link className="btn btn-outlined" {...labelsLink(copies.data.map((c) => ({ id: c.id, barcode: c.barcode, title: c.bookTitle })))}>
                   <Icon name="print" /> {lt.printLabels}
                 </Link>
               )}

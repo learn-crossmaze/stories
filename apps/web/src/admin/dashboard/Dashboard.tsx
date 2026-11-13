@@ -3,16 +3,12 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { branchScope, can } from '../../auth/claims';
 import { catalogueCounts } from '../../data/catalogue';
-import { branchCounts } from '../../data/circulation';
-import { monthLock, pendingCorrections, previousMonth } from '../../data/attendance';
+import { todayCounts } from '../../data/circulation';
+import { previousMonth } from '../../data/attendance';
 import { monthIST } from '../../shared/dates';
 import { documentQueue, listDocumentTypes } from '../../data/hrDocuments';
-import { pendingLeave } from '../../data/leave';
-import { submittedRuns } from '../../data/payroll';
 import { CheckInCard } from '../people/MyAttendance';
 import { memberCounts, RENEWAL_DUE_DAYS, type RenewalFilter } from '../../data/members';
-import { unshelvedCount } from '../../data/inventory';
-import { listDeliveries } from '../../data/delivery';
 import { dt } from '../../strings/delivery';
 import { listStaff } from '../../data/org';
 import { ht } from '../../strings/hr';
@@ -21,7 +17,9 @@ import { paths } from '../../paths';
 import { t } from '../../strings';
 import { Icon, SkeletonRows } from '../../shared/ui';
 import { Stat } from '../components/kit';
+import { ct } from '../../strings/control';
 import { lt } from '../../strings/library';
+import { useWaiting, waiting } from '../attention';
 import { useWorkspace } from '../Workspace';
 import { useTeamPaths } from '../view';
 import { useMyOnboarding } from '../people/OnboardingReminder';
@@ -45,51 +43,55 @@ export function DashboardPage() {
   const team = useTeamPaths();
   const { claims, user } = useAuth();
   const { org, orgs, orgsLoading, branches, branchesLoading, branch, myBranches } = useWorkspace();
+  const uid = user?.uid ?? '';
+  // Every read here paints what it showed on the last visit while it reads again (`cache`). What the menu also
+  // counts is asked through `waiting`, so opening the console asks for it once, not once each.
   const staffVisible = !!org && can(claims, 'staff.view', org.id);
-  const staff = useAsync(() => (org && staffVisible ? listStaff(org.id, branchScope(claims, org.id)) : Promise.resolve(null)), [org?.id, staffVisible]);
+  const staff = useAsync(() => (org && staffVisible ? listStaff(org.id, branchScope(claims, org.id)) : Promise.resolve(null)), [org?.id, staffVisible], { cache: 'dash.staff' });
 
   const desk = !!org && !!branch && can(claims, 'members.view', org.id, branch.id);
   const approver = !!org && can(claims, 'deposits.approve', org.id);
   const counts = useAsync(
-    () => (org && branch && desk ? branchCounts(org.id, branch.id, approver, branchScope(claims, org.id)) : Promise.resolve(null)),
+    async () => {
+      if (!org || !branch || !desk) return null;
+      const [waits, today] = await Promise.all([waiting.branch(uid, org.id, branch.id, approver, branchScope(claims, org.id)), todayCounts(org.id, branch.id)]);
+      return { ...today, ...waits };
+    },
     [org?.id, branch?.id, desk, approver],
+    { cache: 'dash.counts' },
   );
   const cataloguer = !!org && can(claims, 'books.edit', org.id);
-  const catalogue = useAsync(() => (cataloguer ? catalogueCounts(monthIST()) : Promise.resolve(null)), [cataloguer]);
-  const members = useAsync(() => (org && branch && desk ? memberCounts(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, desk]);
+  const catalogue = useAsync(() => (cataloguer ? catalogueCounts(monthIST()) : Promise.resolve(null)), [cataloguer], { cache: 'dash.catalogue' });
+  const members = useAsync(() => (org && branch && desk ? memberCounts(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, desk], { cache: 'dash.members' });
   // New and returned books that are back on the floor but not on a shelf yet.
   const shelver = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
-  const unshelved = useAsync(() => (org && branch && shelver ? unshelvedCount(org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, shelver]);
+  const unshelved = useAsync(() => (org && branch && shelver ? waiting.unshelved(uid, org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, shelver], { cache: 'dash.unshelved' });
 
   // Home deliveries waiting to go out or to be received back.
   const dispatcher = !!org && !!branch && can(claims, 'delivery.manage', org.id, branch.id);
-  const deliveries = useAsync(
-    async () => {
-      if (!org || !branch || !dispatcher) return null;
-      const { open } = await listDeliveries(org.id, branch.id);
-      return { requested: open.filter((d) => d.status === 'REQUESTED').length, returning: open.filter((d) => d.status === 'RETURNING').length };
-    },
-    [org?.id, branch?.id, dispatcher],
-  );
+  const deliveries = useAsync(() => (org && branch && dispatcher ? waiting.deliveries(uid, org.id, branch.id) : Promise.resolve(null)), [org?.id, branch?.id, dispatcher], {
+    cache: 'dash.deliveries',
+  });
 
   const verifier = !!org && can(claims, 'documents.verify', org.id);
   const docs = useAsync(async () => {
     if (!org || !verifier) return null;
     return documentQueue(org.id, branchScope(claims, org.id), await listDocumentTypes(org.id));
-  }, [org?.id, verifier]);
+  }, [org?.id, verifier], { cache: 'dash.docs' });
 
   const correctionsApprover = !!org && can(claims, 'corrections.approve', org.id);
   const finalizer = !!org && !!branch && can(claims, 'attendance.finalize', org.id, branch.id);
   const leaveApprover = !!org && can(claims, 'leave.approve', org.id);
   const payrollApprover = !!org && can(claims, 'payroll.approve', org.id);
+  // Waits for the branch: asked while it is still loading, this would run once without it and again with it.
   const att = useAsync(async () => {
-    if (!org) return null;
+    if (!org || branchesLoading) return null;
     const scope = branchScope(claims, org.id);
     const [corrections, lock, leave, runs] = await Promise.all([
-      approverOk(correctionsApprover, () => pendingCorrections(org.id, scope)),
-      finalizer && branch ? monthLock(org.id, previousMonth(monthIST()), branch.id) : Promise.resolve(undefined),
-      approverOk(leaveApprover, () => pendingLeave(org.id, scope)),
-      approverOk(payrollApprover, () => submittedRuns(org.id, scope)),
+      approverOk(correctionsApprover, () => waiting.corrections(uid, org.id, scope)),
+      finalizer && branch ? waiting.lock(uid, org.id, previousMonth(monthIST()), branch.id) : Promise.resolve(undefined),
+      approverOk(leaveApprover, () => waiting.leave(uid, org.id, scope)),
+      approverOk(payrollApprover, () => waiting.payroll(uid, org.id, scope)),
     ]);
     return {
       corrections: corrections?.filter((c) => c.employeeUid !== user?.uid).length ?? 0,
@@ -97,15 +99,17 @@ export function DashboardPage() {
       leave: leave?.filter((r) => r.employeeUid !== user?.uid).length ?? 0,
       payroll: runs?.filter((r) => r.preparedBy !== user?.uid && r.submittedBy !== user?.uid).length ?? 0,
     };
-  }, [org?.id, branch?.id, correctionsApprover, finalizer, leaveApprover, payrollApprover]);
+  }, [org?.id, branch?.id, branchesLoading, uid, correctionsApprover, finalizer, leaveApprover, payrollApprover], { cache: 'dash.att' });
 
   const onboarding = useMyOnboarding();
+  // What waits under Master control, as the menu loaded it (the same answer, so the two always agree).
+  const { setup } = useWaiting();
 
   if (orgsLoading || branchesLoading) return <SkeletonRows rows={3} />;
 
   // "All clear" only once everything has loaded; a part that fails says so instead of hiding its items.
   const parts = [staff, counts, members, unshelved, deliveries, catalogue, docs, att];
-  const loading = parts.some((p) => p.loading);
+  const loading = parts.some((p) => p.loading) || (!!org && !setup);
   const failed = parts.some((p) => p.error);
   const retry = () => parts.filter((p) => p.error).forEach((p) => p.reload());
 
@@ -128,7 +132,7 @@ export function DashboardPage() {
   if (unshelved.data) todos.push({ label: lt.todoUnshelved(unshelved.data), to: paths.adminShelve });
   if (c?.incoming) todos.push({ label: `${c.incoming} ${lt.incomingTransfers.toLowerCase()}`, to: paths.adminTransfers });
   if (deliveries.data?.requested) todos.push({ label: dt.todoDispatch(deliveries.data.requested), to: paths.opsDeliveries });
-  if (deliveries.data?.returning) todos.push({ label: dt.todoReceive(deliveries.data.returning), to: paths.opsDeliveries });
+  if (deliveries.data?.returning) todos.push({ label: dt.todoReceive(deliveries.data.returning), to: `${paths.opsDeliveries}?tab=RETURNING` });
   const d = docs.data;
   if (d?.pending.length) todos.push({ label: ht.todoDocsPending(d.pending.length), to: paths.adminDocuments });
   if (d?.expired.length) todos.push({ label: ht.todoDocsExpired(d.expired.length), to: paths.adminDocuments });
@@ -140,6 +144,14 @@ export function DashboardPage() {
   if (c?.approvals) todos.push({ label: `${c.approvals} ${lt.approvalsPending.toLowerCase()}`, to: paths.adminDeposits });
   const mc = members.data;
   if (mc?.DUE) todos.push({ label: t.todoRenewals(mc.DUE, RENEWAL_DUE_DAYS), to: membersWith('DUE') });
+  // Master control: only what is missing or broken there, in the menu's order.
+  for (const year of setup?.holidayYears ?? []) todos.push({ label: ct.todoHolidays(year), to: paths.adminSettingsSchedule });
+  if (setup?.noLeaveType) todos.push({ label: ct.todoLeaveTypes, to: paths.adminSettingsLeave });
+  if (setup?.letterDrafts) todos.push({ label: ct.todoLetterDrafts(setup.letterDrafts), to: paths.adminSettingsLetters });
+  if (setup?.payrollUnconfirmed) todos.push({ label: ct.todoPayrollSettings, to: paths.adminSettingsPayroll });
+  if (setup?.whatsapp) todos.push({ label: ct.todoWhatsApp(setup.whatsapp), to: paths.adminSettingsWhatsApp });
+  if (setup?.courierTests) todos.push({ label: ct.todoCourierTest(setup.courierTests), to: paths.adminSettingsDelivery });
+  if (setup?.noAlertRecipients) todos.push({ label: ct.todoAlerts, to: paths.adminWebsiteConnections });
 
   const firstName = (user?.displayName ?? '').split(' ')[0];
   const hour = new Date().getHours();

@@ -13,11 +13,12 @@ import { setWaitingInTitle, useRouteFocus } from '../shared/useRouteFocus';
 import { useWarmBackend } from '../shared/useWarmBackend';
 import { t } from '../strings';
 import { ht } from '../strings/hr';
-import { type Attention, useAttention } from './attention';
+import { clear as dropKept, keepFor } from '../shared/asyncCache';
+import { type Attention, AttentionProvider, useAttention } from './attention';
 import { groupFor, isGroup, type NavEntry, navItemFor, visibleMenu } from './nav';
 import { NotificationBell } from './NotificationBell';
 import { useWorkspace, WorkspaceProvider } from './Workspace';
-import { OnboardingReminder } from './people/OnboardingReminder';
+import { OnboardingProvider, OnboardingReminder } from './people/OnboardingReminder';
 
 /** The Website view's Publish button (loaded with the Website pages). */
 const PublishButton = lazy(() => import('./website/Overview').then((m) => ({ default: m.PublishButton })));
@@ -273,7 +274,7 @@ function Shell() {
   }, [attention.total]);
   const home = staffHome(claims);
   return (
-    <>
+    <AttentionProvider value={attention}>
       <div className={`admin${menuOpen ? ' admin-menu-open' : ''}`}>
         <a className="skip-link" href={`#${MAIN_ID}`}>
           {t.skipToContent}
@@ -327,14 +328,22 @@ function Shell() {
           </main>
         </div>
       </div>
-    </>
+    </AttentionProvider>
   );
 }
 
 export function AdminShell() {
+  const { user, claims } = useAuth();
+  // What pages kept from an earlier visit (shared/asyncCache.ts) belongs to one person with one set of permissions:
+  // a new person or changed permissions start empty, and nothing stays once the console is left.
+  keepFor(user ? `${user.uid}|${claims.v}` : null);
+  useEffect(() => dropKept, []);
   return (
     <WorkspaceProvider>
-      <Shell />
+      {/* Above Shell, because the menu counts (useAttention in Shell) read the shared self-onboarding status. */}
+      <OnboardingProvider>
+        <Shell />
+      </OnboardingProvider>
     </WorkspaceProvider>
   );
 }

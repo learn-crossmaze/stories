@@ -110,22 +110,36 @@ export async function listTransfers(orgId: string, branchId: string, direction: 
   return snap.docs.map((d) => withId<Transfer>(d));
 }
 
-/** "What needs doing" counts for a branch (count queries: cheap, always exact). */
-export async function branchCounts(orgId: string, branchId: string, canDeposits: boolean, scope: Scope) {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const since = Timestamp.fromDate(start);
-  const count = async (path: string, ...c: QueryConstraint[]) => (await getCountFromServer(query(collection(db(), path), ...c))).data().count;
-  const [issuedToday, exchangesToday, inspection, holds, waiting, incoming, approvals] = await Promise.all([
-    count(`orgs/${orgId}/loans`, where('branchId', '==', branchId), where('issuedAt', '>=', since)),
-    count(`orgs/${orgId}/exchanges`, where('branchId', '==', branchId), where('at', '>=', since)),
+const count = async (path: string, ...c: QueryConstraint[]) => (await getCountFromServer(query(collection(db(), path), ...c))).data().count;
+
+/** What waits at a branch: the three counts the menu shows (count queries: cheap, always exact). */
+export async function waitingCounts(orgId: string, branchId: string, canDeposits: boolean, scope: Scope) {
+  const [inspection, incoming, approvals] = await Promise.all([
     count(`orgs/${orgId}/copies`, where('currentBranchId', '==', branchId), where('status', '==', 'UNDER_INSPECTION')),
-    count(`orgs/${orgId}/reservations`, where('branchId', '==', branchId), where('status', '==', 'ALLOCATED')),
-    count(`orgs/${orgId}/reservations`, where('branchId', '==', branchId), where('status', '==', 'WAITING')),
     count(`orgs/${orgId}/transfers`, where('toBranchId', '==', branchId), where('status', '==', 'IN_TRANSIT')),
     canDeposits ? count(`orgs/${orgId}/depositAdjustments`, where('status', '==', 'PENDING'), ...scoped('branchId', scope)) : Promise.resolve(0),
   ]);
-  return { issuedToday, exchangesToday, inspection, holds, waiting, incoming, approvals };
+  return { inspection, incoming, approvals };
+}
+
+/** A branch's day so far and its reservations: the numbers only the Dashboard shows. */
+export async function todayCounts(orgId: string, branchId: string) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const since = Timestamp.fromDate(start);
+  const [issuedToday, exchangesToday, holds, waiting] = await Promise.all([
+    count(`orgs/${orgId}/loans`, where('branchId', '==', branchId), where('issuedAt', '>=', since)),
+    count(`orgs/${orgId}/exchanges`, where('branchId', '==', branchId), where('at', '>=', since)),
+    count(`orgs/${orgId}/reservations`, where('branchId', '==', branchId), where('status', '==', 'ALLOCATED')),
+    count(`orgs/${orgId}/reservations`, where('branchId', '==', branchId), where('status', '==', 'WAITING')),
+  ]);
+  return { issuedToday, exchangesToday, holds, waiting };
+}
+
+/** "What needs doing" counts for a branch: `waitingCounts` and `todayCounts` together. */
+export async function branchCounts(orgId: string, branchId: string, canDeposits: boolean, scope: Scope) {
+  const [waiting, today] = await Promise.all([waitingCounts(orgId, branchId, canDeposits, scope), todayCounts(orgId, branchId)]);
+  return { ...today, ...waiting };
 }
 
 /** Catalogue-wide book code pattern, or null for the default. */

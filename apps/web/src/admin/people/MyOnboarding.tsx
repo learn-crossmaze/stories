@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 
-import { useAuth } from '../../auth/AuthContext';
 import { call, command } from '../../data/api';
 import { AadhaarValue, aadhaarError, aadhaarHint, cleanAadhaar } from '../../shared/aadhaar';
 import { type PrivateProfile } from '../../data/hr';
-import { myOnboarding, onboardingChanged, type OnboardingStatus, type ProfileField } from '../../data/selfOnboarding';
+import { onboardingChanged, type OnboardingStatus, type ProfileField } from '../../data/selfOnboarding';
 import { EmptyState, ErrorState, Icon, NoOrgState, SkeletonRows } from '../../shared/ui';
-import { useAsync } from '../../shared/useAsync';
 import { ht } from '../../strings/hr';
 import { t } from '../../strings';
 import { FormError, SelectField, TextArea, TextField, useSubmit } from '../components/Dialog';
@@ -15,6 +13,7 @@ import { useWorkspace } from '../Workspace';
 import { BankDialog } from './employeeDialogs';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { EmployeePhoto } from './EmployeePhoto';
+import { useMyOnboarding } from './OnboardingReminder';
 
 // Staff → Complete my profile (self-onboarding): the details and documents HR
 // needs, filled in by the person themselves. The reminder in the shell points here.
@@ -69,7 +68,11 @@ function DetailsForm({ orgId, s, onSaved }: { orgId: string; s: OnboardingStatus
   const [same, setSame] = useState(false);
   const [aadhaar, setAadhaar] = useState('');
   const [saved, setSaved] = useState(false);
-  useEffect(() => setF(fromProfile(s.profile)), [s.profile]);
+  // The status is read again in the background (after a photo or document upload, on a timer, when the tab comes
+  // back into view): only saved details that really changed reset the form, never a mere re-read, so what the
+  // person is typing stays.
+  const savedDetails = JSON.stringify(fromProfile(s.profile));
+  useEffect(() => setF(JSON.parse(savedDetails) as Form), [savedDetails]);
   const need = (k: ProfileField) => s.required.includes(k);
   const label = (text: string, k: ProfileField) => (need(k) ? `${text} (${ht.obRequired})` : text);
   const set = (k: keyof Form) => (v: string) => {
@@ -178,17 +181,16 @@ function DetailsForm({ orgId, s, onSaved }: { orgId: string; s: OnboardingStatus
 }
 
 export function MyOnboardingPage() {
-  const { user } = useAuth();
   const { org } = useWorkspace();
-  const status = useAsync(() => (org && user ? myOnboarding(org.id, user.uid) : Promise.resolve(null)), [org?.id, user?.uid]);
+  // The shell's one shared read (OnboardingProvider): a save here announces itself and everything showing the
+  // status (this page, the banner, the menu count, the Dashboard) reads it again once.
+  const status = useMyOnboarding();
   const [bank, setBank] = useState(false);
-  const changed = () => {
-    status.reload();
-    onboardingChanged();
-  };
+  const changed = onboardingChanged;
   if (!org) return <NoOrgState />;
-  if (status.loading && !status.data) return <SkeletonRows rows={6} />;
-  if (status.error) return <ErrorState message={status.error} onRetry={status.reload} />;
+  if (status.loading) return <SkeletonRows rows={6} />;
+  // A background re-read that fails keeps the page (and what is being typed); the next one tries again.
+  if (status.error && !status.data) return <ErrorState message={status.error} onRetry={status.reload} />;
   const s = status.data;
   if (!s) return <EmptyState page icon="person" title={ht.obTitle} message={ht.noEmployeeRecord} />;
   const b = s.profile.bank;

@@ -22,6 +22,7 @@ import { EmptyState, ErrorState, SkeletonRows, TableWrap } from '../../shared/ui
 import { FormError, SelectField, useAction } from '../components/Dialog';
 import { NeedBranch, Notice, ScanInput } from '../components/kit';
 import { useWorkspace } from '../Workspace';
+import { labelsLink } from './Inventory';
 
 /** Copies that are in the building and may go on a shelf (as copies-shelve allows). */
 const SHELVABLE = ['AVAILABLE', 'RESERVED', 'UNDER_INSPECTION', 'DAMAGED'];
@@ -53,13 +54,23 @@ function BranchShelving({ orgId, branchId }: { orgId: string; branchId: string }
   const refocus = () => setFocusSignal((n) => n + 1);
   const { busy, pending, error, setError, run } = useAction();
 
-  // A fresh list: clear the ticks, the scanned-in copies and what was hidden as shelved (a copy taken off its
-  // shelf again must show).
+  // A fresh list shows again what was hidden as shelved (a copy taken off its shelf again must show). Read again
+  // for the same branch ("Check for more books", or after a save), it keeps the work in hand: the ticks on books
+  // still listed, and the copies scanned in from other shelves. Another branch's list starts clean.
+  const extraNow = useRef(extra);
+  extraNow.current = extra;
+  const listOf = useRef('');
   useEffect(() => {
-    setPicked([]);
-    setExtra([]);
+    const scope = `${orgId}/${branchId}`;
+    const same = listOf.current === scope;
+    listOf.current = scope;
+    const listed = new Set((waiting.data ?? []).map((c) => c.id));
+    const scanned = same ? extraNow.current.filter((c) => !listed.has(c.id)) : [];
+    const keep = new Set([...listed, ...scanned.map((c) => c.id)]);
+    setExtra(scanned);
+    setPicked((p) => (same ? p.filter((id) => keep.has(id)) : []));
     setDone(new Set());
-  }, [waiting.data]);
+  }, [waiting.data, orgId, branchId]);
 
   // Books with a usual shelf first, shelf by shelf, so the trolley can be read in the order of the shelves.
   const place = (c: Copy) => {
@@ -149,6 +160,10 @@ function BranchShelving({ orgId, branchId }: { orgId: string; branchId: string }
       settle(ids, refused.some((r) => r.copyIds.length > SHELVE_BATCH));
     }, 'usual').then(refocus);
 
+  // While the list is being read again, a save waits: one that finished first would be undone on screen when the
+  // older read landed, showing the books just shelved as not on a shelf.
+  const saveHeld = busy || waiting.refreshing;
+
   // A pick made with the mouse hands the keyboard back to the scan field. One made with the keyboard does not:
   // a closed list changes on every arrow key, and focus must stay on it.
   const byMouse = useRef(false);
@@ -187,18 +202,24 @@ function BranchShelving({ orgId, branchId }: { orgId: string; branchId: string }
           <FormError error={error} />
           <div className="row">
             {anyUsual && (
-              <button type="button" className="btn btn-filled" disabled={busy || usualCount === 0} onClick={() => void putBack()}>
+              <button type="button" className="btn btn-filled" disabled={saveHeld || usualCount === 0} onClick={() => void putBack()}>
                 {pending === 'usual' ? t.saving : lt.shelveBack(usualCount)}
               </button>
             )}
             <button
               type="button"
               className={`btn ${anyUsual ? 'btn-outlined' : 'btn-filled'}`}
-              disabled={busy || !shelf || ticked.length === 0}
+              disabled={saveHeld || !shelf || ticked.length === 0}
               onClick={() => void shelveOnPicked()}
             >
               {pending === 'shelf' ? t.saving : lt.shelveSubmit(ticked.length, shelfOf(shelf)?.code)}
             </button>
+            {/* A label that was lost or never printed: no shelf is needed for this. */}
+            {ticked.length > 0 && (
+              <Link className="btn btn-text" {...labelsLink(ticked.map((c) => ({ id: c.id, barcode: c.barcode, title: c.bookTitle })))}>
+                {lt.shelveLabels(ticked.length)}
+              </Link>
+            )}
           </div>
         </div>
       )}

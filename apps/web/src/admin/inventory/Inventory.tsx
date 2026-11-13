@@ -335,7 +335,8 @@ export function CopyDetailPage() {
         </div>
         <div className="row">
           {buttons.filter(([, , show]) => show).map(([a, text]) => (
-            <button key={a} type="button" className={`btn ${a === 'retire' || a === 'lost' ? 'btn-text' : 'btn-outlined'}`} onClick={() => setAction(a)}>
+            // Held while the copy shown is the one carried here: a form opened then would start from what the copy was.
+            <button key={a} type="button" className={`btn ${a === 'retire' || a === 'lost' ? 'btn-text' : 'btn-outlined'}`} disabled={copy.loading} onClick={() => setAction(a)}>
               {text}
             </button>
           ))}
@@ -399,33 +400,89 @@ export function CopyDetailPage() {
 
 // ------------------------------------------------------------------ labels
 
-/** Printable label sheet (A4, 3 × 8) for the copies in ?copies=id,id,… */
+/** What one printed label shows. */
+export interface LabelData {
+  barcode: string;
+  title: string;
+}
+
+/** Copy ids the labels link carries in its address (what a new tab, or a pasted link, can print). */
+export const LABELS_IN_LINK = 120;
+/** Labels on one A4 sheet (3 × 8). */
+const LABELS_PER_SHEET = 24;
+
+/**
+ * Where a "Print labels" link goes, for copies already in hand: the labels travel with the link (router state), so
+ * the sheet shows at once, however many there are. The address also carries the first copy ids, which is what a
+ * new tab reads instead. `barcode` is what the label holds: the copy's own barcode, never just its code.
+ */
+export function labelsLink(copies: (LabelData & { id: string })[]) {
+  return {
+    to: `${paths.adminLabels}?copies=${copies.slice(0, LABELS_IN_LINK).map((c) => c.id).join(',')}`,
+    state: { labels: copies.map(({ barcode, title }): LabelData => ({ barcode, title })) },
+  };
+}
+
+const handedLabels = (state: unknown): LabelData[] | null => {
+  const list = (state as { labels?: unknown } | null)?.labels;
+  const ok = Array.isArray(list) && list.length > 0 && list.every((l: unknown) => !!l && typeof (l as LabelData).barcode === 'string' && typeof (l as LabelData).title === 'string');
+  return ok ? (list as LabelData[]) : null;
+};
+
+/**
+ * Printable label sheet (A4, 3 × 8). The labels come with the link that led here (`labelsLink`); opened any
+ * other way, the copies in ?copies=id,id,… are read (the first 120).
+ */
 export function LabelsPage() {
   const [params] = useSearchParams();
   const { org } = useWorkspace();
-  const ids = (params.get('copies') ?? '').split(',').filter(Boolean).slice(0, 120);
-  const copies = useAsync(async () => (org ? (await Promise.all(ids.map((id) => getCopy(org.id, id)))).filter((c): c is Copy => !!c) : []), [org?.id, ids.join(',')]);
+  const handed = handedLabels(useLocation().state);
+  const ids = handed ? [] : (params.get('copies') ?? '').split(',').filter(Boolean).slice(0, LABELS_IN_LINK);
+  const read = useAsync(async () => {
+    if (!org || !ids.length) return { labels: [] as LabelData[], missing: 0 };
+    // One copy that can't be read (it has moved to another branch) must not blank the whole sheet.
+    const settled = await Promise.allSettled(ids.map((id) => getCopy(org.id, id)));
+    const found = settled.flatMap((s) => (s.status === 'fulfilled' && s.value ? [{ barcode: s.value.barcode, title: s.value.bookTitle }] : []));
+    const refused = settled.find((s) => s.status === 'rejected');
+    if (!found.length && refused) throw refused.reason;
+    return { labels: found, missing: ids.length - found.length };
+  }, [org?.id, ids.join(',')]);
+  const labels = handed ?? read.data?.labels ?? [];
+  const loading = !handed && read.loading;
   return (
     <>
       <header className="page-header page-header-row no-print">
         <div>
           <h1>{lt.labelsTitle}</h1>
-          <p className="muted">{lt.labelsHint}</p>
+          <p className="muted">
+            {lt.labelsHint} {!loading && labels.length > 0 && lt.labelsCount(labels.length, Math.ceil(labels.length / LABELS_PER_SHEET))}
+          </p>
         </div>
-        <button type="button" className="btn btn-filled" onClick={() => window.print()}>
+        <button type="button" className="btn btn-filled" disabled={!labels.length} onClick={() => window.print()}>
           <Icon name="print" /> {lt.print}
         </button>
       </header>
-      {copies.loading ? (
+      {loading ? (
         <SkeletonRows rows={3} />
+      ) : !handed && read.error ? (
+        <ErrorState message={read.error} onRetry={read.reload} />
+      ) : labels.length === 0 ? (
+        <EmptyState icon="print" title={lt.labelsNone} message="" />
       ) : (
-        <div className="label-sheet">
-          {(copies.data ?? []).map((c) => (
-            <div key={c.id} className="label">
-              <QrTag value={c.barcode} code={c.barcode} title={c.bookTitle} brand={t.appTitle} className="qr-tag-label" />
+        <>
+          {!handed && !!read.data?.missing && (
+            <div className="no-print">
+              <Notice tone="warn">{lt.labelsMissing(read.data.missing)}</Notice>
             </div>
-          ))}
-        </div>
+          )}
+          <div className="label-sheet">
+            {labels.map((l) => (
+              <div key={l.barcode} className="label">
+                <QrTag value={l.barcode} code={l.barcode} title={l.title} brand={t.appTitle} className="qr-tag-label" />
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </>
   );

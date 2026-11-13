@@ -1,7 +1,7 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAuth } from '../auth/AuthContext';
-import { branchScope } from '../auth/claims';
+import { branchScope, type StoriesClaims } from '../auth/claims';
 import { type Branch, getOrgs, listAllOrgs, listBranches, type Org } from '../data/org';
 import { useAsync } from '../shared/useAsync';
 
@@ -42,6 +42,19 @@ const writeStored = (key: string, value: string) => {
   }
 };
 
+/**
+ * The organization whose branches to read while the organizations themselves are still loading: the one this
+ * browser remembers, if the person is still in it, else the first by id (the same choice the loaded list makes).
+ * A Super Admin's list is not in their claims, so only the remembered one is known. A wrong guess costs one read.
+ */
+export function likelyOrgId(claims: Pick<StoriesClaims, 'sa' | 'o'>, stored: string | null): string | null {
+  if (claims.sa) return stored;
+  if (stored && Object.hasOwn(claims.o, stored)) return stored;
+  return Object.keys(claims.o).sort()[0] ?? null;
+}
+
+const NO_BRANCHES: Branch[] = [];
+
 /** The organization the staff member is working in (remembered per browser). */
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, claims } = useAuth();
@@ -54,11 +67,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const list = useMemo(() => orgs.data ?? [], [orgs.data]);
   const org = list.find((o) => o.id === orgId) ?? list[0] ?? null;
 
-  const branches = useAsync(() => (org ? listBranches(org.id) : Promise.resolve([])), [org?.id]);
+  // Branches are read alongside the organizations, not after them. The rows carry the organization they belong
+  // to and are used only once that organization is the one resolved, so a wrong guess or a switch never pairs an
+  // organization with another's branches.
+  const branchOrgId = org?.id ?? (orgs.loading ? likelyOrgId(claims, orgId) : null);
+  const reading = useRef<string | null>(null);
+  const branches = useAsync(() => {
+    reading.current = branchOrgId;
+    return branchOrgId ? listBranches(branchOrgId).then((rows) => ({ orgId: branchOrgId, rows })) : Promise.resolve(null);
+  }, [branchOrgId]);
+  const mine = !!org && branches.data?.orgId === org.id;
+  // useAsync starts a read in an effect, so for one render after the organization changes its error is still the
+  // previous organization's.
+  const failed = !!org && reading.current === org.id ? branches.error : null;
 
   useEffect(() => {
-    if (org && org.id !== orgId) setOrgIdState(org.id);
-  }, [org, orgId]);
+    if (!org || org.id === orgId) return;
+    setOrgIdState(org.id);
+    // Remembered also for someone who never used the switcher, so the next visit can read its branches at once.
+    writeStored(storageKey(uid), org.id);
+  }, [org, orgId, uid]);
 
   const setOrgId = (id: string) => {
     setOrgIdState(id);
@@ -66,7 +94,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     writeStored(storageKey(uid), id);
   };
 
-  const branchList = branches.data ?? [];
+  const branchList = mine ? branches.data!.rows : NO_BRANCHES;
   const scope = org ? branchScope(claims, org.id) : [];
   const myBranches = branchList.filter((b) => b.status === 'ACTIVE' && (scope === 'ALL' || scope.includes(b.id)));
   const branchKey = `stories.branch.${uid}.${org?.id ?? ''}`;
@@ -84,8 +112,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     org,
     setOrgId,
     branches: branchList,
-    branchesLoading: branches.loading,
-    branchesError: branches.error,
+    // True until the resolved organization's own branches are in (or their read failed): never false in between.
+    branchesLoading: org ? branches.loading || (!mine && !failed) : orgs.loading,
+    branchesError: failed,
     reloadBranches: branches.reload,
     branchName: (id) => (id === '*' ? '*' : (branchList.find((b) => b.id === id)?.name ?? id)),
     myBranches,

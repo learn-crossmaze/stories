@@ -26,6 +26,11 @@ export interface Row {
   candidate: Candidate | null;
   genre: Genre;
   ageGroup: AgeGroup;
+  /**
+   * Where the age group comes from: the page's "For new titles" choice (it follows a change there), a guess from
+   * the looked-up book details, or the row's own list (neither is overwritten by the page's choice).
+   */
+  ageFrom: 'page' | 'guess' | 'row';
   author: string;
   /** Title typed in for an ISBN no public catalogue knows. */
   title: string;
@@ -81,8 +86,11 @@ export const typedIn = (r: Row): Candidate => ({
  * its row (`onNotice` says which).
  */
 export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd: boolean; receiving: boolean; defaults: { ageGroup: AgeGroup; genre: Genre }; onNotice: (text: string) => void }) {
+  // The page's choices as they are now: a lookup answers later, and must not bring back what they were when it began.
+  const now = useRef(defaults);
+  now.current = defaults;
   const blank = (): Row => ({
-    key: nextKey++, raw: '', touched: false, checked: null, state: 'idle', candidate: null, genre: defaults.genre, ageGroup: defaults.ageGroup, author: '', title: '',
+    key: nextKey++, raw: '', touched: false, checked: null, state: 'idle', candidate: null, genre: now.current.genre, ageGroup: now.current.ageGroup, ageFrom: 'page', author: '', title: '',
     quantity: '1', price: '', message: null, code: null, bookId: null, copies: [], pricePaid: null,
   });
   const [rows, setRows] = useState<Row[]>(() => Array.from({ length: START_ROWS }, blank));
@@ -92,12 +100,20 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
   const [focusKey, setFocusKey] = useState<number | null>(null);
   const enqueue = usePool();
 
+  // After every render: a field that is not there yet, or is held while a save runs, is focused once it can be.
   useEffect(() => {
-    if (focusKey !== null) {
-      inputs.current.get(focusKey)?.focus();
-      setFocusKey(null);
-    }
-  }, [focusKey, rows]);
+    if (focusKey === null) return;
+    const el = inputs.current.get(focusKey);
+    if (!el || el.disabled) return;
+    el.focus();
+    setFocusKey(null);
+  });
+
+  /** A row's ISBN is gone or replaced: what was found for it goes, and so does an age group guessed from it. */
+  const unchecked = (r: Row): Partial<Row> => ({
+    checked: null, state: 'idle', candidate: null, message: null,
+    ...(r.ageFrom === 'guess' ? { ageGroup: now.current.ageGroup, ageFrom: 'page' as const } : {}),
+  });
 
   const patch = (key: number, change: Partial<Row> | ((r: Row) => Partial<Row>)) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...(typeof change === 'function' ? change(r) : change) } : r)));
@@ -118,7 +134,7 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
       if (!receiving) return void patch(key, { touched: true }), false;
       const target = rowsRef.current[earlier];
       const next = String(Math.min(50, (Number(target.quantity) || 0) + 1));
-      rowsRef.current = rowsRef.current.map((r) => (r.key === target.key ? { ...r, quantity: next } : r.key === key ? { ...r, raw: '', touched: false, checked: null, state: 'idle', candidate: null, message: null } : r));
+      rowsRef.current = rowsRef.current.map((r) => (r.key === target.key ? { ...r, quantity: next } : r.key === key ? { ...r, raw: '', touched: false, ...unchecked(r) } : r));
       setRows(rowsRef.current);
       onNotice(lt.receiveBumped(earlier + 1, next));
       return true;
@@ -132,7 +148,14 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
           if (r.checked !== isbn) return {};
           if (!c) return { state: 'notFound' };
           if (c.existingBookId) return { state: 'exists', candidate: c, bookId: c.existingBookId };
-          return { state: 'found', candidate: c, genre: (c.genres[0] as Genre | undefined) ?? defaults.genre };
+          // The age group is taken from the book details only when they say who the book is for; a guess left
+          // from another ISBN goes back to the page's choice.
+          const guess = c.ageGroup
+            ? { ageGroup: c.ageGroup, ageFrom: 'guess' as const }
+            : r.ageFrom === 'guess'
+              ? { ageGroup: now.current.ageGroup, ageFrom: 'page' as const }
+              : {};
+          return { state: 'found', candidate: c, genre: (c.genres[0] as Genre | undefined) ?? now.current.genre, ...guess };
         });
       } catch (e) {
         patch(key, (r) => (r.checked === isbn ? { state: 'error', message: errorText(e) } : {}));
@@ -142,7 +165,7 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
   };
 
   const onChange = (key: number, raw: string) => {
-    patch(key, (r) => (r.raw === raw ? {} : { raw, touched: false, ...(normalizeIsbn(raw) === r.checked ? {} : { checked: null, state: 'idle' as State, candidate: null, message: null }) }));
+    patch(key, (r) => (r.raw === raw ? {} : { raw, touched: false, ...(normalizeIsbn(raw) === r.checked ? {} : unchecked(r)) }));
     // A complete, valid ISBN (typed or scanned) is checked straight away.
     if (normalizeIsbn(raw)) validate(key, raw);
   };
@@ -176,7 +199,7 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
     for (const piece of pieces) {
       while (i < current.length && i !== start && current[i].raw.trim()) i++;
       if (i >= current.length) current.push(blank());
-      current[i] = { ...current[i], raw: piece, touched: true, checked: null, state: 'idle', candidate: null, message: null };
+      current[i] = { ...current[i], raw: piece, touched: true, ...unchecked(current[i]) };
       targets.push({ key: current[i].key, raw: piece });
       i++;
     }
@@ -192,9 +215,51 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
     else inputs.current.delete(key);
   };
   const addRow = () => setRows((rs) => [...rs, blank()]);
-  const clear = () => setRows(Array.from({ length: START_ROWS }, blank));
+  /** A fresh list, with the cursor in its first row. */
+  const clear = () => {
+    const fresh = Array.from({ length: START_ROWS }, blank);
+    rowsRef.current = fresh;
+    setRows(fresh);
+    setFocusKey(fresh[0].key);
+  };
 
-  return { rows, setRows, patch, validate, onChange, onKeyDown, onPaste, remove, inputRef, addRow, clear };
+  const open = (r: Row) => r.state !== 'added' && !r.raw.trim();
+  /** Puts the cursor in the first empty row (adding one when there is none), ready for the next scan. */
+  const focusFirstEmpty = () => {
+    const first = rowsRef.current.find(open);
+    if (first) return setFocusKey(first.key);
+    const row = blank();
+    setRows((rs) => [...rs, row]);
+    setFocusKey(row.key);
+  };
+
+  /**
+   * A code read by the camera. Only an ISBN is taken (a book's back cover carries other barcodes too). A title
+   * already on the list counts another copy on its row when receiving, wherever that row is; otherwise the ISBN
+   * goes into the first empty row and is looked up like a typed one, and an empty row is kept at the end.
+   */
+  const scan = (raw: string) => {
+    const isbn = normalizeIsbn(raw);
+    if (!isbn) return onNotice(lt.camNotIsbn);
+    const at = rowsRef.current.findIndex((r) => r.state !== 'added' && normalizeIsbn(r.raw) === isbn);
+    if (at !== -1) {
+      if (!receiving) return onNotice(lt.bulkRepeat(at + 1));
+      const next = String(Math.min(50, (Number(rowsRef.current[at].quantity) || 0) + 1));
+      rowsRef.current = rowsRef.current.map((r, i) => (i === at ? { ...r, quantity: next } : r));
+      setRows(rowsRef.current);
+      return onNotice(lt.receiveBumped(at + 1, next));
+    }
+    const current = [...rowsRef.current];
+    let i = current.findIndex(open);
+    if (i === -1) i = current.push(blank()) - 1;
+    current[i] = { ...current[i], raw: isbn, touched: true, ...unchecked(current[i]) };
+    if (!current.slice(i + 1).some(open)) current.push(blank());
+    rowsRef.current = current;
+    setRows(current);
+    validate(current[i].key, isbn);
+  };
+
+  return { rows, setRows, patch, validate, onChange, onKeyDown, onPaste, remove, inputRef, addRow, clear, focusFirstEmpty, scan };
 }
 
 export type BulkRows = ReturnType<typeof useBulkRows>;
@@ -220,6 +285,7 @@ export function BulkRow({
   canAdd,
   busy,
   deliveryPrice,
+  first = false,
 }: {
   view: RowView;
   rows: BulkRows;
@@ -227,6 +293,8 @@ export function BulkRow({
   canAdd: boolean;
   busy: boolean;
   deliveryPrice: string;
+  /** The first row still to fill: where the cursor goes when the page opens (shared/useRouteFocus.ts). */
+  first?: boolean;
 }) {
   const statusId = `bulk-status-${r.key}`;
   const done = r.state === 'added';
@@ -242,6 +310,7 @@ export function BulkRow({
           autoComplete="off"
           value={r.raw}
           disabled={done || busy}
+          data-autofocus={first || undefined}
           aria-label={lt.bulkIsbnLabel(n)}
           aria-describedby={statusId}
           aria-invalid={invalid || repeatOf !== -1}
@@ -330,7 +399,7 @@ export function BulkRow({
       <td>
         {done && r.code && <span className="muted">{label(r.ageGroup)}</span>}
         {newTitle && !done && (
-          <select value={r.ageGroup} disabled={busy} onChange={(e) => rows.patch(r.key, { ageGroup: e.target.value as AgeGroup })} aria-label={`${lt.ageGroup}, row ${n}`}>
+          <select value={r.ageGroup} disabled={busy} onChange={(e) => rows.patch(r.key, { ageGroup: e.target.value as AgeGroup, ageFrom: 'row' })} aria-label={`${lt.ageGroup}, row ${n}`}>
             {AGE_GROUPS.map((a) => (
               <option key={a} value={a}>
                 {label(a)}
@@ -338,6 +407,7 @@ export function BulkRow({
             ))}
           </select>
         )}
+        {newTitle && !done && r.ageFrom === 'guess' && <div className="small muted">{lt.bulkAgeGuessed}</div>}
       </td>
       {receiving && (
         <td>

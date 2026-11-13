@@ -5,7 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 
 import { command } from './api';
 import { db } from './common';
-import { type Employee, getPrivateProfile, myEmployee, type PrivateProfile } from './hr';
+import { type Employee, forgetMyEmployee, getPrivateProfile, myEmployee, type PrivateProfile } from './hr';
 import { employeeDocuments, listDocumentTypes } from './hrDocuments';
 
 export const PROFILE_FIELDS = [
@@ -79,15 +79,23 @@ export interface OnboardingStatus {
   total: number;
 }
 
+/** The signed-in person's own record and what is still missing from it (null: nothing for them to fill in here). */
+export interface OnboardingState {
+  employee: Employee | null;
+  status: OnboardingStatus | null;
+}
+
 /**
  * The signed-in person's self-onboarding: each mandatory detail and each
  * required document they can upload themselves. A document counts once it is
  * uploaded (awaiting verification or verified); a rejected or expired one has
- * to be uploaded again. Null when there is nothing for them to do here.
+ * to be uploaded again. The record comes back also when there is nothing for
+ * them to do here (someone leaving still opens My profile). The shell reads
+ * this once and shares it (admin/people/OnboardingReminder.tsx).
  */
-export async function myOnboarding(orgId: string, uid: string): Promise<OnboardingStatus | null> {
+export async function myOnboardingState(orgId: string, uid: string): Promise<OnboardingState> {
   const employee = await myEmployee(orgId, uid);
-  if (!needsSelfOnboarding(employee)) return null;
+  if (!needsSelfOnboarding(employee)) return { employee, status: null };
   const [profile, required, types, docs] = await Promise.all([
     getPrivateProfile(orgId, employee!.id),
     requiredFields(orgId),
@@ -121,9 +129,16 @@ export async function myOnboarding(orgId: string, uid: string): Promise<Onboardi
     });
   }
   const missing = items.filter((i) => !i.done);
-  return { employee: employee!, profile, required, items, missing, done: items.length - missing.length, total: items.length };
+  return { employee, status: { employee: employee!, profile, required, items, missing, done: items.length - missing.length, total: items.length } };
 }
+
+/** Only what is missing; null when there is nothing for the person to do here. */
+export const myOnboarding = (orgId: string, uid: string): Promise<OnboardingStatus | null> => myOnboardingState(orgId, uid).then((s) => s.status);
 
 /** Tells the reminder and banner to look again after something was saved or uploaded. */
 export const ONBOARDING_CHANGED = 'stories:onboarding-changed';
-export const onboardingChanged = () => window.dispatchEvent(new Event(ONBOARDING_CHANGED));
+export const onboardingChanged = () => {
+  // The person's own record may have changed too: whoever reads next must not get the one kept from before.
+  forgetMyEmployee();
+  window.dispatchEvent(new Event(ONBOARDING_CHANGED));
+};

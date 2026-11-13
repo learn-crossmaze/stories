@@ -4,6 +4,7 @@ import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 
 import type { Book } from './catalogue';
 import { call, command } from './api';
+import { TRANSFER_MAX } from './circulation';
 import { db, withId } from './common';
 import type { AgeGroup, Genre, READING_LEVELS } from './common';
 
@@ -26,7 +27,8 @@ export async function catalogueByIsbn(isbn: string): Promise<Candidate | null> {
 export async function lookupIsbn(isbn: string, external = true): Promise<Candidate | null> {
   const ours = await catalogueByIsbn(isbn);
   if (ours || !external) return ours;
-  const res = await call<{ candidates: Candidate[] }>('books-lookup', { q: isbn });
+  // `exact`: only this ISBN is wanted, so the answer comes as soon as one source has it.
+  const res = await call<{ candidates: Candidate[] }>('books-lookup', { q: isbn, exact: true });
   return res.candidates.find((c) => c.isbn === isbn) ?? res.candidates[0] ?? null;
 }
 
@@ -87,11 +89,77 @@ export async function bulkCreateBooks(items: BulkItem[], options: ChunkOptions<B
 /** Attaches a cover found during lookup; a failed download just leaves the book without one. */
 export const importCover = (bookId: string, imageUrl: string) => command('books-setCover', { bookId, imageUrl }).then(() => true).catch(() => false);
 
+/** Covers fetched at a time: each is a full-size download on the server. */
+export const COVER_IMPORTS = 3;
+
+/** Covers handed to `queueCovers` since the queue was last empty: how many are in, of how many. */
+export interface CoverProgress {
+  done: number;
+  total: number;
+}
+
+const coverJobs: { bookId: string; url: string }[] = [];
+/** Every title ever queued here: a second import of the same cover is refused for staff who may only add a missing one. */
+const coverSeen = new Set<string>();
+const coverWatchers = new Set<(progress: CoverProgress) => void>();
+let coverState: CoverProgress = { done: 0, total: 0 };
+let coversRunning = 0;
+
+/** Closing or reloading the tab would drop the covers still waiting (they can't be imported from the book page). */
+const warnBeforeLeaving = (e: BeforeUnloadEvent) => e.preventDefault();
+
+function tellCovers(next: CoverProgress) {
+  coverState = next;
+  for (const watcher of coverWatchers) watcher(next);
+}
+
+function pumpCovers() {
+  while (coversRunning < COVER_IMPORTS && coverJobs.length) {
+    const job = coverJobs.shift()!;
+    coversRunning++;
+    void importCover(job.bookId, job.url).then(() => {
+      coversRunning--;
+      tellCovers({ ...coverState, done: coverState.done + 1 });
+      if (coverState.done >= coverState.total) removeEventListener('beforeunload', warnBeforeLeaving);
+      pumpCovers();
+    });
+  }
+}
+
+/**
+ * Imports looked-up covers behind the scenes, a few at a time, so nobody waits for them. One queue for the whole
+ * app: it keeps going when the page that filled it is left (not when the tab is closed), a second delivery's
+ * covers join the same count, and a title is never imported twice.
+ */
+export function queueCovers(list: { bookId: string; url: string }[]): void {
+  const fresh = list.filter((c) => {
+    if (coverSeen.has(c.bookId)) return false;
+    coverSeen.add(c.bookId);
+    return true;
+  });
+  if (!fresh.length) return;
+  // Everything before was done: the count starts again.
+  const before = coverState.done >= coverState.total ? { done: 0, total: 0 } : coverState;
+  coverJobs.push(...fresh);
+  addEventListener('beforeunload', warnBeforeLeaving);
+  tellCovers({ done: before.done, total: before.total + fresh.length });
+  pumpCovers();
+}
+
+export const coverProgress = (): CoverProgress => coverState;
+
+/** Calls `watcher` on every change of the cover count; returns how to stop. */
+export function onCoverProgress(watcher: (progress: CoverProgress) => void): () => void {
+  coverWatchers.add(watcher);
+  return () => void coverWatchers.delete(watcher);
+}
+
 /** One title in a delivery: already in the catalogue (`bookId`) or new (`book`), with its copies. */
 export type ReceiveItem = ({ bookId: string } | { book: BulkItem }) & { quantity: number; acquisitionCostMinor: number };
 
 export interface ReceiveResult {
-  received: { bookId: string; title: string; codes: string[]; copyIds: string[]; isNew: boolean }[];
+  /** `held`: how many of the copies (the first ones) went to waiting members; sent only by a backend that says so. */
+  received: { bookId: string; title: string; codes: string[]; copyIds: string[]; isNew: boolean; held?: number }[];
   newTitles: { isbn: string; bookId: string; code: string }[];
   copies: number;
   allocated: number;
@@ -135,3 +203,44 @@ export async function receiveStock(
   }
   return out;
 }
+
+/** One title's new copies at the branch that received them, for sending on to other branches. */
+export interface StockLine {
+  bookId: string;
+  title: string;
+  /** In code order. A copy's label carries its code (copies made by copies-receive). */
+  copies: { id: string; code: string }[];
+}
+
+/** How many copies of each title go to each branch: `[bookId][branchId]`. */
+export type SendPlan = Record<string, Record<string, number>>;
+
+/**
+ * Which copies go where. Copies of a title are alike until they are labelled, so each branch (in the order
+ * given) takes the next ones of the title in code order; a number above what is left takes what is left.
+ */
+export function assignCopies(lines: StockLine[], branchIds: string[], plan: SendPlan): { branchId: string; copies: { id: string; code: string; bookId: string }[] }[] {
+  const out = branchIds.map((branchId) => ({ branchId, copies: [] as { id: string; code: string; bookId: string }[] }));
+  for (const line of lines) {
+    let next = 0;
+    for (const to of out) {
+      const want = Math.max(0, Math.floor(plan[line.bookId]?.[to.branchId] ?? 0));
+      to.copies.push(...line.copies.slice(next, next + want).map((c) => ({ ...c, bookId: line.bookId })));
+      next += want;
+    }
+  }
+  return out.filter((to) => to.copies.length);
+}
+
+/** One branch's copies in transfers of at most TRANSFER_MAX. */
+export function transferLoads<T>(copies: T[]): T[][] {
+  return Array.from({ length: Math.ceil(copies.length / TRANSFER_MAX) }, (_, n) => copies.slice(n * TRANSFER_MAX, (n + 1) * TRANSFER_MAX));
+}
+
+/**
+ * Sends copies known by id to another branch: one command creates the transfer already on its way. No request id
+ * of its own: the same copies sent again after an unknown outcome are recognised by `command` and answered from
+ * the stored result, and a changed list is a new request.
+ */
+export const sendToBranch = (orgId: string, fromBranchId: string, toBranchId: string, copyIds: string[]) =>
+  command<{ transferId: string }>('transfers-create', { orgId, fromBranchId, toBranchId, copyIds, note: '', dispatch: true });

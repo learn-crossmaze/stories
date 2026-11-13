@@ -4,9 +4,9 @@ import { Link } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { employeeMonth } from '../../data/attendance';
 import { monthIST, todayIST } from '../../shared/dates';
-import { myEmployee } from '../../data/hr';
 import { available, employeeRequests, leaveBalance, listLeaveTypes } from '../../data/leave';
 import { employeePayslips, monthName } from '../../data/payroll';
+import { onboardingChanged } from '../../data/selfOnboarding';
 import { paths } from '../../paths';
 import { Badge, EmptyState, ErrorState, NoOrgState, SkeletonRows } from '../../shared/ui';
 import { rupees } from '../../shared/format';
@@ -15,7 +15,7 @@ import { ht } from '../../strings/hr';
 import { useWorkspace } from '../Workspace';
 import { EmployeeDocumentsPanel } from './EmployeeDocuments';
 import { CheckInCard } from './MyAttendance';
-import { useMyOnboarding } from './OnboardingReminder';
+import { useMyOnboarding, useMyOnboardingState } from './OnboardingReminder';
 import { Checklist } from './employeePanels';
 import { PayslipButton } from './payrollKit';
 import { EmployeePhoto } from './EmployeePhoto';
@@ -25,19 +25,23 @@ const WORKING = ['ONBOARDING', 'ACTIVE', 'NOTICE_PERIOD', 'OFFBOARDING'];
 export function MyProfilePage() {
   const { user } = useAuth();
   const { org, branchName } = useWorkspace();
-  const me = useAsync(() => (org && user ? myEmployee(org.id, user.uid) : Promise.resolve(null)), [org?.id, user?.uid]);
+  // The person's own record and what is still missing come from the shell's one shared read (OnboardingProvider),
+  // already loaded when this page opens; `changed` makes everything that shows them read again once.
+  const me = useMyOnboardingState();
   const onboarding = useMyOnboarding();
+  const e = me.data?.employee ?? null;
+  const changed = onboardingChanged;
   const summary = useAsync(async () => {
-    if (!org || !user || !me.data) return null;
+    if (!org || !user || !e) return null;
     const year = todayIST().slice(0, 4);
     const own = { ownUid: user.uid };
     // Each part fails on its own (e.g. a page opened before payroll exists) without hiding the rest.
     const [days, types, balance, requests, slips] = await Promise.all([
-      employeeMonth(org.id, me.data.id, monthIST(), own).catch(() => null),
+      employeeMonth(org.id, e.id, monthIST(), own).catch(() => null),
       listLeaveTypes(org.id).catch(() => []),
-      leaveBalance(org.id, me.data.id, year).catch(() => null),
-      employeeRequests(org.id, me.data.id, year, own).catch(() => []),
-      employeePayslips(org.id, me.data.id, own).catch(() => []),
+      leaveBalance(org.id, e.id, year).catch(() => null),
+      employeeRequests(org.id, e.id, year, own).catch(() => []),
+      employeePayslips(org.id, e.id, own).catch(() => []),
     ]);
     const count = (s: string) => days?.filter((d) => d.status === s).length ?? 0;
     return {
@@ -49,12 +53,12 @@ export function MyProfilePage() {
       waiting: requests.filter((r) => r.status === 'PENDING').length,
       latest: slips[0] ?? null,
     };
-  }, [org?.id, me.data?.id]);
+  }, [org?.id, e?.id]);
 
   if (!org) return <NoOrgState />;
-  if (me.loading && !me.data) return <SkeletonRows rows={5} />;
-  if (me.error) return <ErrorState message={me.error} onRetry={me.reload} />;
-  const e = me.data;
+  if (me.loading) return <SkeletonRows rows={5} />;
+  // A background re-read that fails keeps the page; the next one tries again.
+  if (me.error && !me.data) return <ErrorState message={me.error} onRetry={me.reload} />;
   if (!e) return <EmptyState page icon="person" title={ht.navMyProfile} message={ht.noEmployeeRecord} />;
   const s = summary.data;
   // While joining or leaving, the open checklist shows what is still to do.
@@ -74,7 +78,7 @@ export function MyProfilePage() {
     <>
       <header className="page-header page-header-row">
         <div className="profile-head">
-          <EmployeePhoto orgId={org.id} employee={e} canEdit={e.status !== 'OFFBOARDED'} onChanged={me.reload} />
+          <EmployeePhoto orgId={org.id} employee={e} canEdit={e.status !== 'OFFBOARDED'} onChanged={changed} />
           <div>
           <h1>{e.fullName}</h1>
           <p className="muted">
@@ -94,7 +98,7 @@ export function MyProfilePage() {
           </Link>
         </section>
       )}
-      {WORKING.includes(e.status) && <CheckInCard />}
+      {WORKING.includes(e.status) && <CheckInCard me={e} onPunched={summary.reload} />}
 
       <div className="hub-grid">
         <section className="card hub-card" aria-labelledby="hub-att">
@@ -144,12 +148,12 @@ export function MyProfilePage() {
 
       <section className="section" aria-labelledby="hub-docs">
         <h2 id="hub-docs">{ht.myDocuments}</h2>
-        <EmployeeDocumentsPanel orgId={org.id} employee={e} canManage={false} canVerify={false} onChanged={me.reload} />
+        <EmployeeDocumentsPanel orgId={org.id} employee={e} canManage={false} canVerify={false} onChanged={changed} />
       </section>
 
       {checklist && (
         <div className="section">
-          <Checklist orgId={org.id} employee={e} list={checklist} editable={false} onChanged={me.reload} />
+          <Checklist orgId={org.id} employee={e} list={checklist} editable={false} onChanged={changed} />
         </div>
       )}
     </>

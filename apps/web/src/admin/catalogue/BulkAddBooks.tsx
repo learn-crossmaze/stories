@@ -2,43 +2,91 @@
 // or scanned and looked up; staff who look after copies at the branch also set how many copies arrived, and one
 // submit adds the new titles to the catalogue and every copy to the branch (copies-receive). Catalogue managers
 // without a branch get the titles-only version (books-bulkCreate).
-import { useRef, useState } from 'react';
-import { Link } from 'react-router';
+//
+// The page opens with the cursor in the first ISBN field and puts it in the next empty row after a delivery, so
+// carton after carton is scanned without the mouse. Covers of new titles are fetched behind the scenes, and what
+// was received stays listed (labels, sending on to other branches) until "Clear list".
+import { useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { errorText } from '../../data/api';
-import { bulkCreateBooks, type BulkItem, type BulkResult, type ChunkRange, importCover, type ReceiveItem, type ReceiveResult, receiveStock } from '../../data/bulkBooks';
+import {
+  bulkCreateBooks,
+  type BulkItem,
+  type BulkResult,
+  type ChunkRange,
+  coverProgress,
+  onCoverProgress,
+  queueCovers,
+  type ReceiveItem,
+  type ReceiveResult,
+  receiveStock,
+} from '../../data/bulkBooks';
+import { newTitleDefaults, type NewTitleDefaults } from '../../data/catalogue';
 import { AGE_GROUPS, type AgeGroup, CONDITIONS, type Condition, GENRES, type Genre, label, LANGUAGES, READING_LEVELS } from '../../data/common';
 import { listLocations } from '../../data/inventory';
-import { paths } from '../../paths';
 import { normalizeIsbn } from '../../shared/isbn';
 import { toMinor } from '../../shared/format';
+import { oneOf, remember } from '../../shared/remember';
 import { EmptyState, Icon, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
 import { lt } from '../../strings/library';
+import { CameraScanner } from '../components/CameraScanner';
 import { FormError } from '../components/Dialog';
 import { Notice } from '../components/kit';
 import { useCanAddBooks } from './Catalogue';
 import { useWorkspace } from '../Workspace';
 import { BulkRow, type Level, typedIn, useBulkRows, whole } from './bulkRows';
+import { type ReceivedCopy, ReceivedLabels, SendToBranches } from './ReceiveSend';
 
 export function BulkAddBooksPage() {
   const canAdd = useCanAddBooks();
   const { claims } = useAuth();
-  const { org, branch } = useWorkspace();
+  const { org, branch, branches, branchName } = useWorkspace();
   // Receiving: staff who look after copies at the branch in use. Otherwise titles only (catalogue managers).
   const receiving = !!org && !!branch && can(claims, 'copies.manage', org.id, branch.id);
-  const locations = useAsync(() => (receiving && org && branch ? listLocations(org.id, branch.id) : Promise.resolve([])), [receiving, org?.id, branch?.id]);
+  // The branch being received at. The shelves are read with it: after a switch of branch, the list still held
+  // is the other branch's until the new one lands.
+  const at = receiving && org && branch ? `${org.id}/${branch.id}` : '';
+  const locations = useAsync(async () => ({ at, list: receiving && org && branch ? await listLocations(org.id, branch.id) : [] }), [at]);
+  const shelves = at && locations.data?.at === at ? locations.data.list : null;
+  const activeShelves = (shelves ?? []).filter((l) => l.status === 'ACTIVE');
   const [notice, setNotice] = useState<string | null>(null);
   const [delivery, setDelivery] = useState<{ locationId: string; condition: Condition; price: string }>({ locationId: '', condition: 'NEW', price: '' });
-  const [labels, setLabels] = useState<string[]>([]);
-  const [defaults, setDefaults] = useState<{ ageGroup: AgeGroup; readingLevel: Level; genre: Genre }>({ ageGroup: 'ADULTS', readingLevel: 'INTERMEDIATE', genre: 'FICTION' });
+  // The shelf this branch last received onto is offered again (the condition and the price are not: a stale one
+  // would be written to every copy). It is stored when it is picked, and applied once per branch, when that
+  // branch's shelves have been read and only if the shelf is still in use.
+  const shelfKey = remember.key('receiveShelf', org?.id ?? '', branch?.id ?? '');
+  const shelfFor = useRef('');
+  useEffect(() => {
+    if (!at || shelfFor.current === at) return;
+    if (!shelves) return setDelivery((d) => (d.locationId ? { ...d, locationId: '' } : d));
+    shelfFor.current = at;
+    const ids = shelves.filter((l) => l.status === 'ACTIVE').map((l) => l.id);
+    setDelivery((d) => ({ ...d, locationId: remember.get(shelfKey, '', oneOf(ids)) }));
+  }, [at, shelves, shelfKey]);
+  /** Every copy received on this page since it was opened or cleared: for the labels, and for sending on. */
+  const [received, setReceived] = useState<ReceivedCopy[]>([]);
+  // What a new title starts as: the choices last made in this browser (shared with the New book form).
+  const [defaults, setDefaults] = useState<NewTitleDefaults>(() => newTitleDefaults.get());
+  const choose = (change: Partial<NewTitleDefaults>) => {
+    setDefaults((d) => ({ ...d, ...change }));
+    newTitleDefaults.set(change);
+  };
   const bulk = useBulkRows({ canAdd, receiving, defaults, onNotice: setNotice });
   const { rows, setRows } = bulk;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
+  // Covers still being fetched (data/bulkBooks.ts): they don't hold the page, and the count is the queue's own,
+  // so it is right again when the page is opened while they run.
+  const [covers, setCovers] = useState(coverProgress);
+  useEffect(() => {
+    setCovers(coverProgress());
+    return onCoverProgress(setCovers);
+  }, []);
   // One requestId per group of rows sent together, kept until that call is known to have
   // gone through: a retry of the same rows after an unknown outcome can't add them twice.
   const requestIds = useRef(new Map<string, string>());
@@ -53,7 +101,8 @@ export function BulkAddBooksPage() {
   const defaultPrice = delivery.price.trim() ? toMinor(delivery.price) : 0;
   const view = rows.map((r, i) => {
     const isbn = normalizeIsbn(r.raw);
-    const repeatOf = isbn ? rows.findIndex((o, j) => j < i && normalizeIsbn(o.raw) === isbn) : -1;
+    // Rows already added don't count: the same title can arrive again in the next carton.
+    const repeatOf = isbn && r.state !== 'added' ? rows.findIndex((o, j) => j < i && o.state !== 'added' && normalizeIsbn(o.raw) === isbn) : -1;
     // Unknown to the public catalogues, or they can't be reached: the title and author can be typed in.
     const manual = (r.state === 'notFound' || r.state === 'error') && canAdd;
     const needsAuthor = (r.state === 'found' && !r.candidate?.authors.length) || manual;
@@ -90,23 +139,21 @@ export function BulkAddBooksPage() {
     };
   };
 
-  const addCovers = async (made: { bookId: string; isbn: string }[]) => {
-    const covers = made.flatMap((c) => {
-      const url = ready.find((v) => v.isbn === c.isbn)?.r.candidate?.coverUrl;
-      return url ? [{ bookId: c.bookId, url }] : [];
-    });
-    for (const [i, c] of covers.entries()) {
-      setBusy(lt.bulkCovers(i + 1, covers.length));
-      await importCover(c.bookId, c.url);
-    }
-  };
+  /** Hands the covers of the titles just made to the queue. From the rows as they were sent: once the page is free, rows can change. */
+  const addCovers = (sent: typeof ready, made: { bookId: string; isbn: string }[]) =>
+    queueCovers(
+      made.flatMap((c) => {
+        const url = sent.find((v) => v.isbn === c.isbn)?.r.candidate?.coverUrl;
+        return url ? [{ bookId: c.bookId, url }] : [];
+      }),
+    );
 
   const receive = async () => {
     if (!ready.length || busy || !org || !branch) return;
     setError(null);
     setNotice(null);
-    setLabels([]);
     const sent = ready;
+    const here = branch.id;
     const items: ReceiveItem[] = sent.map((v) => ({
       ...(v.r.state === 'exists' ? { bookId: v.r.bookId! } : { book: bookOf(v) }),
       quantity: Number(v.r.quantity),
@@ -126,6 +173,20 @@ export function BulkAddBooksPage() {
       got.allocated += res.allocated;
       done += keys.length;
       setBusy(lt.receiveSaving(done, items.length));
+      // Kept across calls and deliveries (a retry after a failure adds to what the first calls received).
+      const arrived = res.received.flatMap((r) =>
+        r.copyIds.map((id, k): ReceivedCopy => ({
+          id, code: r.codes[k], bookId: r.bookId, title: r.title, branchId: here,
+          // Members waiting here get the first copies of a title. Nobody waits for a title that is new, or when
+          // the call served no one; otherwise, unless the answer says how many, the copy is read before it is sent on.
+          kept: r.held !== undefined && k < r.held,
+          unsure: r.held === undefined && res.allocated > 0 && !r.isNew,
+        })),
+      );
+      setReceived((all) => {
+        const known = new Set(all.map((c) => c.id));
+        return [...all, ...arrived.filter((c) => !known.has(c.id))];
+      });
       const newByIsbn = new Map(res.newTitles.map((n) => [n.isbn, n]));
       const byBook = new Map(res.received.map((r) => [r.bookId, r]));
       setRows((rs) =>
@@ -138,6 +199,7 @@ export function BulkAddBooksPage() {
         }),
       );
     };
+    let failed = false;
     try {
       setBusy(lt.receiveSaving(0, items.length));
       await receiveStock({ orgId: org.id, branchId: branch.id, locationId: delivery.locationId || null, condition: delivery.condition }, items, {
@@ -145,17 +207,18 @@ export function BulkAddBooksPage() {
         requestId: (range) => requestIdFor(keysOf(range)),
       });
     } catch (e) {
+      failed = true;
       setError(errorText(e));
     }
-    try {
-      if (got.copies || got.newTitles.length) {
-        await addCovers(got.newTitles);
-        setLabels(got.received.flatMap((r) => r.copyIds));
-        setNotice(lt.receiveDone(got.copies, got.received.length, got.newTitles.length, got.allocated));
-      }
-    } finally {
-      setBusy(null);
+    // What went through is shown at once, also when a later call failed; the covers follow on their own.
+    if (got.copies || got.newTitles.length) {
+      setNotice(lt.receiveDone(got.copies, got.received.length, got.newTitles.length, got.allocated));
+      addCovers(sent, got.newTitles);
     }
+    setBusy(null);
+    // Ready for the next carton (in the same update as the fields coming free). After a failure the message and
+    // the button to try again matter more.
+    if (!failed) bulk.focusFirstEmpty();
   };
 
   const submit = async () => {
@@ -187,21 +250,29 @@ export function BulkAddBooksPage() {
         }),
       );
     };
+    let failed = false;
     try {
       setBusy(lt.bulkSaving(0, items.length));
       await bulkCreateBooks(items, { onChunk: committed, requestId: (range) => requestIdFor(keysOf(range)) });
     } catch (e) {
+      failed = true;
       setError(errorText(e));
     }
-    try {
-      if (got.created.length || got.skipped.length) {
-        await addCovers(got.created);
-        setNotice(`${lt.bulkDone(got.created.length, got.skipped.length)} ${lt.bulkNextStep}`);
-      }
-    } finally {
-      setBusy(null);
+    if (got.created.length || got.skipped.length) {
+      setNotice(`${lt.bulkDone(got.created.length, got.skipped.length)} ${lt.bulkNextStep}`);
+      addCovers(sent, got.created);
     }
+    setBusy(null);
+    if (!failed) bulk.focusFirstEmpty();
   };
+
+  const firstOpen = rows.find((r) => r.state !== 'added')?.key;
+  const shelf = activeShelves.find((l) => l.id === delivery.locationId);
+  const summary = receiving ? lt.receiveSummary(ready.length, readyCopies, attention) : lt.bulkSummary(ready.length, attention, known);
+  // Sending on: for staff who may transfer from this branch, when there is another open branch to send to.
+  const targets = (branches ?? []).filter((b) => b.status === 'ACTIVE' && b.id !== branch?.id);
+  const receivedHere = received.filter((c) => c.branchId === branch?.id);
+  const canSend = receiving && !!org && !!branch && can(claims, 'books.transfer', org.id, branch.id) && targets.length > 0 && receivedHere.length > 0;
 
   if (!canAdd && !receiving) return <EmptyState page icon="book" title={t.noAccessTitle} message={t.noAccessMessage} />;
 
@@ -218,15 +289,20 @@ export function BulkAddBooksPage() {
           <div className="row">
             <label className="field-inline">
               {lt.location}
-              <select value={delivery.locationId} onChange={(e) => setDelivery((d) => ({ ...d, locationId: e.target.value }))}>
+              <select
+                value={delivery.locationId}
+                onChange={(e) => {
+                  const locationId = e.target.value;
+                  setDelivery((d) => ({ ...d, locationId }));
+                  remember.set(shelfKey, locationId || undefined);
+                }}
+              >
                 <option value="">{lt.noLocation}</option>
-                {(locations.data ?? [])
-                  .filter((l) => l.status === 'ACTIVE')
-                  .map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.code} · {l.label}
-                    </option>
-                  ))}
+                {activeShelves.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.code} · {l.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="field-inline">
@@ -256,8 +332,9 @@ export function BulkAddBooksPage() {
               value={defaults.ageGroup}
               onChange={(e) => {
                 const ageGroup = e.target.value as AgeGroup;
-                setDefaults((d) => ({ ...d, ageGroup }));
-                setRows((rs) => rs.map((r) => (r.state === 'added' ? r : { ...r, ageGroup })));
+                choose({ ageGroup });
+                // Rows whose age group was guessed from the book details, or picked on the row, keep theirs.
+                setRows((rs) => rs.map((r) => (r.state === 'added' || r.ageFrom !== 'page' ? r : { ...r, ageGroup })));
               }}
             >
               {AGE_GROUPS.map((a) => (
@@ -269,7 +346,7 @@ export function BulkAddBooksPage() {
           </label>
           <label className="field-inline">
             {lt.readingLevel}
-            <select value={defaults.readingLevel} onChange={(e) => setDefaults((d) => ({ ...d, readingLevel: e.target.value as Level }))}>
+            <select value={defaults.readingLevel} onChange={(e) => choose({ readingLevel: e.target.value as Level })}>
               {READING_LEVELS.map((l) => (
                 <option key={l} value={l}>
                   {label(l)}
@@ -279,7 +356,7 @@ export function BulkAddBooksPage() {
           </label>
           <label className="field-inline">
             {lt.bulkGenre}
-            <select value={defaults.genre} onChange={(e) => setDefaults((d) => ({ ...d, genre: e.target.value as Genre }))}>
+            <select value={defaults.genre} onChange={(e) => choose({ genre: e.target.value as Genre })}>
               {GENRES.map((g) => (
                 <option key={g} value={g}>
                   {label(g)}
@@ -289,6 +366,14 @@ export function BulkAddBooksPage() {
           </label>
         </div>
       </fieldset>
+
+      <div className="row">
+        <button type="button" className={`btn ${camera ? 'btn-filled' : 'btn-outlined'}`} aria-pressed={camera} onClick={() => setCamera((c) => !c)}>
+          <Icon name="camera" /> {lt.receiveCamera}
+        </button>
+      </div>
+      {/* Nothing is taken while a delivery is being saved: its rows are held. */}
+      {camera && <CameraScanner hint={lt.camHintIsbn} onDetect={(text) => (busy ? undefined : bulk.scan(text))} onClose={() => setCamera(false)} />}
 
       <TableWrap>
         <table className="table bulk-table">
@@ -310,7 +395,7 @@ export function BulkAddBooksPage() {
           </thead>
           <tbody>
             {view.map((v) => (
-              <BulkRow key={v.r.key} view={v} rows={bulk} receiving={receiving} canAdd={canAdd} busy={!!busy} deliveryPrice={delivery.price} />
+              <BulkRow key={v.r.key} view={v} rows={bulk} receiving={receiving} canAdd={canAdd} busy={!!busy} deliveryPrice={delivery.price} first={v.r.key === firstOpen} />
             ))}
           </tbody>
         </table>
@@ -321,28 +406,36 @@ export function BulkAddBooksPage() {
           <button type="button" className="btn btn-outlined" disabled={!!busy} onClick={bulk.addRow}>
             <Icon name="plus" /> {lt.bulkAddRow}
           </button>
-          <button type="button" className="btn btn-text" disabled={!!busy} onClick={bulk.clear}>
+          <button
+            type="button"
+            className="btn btn-text"
+            disabled={!!busy}
+            onClick={() => {
+              bulk.clear();
+              setReceived([]);
+            }}
+          >
             {lt.bulkClear}
           </button>
         </div>
         <p className="muted" aria-live="polite">
-          {busy ?? (receiving ? lt.receiveSummary(ready.length, readyCopies, attention) : lt.bulkSummary(ready.length, attention, known))}
+          {/* The shelf is named where the delivery is confirmed: a remembered one is easy to overlook above. */}
+          {busy ?? (shelf && ready.length ? `${summary} · ${lt.receiveOnto(shelf.code)}` : summary)}
         </p>
         <button type="button" className="btn btn-filled" disabled={!ready.length || !!busy} onClick={() => void (receiving ? receive() : submit())}>
           {receiving ? lt.receiveSubmit(readyCopies) : lt.bulkSubmit(ready.length)}
         </button>
       </div>
       <FormError error={error} />
-      {notice && (
-        <Notice tone="ok">
-          {notice}{' '}
-          {labels.length > 0 && (
-            <Link to={`${paths.adminLabels}?copies=${labels.slice(0, 120).join(',')}`}>
-              {lt.receiveLabels(Math.min(labels.length, 120))}
-            </Link>
-          )}
-        </Notice>
+      {notice && <Notice tone="ok">{notice}</Notice>}
+      {covers.done < covers.total && (
+        <p className="muted small" role="status">
+          {lt.bulkCovers(covers.done, covers.total)}
+        </p>
       )}
+      {/* On their own, not inside the notice: the labels of what was received stay when the notice changes. */}
+      <ReceivedLabels copies={received} branchName={branchName} />
+      {canSend && org && branch && <SendToBranches orgId={org.id} branchId={branch.id} targets={targets} copies={receivedHere} update={setReceived} />}
     </>
   );
 }
