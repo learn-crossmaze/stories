@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
@@ -8,6 +8,8 @@ import { CONDITIONS, type Condition, COPY_STATUSES, type CopyStatus, label } fro
 import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle, unshelvedCount } from '../../data/inventory';
 import { getBook } from '../../data/catalogue';
 import { BookCover } from '../../shared/BookCover';
+import { QrCode } from '../../shared/QrCode';
+import { oneOf, remember } from '../../shared/remember';
 import { useDebounced } from '../../shared/useDebounced';
 import { usePagedQuery } from '../../shared/usePagedQuery';
 import { useAsync } from '../../shared/useAsync';
@@ -413,12 +415,24 @@ export function CopyDetailPage() {
 export interface LabelData {
   barcode: string;
   title: string;
+  /** The shelf the copy stands on, when known: its code is printed as the shelf number. */
+  locationId?: string | null;
 }
 
 /** Copy ids the labels link carries in its address (what a new tab, or a pasted link, can print). */
 export const LABELS_IN_LINK = 120;
-/** Labels on one A4 sheet (3 × 8). */
-const LABELS_PER_SHEET = 24;
+
+/** The label sizes on offer. A4 is a sheet of 24 stickers; the others are one label per page (label printers). */
+export const LABEL_FORMATS = ['a4', '4x6', '4x4', '4x2'] as const;
+export type LabelFormat = (typeof LABEL_FORMATS)[number];
+/** Page size for the print dialog and labels per page. */
+const FORMAT_PAGE: Record<LabelFormat, { page: string; perPage: number }> = {
+  a4: { page: 'A4; margin: 10mm 7mm', perPage: 24 },
+  '4x6': { page: '4in 6in; margin: 0', perPage: 1 },
+  '4x4': { page: '4in 4in; margin: 0', perPage: 1 },
+  '4x2': { page: '4in 2in; margin: 0', perPage: 1 },
+};
+const formatKey = remember.key('labelFormat');
 
 /**
  * Where a "Print labels" link goes, for copies already in hand: the labels travel with the link (router state), so
@@ -428,7 +442,7 @@ const LABELS_PER_SHEET = 24;
 export function labelsLink(copies: (LabelData & { id: string })[]) {
   return {
     to: `${paths.adminLabels}?copies=${copies.slice(0, LABELS_IN_LINK).map((c) => c.id).join(',')}`,
-    state: { labels: copies.map(({ barcode, title }): LabelData => ({ barcode, title })) },
+    state: { labels: copies.map(({ barcode, title, locationId }): LabelData => ({ barcode, title, locationId: locationId ?? null })) },
   };
 }
 
@@ -438,39 +452,92 @@ const handedLabels = (state: unknown): LabelData[] | null => {
   return ok ? (list as LabelData[]) : null;
 };
 
+/** One label: the QR code (it holds the copy's barcode), the copy's number, its shelf number and the book's title. */
+function PrintedLabel({ l, shelf, format }: { l: LabelData; shelf: string | null; format: LabelFormat }) {
+  if (format === 'a4') {
+    return (
+      <div className="label">
+        <QrTag value={l.barcode} code={l.barcode} title={shelf ? `${lt.labelShelf(shelf)} · ${l.title}` : l.title} brand={t.appTitle} className="qr-tag-label" />
+      </div>
+    );
+  }
+  return (
+    <div className={`label-big label-${format}`}>
+      <QrCode value={l.barcode} className="label-big-qr" />
+      <div className="label-big-text">
+        <span className="label-big-code">{l.barcode}</span>
+        {shelf && <span className="label-big-shelf">{lt.labelShelf(shelf)}</span>}
+        <span className="label-big-title">{l.title}</span>
+        <span className="label-big-brand">{t.appTitle}</span>
+      </div>
+    </div>
+  );
+}
+
 /**
- * Printable label sheet (A4, 3 × 8). The labels come with the link that led here (`labelsLink`); opened any
- * other way, the copies in ?copies=id,id,… are read (the first 120).
+ * Printable labels, in the size chosen (remembered in this browser): an A4 sheet of 24, or one 4-inch label per
+ * page for label printers. The labels come with the link that led here (`labelsLink`); opened any other way, the
+ * copies in ?copies=id,id,… are read (the first 120). Shelf numbers come from this branch's shelves.
  */
 export function LabelsPage() {
   const [params] = useSearchParams();
-  const { org } = useWorkspace();
+  const { org, branch } = useWorkspace();
   const handed = handedLabels(useLocation().state);
   const ids = handed ? [] : (params.get('copies') ?? '').split(',').filter(Boolean).slice(0, LABELS_IN_LINK);
+  const [format, setFormat] = useState<LabelFormat>(() => remember.get(formatKey, 'a4', oneOf(LABEL_FORMATS)));
   const read = useAsync(async () => {
     if (!org || !ids.length) return { labels: [] as LabelData[], missing: 0 };
     // One copy that can't be read (it has moved to another branch) must not blank the whole sheet.
     const settled = await Promise.allSettled(ids.map((id) => getCopy(org.id, id)));
-    const found = settled.flatMap((s) => (s.status === 'fulfilled' && s.value ? [{ barcode: s.value.barcode, title: s.value.bookTitle }] : []));
+    const found = settled.flatMap((s) => (s.status === 'fulfilled' && s.value ? [{ barcode: s.value.barcode, title: s.value.bookTitle, locationId: s.value.locationId }] : []));
     const refused = settled.find((s) => s.status === 'rejected');
     if (!found.length && refused) throw refused.reason;
     return { labels: found, missing: ids.length - found.length };
   }, [org?.id, ids.join(',')]);
   const labels = handed ?? read.data?.labels ?? [];
   const loading = !handed && read.loading;
+  const wantsShelves = labels.some((l) => l.locationId);
+  // The shelf numbers: one read of this branch's shelves, only when a label stands on one. A label without a
+  // known shelf is printed without the line.
+  const shelves = useAsync(
+    async () => (org && branch && wantsShelves ? new Map((await listLocations(org.id, branch.id)).map((s) => [s.id, s.code])) : new Map<string, string>()),
+    [org?.id, branch?.id, wantsShelves],
+  );
+  // The print dialog takes its paper size from the page rule, which must match the label size chosen.
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `@media print { @page { size: ${FORMAT_PAGE[format].page}; } }`;
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, [format]);
+  const choose = (f: LabelFormat) => {
+    setFormat(f);
+    remember.set(formatKey, f);
+  };
+  const pages = Math.ceil(labels.length / FORMAT_PAGE[format].perPage);
   return (
     <>
       <header className="page-header page-header-row no-print">
         <div>
           <h1>{lt.labelsTitle}</h1>
           <p className="muted">
-            {lt.labelsHint} {!loading && labels.length > 0 && lt.labelsCount(labels.length, Math.ceil(labels.length / LABELS_PER_SHEET))}
+            {lt.labelFormatHint[format]} {!loading && labels.length > 0 && lt.labelsCount(labels.length, pages, format === 'a4')}
           </p>
         </div>
-        <button type="button" className="btn btn-filled" disabled={!labels.length} onClick={() => window.print()}>
+        <button type="button" className="btn btn-filled" disabled={!labels.length || (wantsShelves && shelves.loading)} onClick={() => window.print()}>
           <Icon name="print" /> {lt.print}
         </button>
       </header>
+      <fieldset className="label-formats no-print">
+        <legend>{lt.labelSize}</legend>
+        {LABEL_FORMATS.map((f) => (
+          <label key={f} className={`label-format${format === f ? ' is-on' : ''}`}>
+            <input type="radio" name="label-format" value={f} checked={format === f} onChange={() => choose(f)} />
+            <span className="label-format-name">{lt.labelFormatName[f]}</span>
+            <span className="label-format-what">{lt.labelFormatWhat[f]}</span>
+          </label>
+        ))}
+      </fieldset>
       {loading ? (
         <SkeletonRows rows={3} />
       ) : !handed && read.error ? (
@@ -484,11 +551,9 @@ export function LabelsPage() {
               <Notice tone="warn">{lt.labelsMissing(read.data.missing)}</Notice>
             </div>
           )}
-          <div className="label-sheet">
+          <div className={format === 'a4' ? 'label-sheet' : 'label-roll'}>
             {labels.map((l) => (
-              <div key={l.barcode} className="label">
-                <QrTag value={l.barcode} code={l.barcode} title={l.title} brand={t.appTitle} className="qr-tag-label" />
-              </div>
+              <PrintedLabel key={l.barcode} l={l} format={format} shelf={(l.locationId && shelves.data?.get(l.locationId)) || null} />
             ))}
           </div>
         </>

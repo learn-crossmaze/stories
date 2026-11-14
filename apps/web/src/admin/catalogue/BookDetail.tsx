@@ -253,7 +253,7 @@ export function BookDetailPage() {
             </h2>
             <div className="row">
               {!!copies.data?.length && (
-                <Link className="btn btn-outlined" {...labelsLink(copies.data.map((c) => ({ id: c.id, barcode: c.barcode, title: c.bookTitle })))}>
+                <Link className="btn btn-outlined" {...labelsLink(copies.data.map((c) => ({ id: c.id, barcode: c.barcode, title: c.bookTitle, locationId: c.locationId })))}>
                   <Icon name="print" /> {lt.printLabels}
                 </Link>
               )}

@@ -43,6 +43,36 @@ beforeEach(() => {
 });
 
 describe('Labels', () => {
+  it('offers 4-inch label sizes, remembers the choice, and prints the shelf number', async () => {
+    localStorage.clear();
+    const link = labelsLink([
+      { id: 'c1', barcode: 'BC-1', title: 'Book 1', locationId: 'A' },
+      { id: 'c2', barcode: 'BC-2', title: 'Book 2', locationId: null },
+    ]);
+    const [pathname, search] = link.to.split('?');
+    const view = open({ pathname, search: `?${search}`, state: link.state });
+    // A4 by default, with the shelf number on the label of the copy that stands on a shelf.
+    expect(await screen.findByText(new RegExp(lt.labelShelf('FIC-1')))).toBeInTheDocument();
+    expect(reads.listLocations).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['4x6']) }));
+    const big = [...view.container.querySelectorAll('.label-big.label-4x6')];
+    expect(big).toHaveLength(2);
+    expect(big[0]).toHaveTextContent('BC-1');
+    expect(big[0]).toHaveTextContent(lt.labelShelf('FIC-1'));
+    expect(big[0]).toHaveTextContent('Book 1');
+    expect(big[1]).not.toHaveTextContent('Shelf');
+    expect(big[0].querySelector('.label-big-qr')).not.toBeNull();
+    // The print dialog gets the label's paper size.
+    expect([...document.head.querySelectorAll('style')].some((st) => st.textContent?.includes('size: 4in 6in'))).toBe(true);
+    expect(localStorage.getItem('stories.labelFormat')).toBe('"4x6"');
+    view.unmount();
+    // Opened again, the last size is chosen.
+    const again = open({ pathname, search: `?${search}`, state: link.state });
+    expect(again.container.querySelectorAll('.label-4x6')).toHaveLength(2);
+    expect(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['4x6']) })).toBeChecked();
+    localStorage.clear();
+  });
+
   it('prints the labels handed over with the link at once, however many, without reading a copy', () => {
     const link = labelsLink(copies(130));
     // The address carries what a new tab can read; the labels themselves travel with the link.

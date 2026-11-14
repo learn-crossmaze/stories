@@ -491,13 +491,49 @@ main h1[tabindex='-1']:focus { outline: none; }
 .qr { display: inline-block; line-height: 0; background: #fff; }
 .qr svg { width: 100%; height: 100%; }
 @media print {
-  @page { size: A4; margin: 10mm 7mm; }
   body { background: #fff; }
   .admin-nav, .admin-header, .no-print, .breadcrumb { display: none !important; }
   .admin { display: block; }
   .admin-main { padding: 0; max-width: none; }
   .label { border: 0; break-inside: avoid; }
+  .label-roll { gap: 0; }
+  .label-big { border: 0; margin: 0; break-after: page; }
+  .label-big:last-child { break-after: auto; }
 }
+
+/* One label per page, 4 inches wide (label printers). Sized in inches so it prints exactly. */
+.label-formats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; border: 0; padding: 0; margin: 0 0 16px; }
+.label-formats legend { font-weight: 600; margin-bottom: 6px; }
+.label-format { display: grid; gap: 2px; padding: 10px 12px 10px 34px; border: 1px solid var(--outline); border-radius: var(--radius-md); cursor: pointer; position: relative; }
+.label-format input { position: absolute; left: 12px; top: 13px; margin: 0; }
+.label-format.is-on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.label-format-name { font-weight: 600; }
+.label-format-what { font-size: .85rem; color: var(--on-surface-variant, #555); }
+.label-roll { display: flex; flex-wrap: wrap; gap: 12px; }
+.label-big { background: #fff; color: #000; border: 1px dashed #bbb; box-sizing: border-box; overflow: hidden; display: flex; font-family: var(--font-body, system-ui, sans-serif); }
+.label-big-qr { display: block; flex: none; }
+.label-big-text { display: flex; flex-direction: column; min-width: 0; }
+.label-big-code { font: 700 22pt/1.1 ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+.label-big-shelf { font-weight: 700; font-size: 18pt; line-height: 1.15; }
+.label-big-title { font-size: 13pt; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.label-big-brand { font: 700 9pt/1 var(--font-display); color: #b4502b; margin-top: auto; }
+.label-4x6 { width: 4in; height: 6in; padding: .2in; flex-direction: column; align-items: center; gap: .1in; text-align: center; }
+.label-4x6 .label-big-qr { width: 3.6in; height: 3.6in; }
+.label-4x6 .label-big-text { align-items: center; flex: 1; gap: .06in; width: 100%; }
+.label-4x4 { width: 4in; height: 4in; padding: .15in; flex-direction: column; align-items: center; gap: .05in; text-align: center; }
+.label-4x4 .label-big-qr { width: 2.7in; height: 2.7in; }
+.label-4x4 .label-big-text { align-items: center; gap: .02in; width: 100%; }
+.label-4x4 .label-big-code { font-size: 15pt; }
+.label-4x4 .label-big-shelf { font-size: 12pt; }
+.label-4x4 .label-big-title { font-size: 9pt; -webkit-line-clamp: 1; }
+.label-4x4 .label-big-brand { display: none; }
+.label-4x2 { width: 4in; height: 2in; padding: .12in; flex-direction: row; align-items: center; gap: .12in; }
+.label-4x2 .label-big-qr { width: 1.76in; height: 1.76in; }
+.label-4x2 .label-big-text { gap: .04in; align-self: stretch; justify-content: center; }
+.label-4x2 .label-big-code { font-size: 13pt; }
+.label-4x2 .label-big-shelf { font-size: 12pt; }
+.label-4x2 .label-big-title { font-size: 9pt; -webkit-line-clamp: 3; }
+.label-4x2 .label-big-brand { font-size: 7pt; margin-top: 0; }
 .card h2 a, .page-header h1 a { color: inherit; text-decoration: none; } .card h2 a:hover { text-decoration: underline; }
 
 /* member audit trail */

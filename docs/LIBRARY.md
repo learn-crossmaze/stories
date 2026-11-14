@@ -138,6 +138,7 @@ the catalogue) takes a delivery in one pass, for staff who look after copies at 
 - **Labels:** *Print N labels* covers every copy received since the page was opened or cleared (a second carton,
   or a retry after a batch failed, adds to it; *Clear list* starts again). The labels travel with the link, so the
   sheet shows at once and takes any number; see *Labels* under Inventory.
+- **Label sizes:** the Labels page offers an A4 sheet of 24 stickers or one 4-inch label per page for label printers (4 × 6 in with a 3.6-inch QR code, 4 × 4 in, 4 × 2 in). Each label carries the QR code (the copy's barcode), the copy number, the shelf number when the copy stands on a shelf, and the title. The size chosen is remembered in that browser and sets the paper size in the print dialog.
 - **Send to branches** (staff with `books.transfer` at this branch, when another branch is open): type how many
   copies of each title go to each branch, and one click makes one transfer per branch, already on its way
   (`transfers-create` with the copy ids and `dispatch: true`; a branch that gets more than 50 copies gets several
