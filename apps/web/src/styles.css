@@ -517,23 +517,34 @@ main h1[tabindex='-1']:focus { outline: none; }
 .label-big-shelf { font-weight: 700; font-size: 18pt; line-height: 1.15; }
 .label-big-title { font-size: 13pt; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .label-big-brand { font: 700 9pt/1 var(--font-display); color: #b4502b; margin-top: auto; }
-.label-4x6 { width: 4in; height: 6in; padding: .2in; flex-direction: column; align-items: center; gap: .1in; text-align: center; }
-.label-4x6 .label-big-qr { width: 3.6in; height: 3.6in; }
-.label-4x6 .label-big-text { align-items: center; flex: 1; gap: .06in; width: 100%; }
-.label-4x4 { width: 4in; height: 4in; padding: .15in; flex-direction: column; align-items: center; gap: .05in; text-align: center; }
-.label-4x4 .label-big-qr { width: 2.7in; height: 2.7in; }
-.label-4x4 .label-big-text { align-items: center; gap: .02in; width: 100%; }
-.label-4x4 .label-big-code { font-size: 15pt; }
-.label-4x4 .label-big-shelf { font-size: 12pt; }
-.label-4x4 .label-big-title { font-size: 9pt; -webkit-line-clamp: 1; }
-.label-4x4 .label-big-brand { display: none; }
-.label-4x2 { width: 4in; height: 2in; padding: .12in; flex-direction: row; align-items: center; gap: .12in; }
-.label-4x2 .label-big-qr { width: 1.76in; height: 1.76in; }
-.label-4x2 .label-big-text { gap: .04in; align-self: stretch; justify-content: center; }
-.label-4x2 .label-big-code { font-size: 13pt; }
-.label-4x2 .label-big-shelf { font-size: 12pt; }
-.label-4x2 .label-big-title { font-size: 9pt; -webkit-line-clamp: 3; }
-.label-4x2 .label-big-brand { font-size: 7pt; margin-top: 0; }
+.label-range { margin-bottom: 16px; }
+.label-range .row { align-items: flex-end; flex-wrap: wrap; }
+/* Thermal labels print in one colour: everything black. */
+.label-big .label-big-brand { color: #000; }
+.label-100x150 { width: 100mm; height: 150mm; padding: 5mm; flex-direction: column; align-items: center; gap: 2.5mm; text-align: center; }
+.label-100x150 .label-big-qr { width: 90mm; height: 90mm; }
+.label-100x150 .label-big-text { align-items: center; flex: 1; gap: 1.5mm; width: 100%; }
+.label-100x100 { width: 100mm; height: 100mm; padding: 4mm; flex-direction: column; align-items: center; gap: 1mm; text-align: center; }
+.label-100x100 .label-big-qr { width: 66mm; height: 66mm; }
+.label-100x100 .label-big-text { align-items: center; gap: .5mm; width: 100%; }
+.label-100x100 .label-big-code { font-size: 15pt; }
+.label-100x100 .label-big-shelf { font-size: 12pt; }
+.label-100x100 .label-big-title { font-size: 9pt; -webkit-line-clamp: 1; }
+.label-100x100 .label-big-brand { display: none; }
+.label-100x75 { width: 100mm; height: 75mm; padding: 4mm; flex-direction: row; align-items: center; gap: 4mm; }
+.label-100x75 .label-big-qr { width: 52mm; height: 52mm; }
+.label-100x75 .label-big-text { gap: 1.5mm; align-self: stretch; justify-content: center; }
+.label-100x75 .label-big-code { font-size: 11pt; }
+.label-100x75 .label-big-shelf { font-size: 13pt; }
+.label-100x75 .label-big-title { font-size: 9pt; -webkit-line-clamp: 4; }
+.label-100x75 .label-big-brand { font-size: 7pt; margin-top: 0; }
+.label-100x50 { width: 100mm; height: 50mm; padding: 3mm; flex-direction: row; align-items: center; gap: 3mm; }
+.label-100x50 .label-big-qr { width: 44mm; height: 44mm; }
+.label-100x50 .label-big-text { gap: 1mm; align-self: stretch; justify-content: center; }
+.label-100x50 .label-big-code { font-size: 12pt; }
+.label-100x50 .label-big-shelf { font-size: 12pt; }
+.label-100x50 .label-big-title { font-size: 9pt; -webkit-line-clamp: 3; }
+.label-100x50 .label-big-brand { font-size: 7pt; margin-top: 0; }
 .card h2 a, .page-header h1 a { color: inherit; text-decoration: none; } .card h2 a:hover { text-decoration: underline; }
 
 /* member audit trail */

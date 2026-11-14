@@ -233,6 +233,29 @@ export async function copyEvents(orgId: string, copyId: string): Promise<CopyEve
   return snap.docs.map((d) => withId<CopyEvent>(d));
 }
 
+/** The most copies one "received between" read returns (a label run larger than this is split by dates). */
+export const RECEIVED_LIMIT = 1000;
+
+/**
+ * Copies that came into stock at this branch between two dates (India time, both days included), oldest first:
+ * for printing the labels of a delivery after the fact. Copies since moved to another branch are not included.
+ */
+export async function copiesReceivedBetween(orgId: string, branchId: string, from: string, to: string): Promise<Copy[]> {
+  const start = new Date(`${from}T00:00:00+05:30`);
+  const end = new Date(Date.parse(`${to}T00:00:00+05:30`) + 86_400_000);
+  const snap = await getDocs(
+    query(
+      collection(db(), `orgs/${orgId}/copies`),
+      where('currentBranchId', '==', branchId),
+      where('acquiredAt', '>=', start),
+      where('acquiredAt', '<', end),
+      orderBy('acquiredAt'),
+      limit(RECEIVED_LIMIT),
+    ),
+  );
+  return snap.docs.map((d) => withId<Copy>(d));
+}
+
 export async function listLocations(orgId: string, branchId: string): Promise<Location[]> {
   const snap = await getDocs(query(collection(db(), `orgs/${orgId}/branches/${branchId}/locations`), orderBy('code')));
   return snap.docs.map((d) => withId<Location>(d));

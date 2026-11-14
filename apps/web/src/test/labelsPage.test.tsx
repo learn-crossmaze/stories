@@ -9,7 +9,7 @@ import { lt } from '../strings/library';
 vi.mock('../data/services', () => ({ services: () => ({ fns: {}, db: {} }) }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ claims: { v: 1, sa: true, o: {} } }) }));
 vi.mock('../admin/Workspace', () => ({ useWorkspace: () => ({ org: { id: 'o1' }, branch: { id: 'b1', name: 'Central' }, branchName: (id: string) => id }) }));
-const reads = vi.hoisted(() => ({ getCopy: vi.fn(), listLocations: vi.fn() }));
+const reads = vi.hoisted(() => ({ getCopy: vi.fn(), listLocations: vi.fn(), copiesReceivedBetween: vi.fn() }));
 vi.mock('../data/inventory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../data/inventory')>()),
   ...reads,
@@ -34,6 +34,8 @@ function open(entry: string | { pathname: string; search: string; state: unknown
 const sheet = (view: { container: HTMLElement }) => [...view.container.querySelectorAll('.label')];
 
 beforeEach(() => {
+  // The A4 sheet, which most of these cases look at (a thermal size is the default).
+  localStorage.setItem('stories.labelFormat', '"a4"');
   reads.getCopy.mockReset().mockImplementation(async (_org: string, id: string) => ({ id, barcode: `READ-${id}`, bookTitle: `Read ${id}` }));
   reads.listLocations.mockReset().mockResolvedValue([
     { id: 'A', code: 'FIC-1', label: 'Fiction', kind: 'SHELF', status: 'ACTIVE' },
@@ -43,8 +45,44 @@ beforeEach(() => {
 });
 
 describe('Labels', () => {
-  it('offers 4-inch label sizes, remembers the choice, and prints the shelf number', async () => {
+  it('starts on the 100 × 50 mm thermal label when nothing was chosen before', () => {
     localStorage.clear();
+    const link = labelsLink([{ id: 'c1', barcode: 'BC-1', title: 'Book 1' }]);
+    const [pathname, search] = link.to.split('?');
+    const view = open({ pathname, search: `?${search}`, state: link.state });
+    expect(view.container.querySelectorAll('.label-big.label-100x50')).toHaveLength(1);
+    expect(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['100x50']) })).toBeChecked();
+  });
+
+  it('prints the labels of the stock received between two dates, with shelf numbers', async () => {
+    reads.copiesReceivedBetween.mockResolvedValue([
+      { id: 'c1', barcode: 'NEW-1', bookTitle: 'New one', locationId: 'B' },
+      { id: 'c2', barcode: 'NEW-2', bookTitle: 'New two', locationId: null },
+    ]);
+    const view = open('/ops/labels');
+    // Nothing handed over: the date form is offered and nothing is read yet.
+    expect(screen.getByRole('heading', { name: lt.labelsByDate })).toBeInTheDocument();
+    expect(reads.copiesReceivedBetween).not.toHaveBeenCalled();
+    const fromBox = screen.getByLabelText(lt.labelsFrom);
+    const toBox = screen.getByLabelText(lt.labelsTo);
+    await userEvent.clear(fromBox);
+    await userEvent.type(fromBox, '2026-11-01');
+    await userEvent.clear(toBox);
+    await userEvent.type(toBox, '2026-11-03');
+    await userEvent.click(screen.getByRole('button', { name: lt.labelsShow }));
+    expect(await screen.findByText(lt.labelsCount(2, 1), { exact: false })).toBeInTheDocument();
+    expect(reads.copiesReceivedBetween).toHaveBeenCalledWith('o1', 'b1', '2026-11-01', '2026-11-03');
+    expect(sheet(view)[0]).toHaveTextContent('NEW-1');
+    expect(await screen.findByText(new RegExp(lt.labelShelf('KID-1')))).toBeInTheDocument();
+  });
+
+  it('says so when no stock came in on those dates', async () => {
+    reads.copiesReceivedBetween.mockResolvedValue([]);
+    open('/ops/labels?from=2026-11-01&to=2026-11-02');
+    expect(await screen.findByText(lt.labelsNoneInRange)).toBeInTheDocument();
+  });
+
+  it('offers thermal label sizes, remembers the choice, and prints the shelf number', async () => {
     const link = labelsLink([
       { id: 'c1', barcode: 'BC-1', title: 'Book 1', locationId: 'A' },
       { id: 'c2', barcode: 'BC-2', title: 'Book 2', locationId: null },
@@ -54,8 +92,8 @@ describe('Labels', () => {
     // A4 by default, with the shelf number on the label of the copy that stands on a shelf.
     expect(await screen.findByText(new RegExp(lt.labelShelf('FIC-1')))).toBeInTheDocument();
     expect(reads.listLocations).toHaveBeenCalledTimes(1);
-    await userEvent.click(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['4x6']) }));
-    const big = [...view.container.querySelectorAll('.label-big.label-4x6')];
+    await userEvent.click(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['100x150']) }));
+    const big = [...view.container.querySelectorAll('.label-big.label-100x150')];
     expect(big).toHaveLength(2);
     expect(big[0]).toHaveTextContent('BC-1');
     expect(big[0]).toHaveTextContent(lt.labelShelf('FIC-1'));
@@ -63,13 +101,13 @@ describe('Labels', () => {
     expect(big[1]).not.toHaveTextContent('Shelf');
     expect(big[0].querySelector('.label-big-qr')).not.toBeNull();
     // The print dialog gets the label's paper size.
-    expect([...document.head.querySelectorAll('style')].some((st) => st.textContent?.includes('size: 4in 6in'))).toBe(true);
-    expect(localStorage.getItem('stories.labelFormat')).toBe('"4x6"');
+    expect([...document.head.querySelectorAll('style')].some((st) => st.textContent?.includes('size: 100mm 150mm'))).toBe(true);
+    expect(localStorage.getItem('stories.labelFormat')).toBe('"100x150"');
     view.unmount();
     // Opened again, the last size is chosen.
     const again = open({ pathname, search: `?${search}`, state: link.state });
-    expect(again.container.querySelectorAll('.label-4x6')).toHaveLength(2);
-    expect(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['4x6']) })).toBeChecked();
+    expect(again.container.querySelectorAll('.label-100x150')).toHaveLength(2);
+    expect(screen.getByRole('radio', { name: new RegExp(lt.labelFormatName['100x150']) })).toBeChecked();
     localStorage.clear();
   });
 
@@ -118,8 +156,9 @@ describe('Labels', () => {
     expect(sheet(refused)).toHaveLength(0);
     refused.unmount();
 
+    // Opened with nothing to print, it offers the labels of new stock by date.
     open('/ops/labels');
-    expect(await screen.findByText(lt.labelsNone)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: lt.labelsByDate })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: lt.print })).toBeDisabled();
   });
 

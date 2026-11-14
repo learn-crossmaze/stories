@@ -29,6 +29,12 @@ import { listLocations } from '../../data/inventory';
 import { normalizeIsbn } from '../../shared/isbn';
 import { toMinor } from '../../shared/format';
 import { oneOf, remember } from '../../shared/remember';
+import { Link } from 'react-router';
+
+import { paths } from '../../paths';
+import { readSpreadsheet, SpreadsheetError } from '../../shared/spreadsheet';
+import { todayIST } from '../../shared/dates';
+import { parseIsbnSheet, SHEET_TEMPLATE, type SheetItem } from './isbnSheet';
 import { EmptyState, Icon, TableWrap } from '../../shared/ui';
 import { useAsync } from '../../shared/useAsync';
 import { t } from '../../strings';
@@ -403,6 +409,7 @@ export function BulkAddBooksPage() {
         <button type="button" className={`btn ${camera ? 'btn-filled' : 'btn-outlined'}`} aria-pressed={camera} onClick={() => setCamera((c) => !c)}>
           <Icon name="camera" /> {lt.receiveCamera}
         </button>
+        <SheetImport disabled={!!busy} onItems={bulk.importList} onNotice={setNotice} />
       </div>
       {/* Nothing is taken while a delivery is being saved: its rows are held. */}
       {camera && <CameraScanner hint={lt.camHintIsbn} onDetect={(text) => (busy ? undefined : bulk.scan(text))} onClose={() => setCamera(false)} />}
@@ -468,6 +475,60 @@ export function BulkAddBooksPage() {
       {/* On their own, not inside the notice: the labels of what was received stay when the notice changes. */}
       <ReceivedLabels copies={received} branchName={branchName} />
       {canSend && org && branch && <SendToBranches orgId={org.id} branchId={branch.id} targets={targets} copies={receivedHere} update={setReceived} />}
+    </>
+  );
+}
+
+/**
+ * "Upload order (Excel or CSV)": reads the sheet in the browser and fills the rows with its ISBNs, quantities and
+ * prices; nothing is received until the person checks the rows and confirms, as with scanned books.
+ */
+function SheetImport({ disabled, onItems, onNotice }: { disabled: boolean; onItems: (items: SheetItem[]) => void; onNotice: (text: string) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [reading, setReading] = useState(false);
+  const template = () => {
+    const url = URL.createObjectURL(new Blob([SHEET_TEMPLATE], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'stories-order-template.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const read = async (file: File) => {
+    setReading(true);
+    try {
+      const { items, skipped } = parseIsbnSheet(await readSpreadsheet(file));
+      if (!items.length) return onNotice(lt.sheetNone(file.name));
+      onItems(items);
+      onNotice(lt.sheetRead(file.name, items.length, items.reduce((n, i) => n + i.quantity, 0), skipped));
+    } catch (e) {
+      onNotice(e instanceof SpreadsheetError && e.message === 'xls' ? lt.sheetOldExcel : lt.sheetUnreadable(file.name));
+    } finally {
+      setReading(false);
+      if (input.current) input.current.value = '';
+    }
+  };
+  return (
+    <>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void read(file);
+        }}
+      />
+      <button type="button" className="btn btn-outlined" disabled={disabled || reading} onClick={() => input.current?.click()}>
+        <Icon name="upload" /> {reading ? lt.sheetReading : lt.sheetUpload}
+      </button>
+      <button type="button" className="btn btn-text" onClick={template}>
+        {lt.sheetTemplate}
+      </button>
+      <Link className="btn btn-text" to={`${paths.adminLabels}?from=${todayIST()}&to=${todayIST()}`}>
+        <Icon name="print" /> {lt.labelsNewStock}
+      </Link>
     </>
   );
 }

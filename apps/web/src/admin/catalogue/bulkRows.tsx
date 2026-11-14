@@ -259,7 +259,32 @@ export function useBulkRows({ canAdd, receiving, defaults, onNotice }: { canAdd:
     validate(current[i].key, isbn);
   };
 
-  return { rows, setRows, patch, validate, onChange, onKeyDown, onPaste, remove, inputRef, addRow, clear, focusFirstEmpty, scan };
+  /**
+   * A list from an order spreadsheet: a title already on the list (not yet received) gets the copies added to its
+   * row; every other ISBN goes into the next empty row with its quantity and price, and is looked up as if typed.
+   */
+  const importList = (items: { isbn: string; quantity: number; price: string }[]) => {
+    const current = [...rowsRef.current];
+    const targets: { key: number; raw: string }[] = [];
+    for (const item of items) {
+      const at = current.findIndex((r) => r.state !== 'added' && normalizeIsbn(r.raw) === item.isbn);
+      if (at !== -1) {
+        const quantity = String(Math.min(50, (Number(current[at].quantity) || 0) + item.quantity));
+        current[at] = { ...current[at], quantity, price: current[at].price || item.price };
+        continue;
+      }
+      let i = current.findIndex(open);
+      if (i === -1) i = current.push(blank()) - 1;
+      current[i] = { ...current[i], raw: item.isbn, quantity: String(item.quantity), price: item.price, touched: true, ...unchecked(current[i]) };
+      targets.push({ key: current[i].key, raw: item.isbn });
+    }
+    if (!current.some(open)) current.push(blank());
+    rowsRef.current = current;
+    setRows(current);
+    for (const target of targets) validate(target.key, target.raw);
+  };
+
+  return { rows, setRows, patch, validate, onChange, onKeyDown, onPaste, remove, inputRef, addRow, clear, focusFirstEmpty, scan, importList };
 }
 
 export type BulkRows = ReturnType<typeof useBulkRows>;

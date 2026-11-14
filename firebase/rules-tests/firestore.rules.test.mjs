@@ -12,6 +12,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
   query,
   setDoc,
   updateDoc,
@@ -289,6 +291,12 @@ describe('library (Phase 1)', () => {
     await assertFails(getDocs(collection(lib(), `orgs/${CORP}/copies`)));
     await assertSucceeds(getDocs(collection(lib(), `orgs/${CORP}/copies/c-cen/events`)));
     await assertFails(getDoc(doc(emp(), `orgs/${CORP}/copies/c-cen`)));
+    // Labels for new stock: copies received at the branch between two dates.
+    const received = (db, branch) =>
+      getDocs(query(collection(db, `orgs/${CORP}/copies`), where('currentBranchId', '==', branch), where('acquiredAt', '>=', new Date('2026-01-01')), where('acquiredAt', '<', new Date('2027-01-01')), orderBy('acquiredAt'), limit(1000)));
+    await assertSucceeds(received(lib(), 'cen'));
+    await assertFails(received(lib(), 'nth'));
+    await assertFails(received(emp(), 'cen'));
   });
 
   it('members, loans and money are scoped to the branch and to roles that need them', async () => {

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/claims';
 import { command } from '../../data/api';
 import { CONDITIONS, type Condition, COPY_STATUSES, type CopyStatus, label } from '../../data/common';
-import { type Copy, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle, unshelvedCount } from '../../data/inventory';
+import { type Copy, copiesReceivedBetween, copyEvents, type CopyWhereabouts, findCopy, getCopy, listCopies, listLocations, locateCopy, searchCopiesByTitle, unshelvedCount, RECEIVED_LIMIT } from '../../data/inventory';
 import { getBook } from '../../data/catalogue';
 import { BookCover } from '../../shared/BookCover';
 import { QrCode } from '../../shared/QrCode';
@@ -14,6 +14,7 @@ import { useDebounced } from '../../shared/useDebounced';
 import { usePagedQuery } from '../../shared/usePagedQuery';
 import { useAsync } from '../../shared/useAsync';
 import { money, when } from '../../shared/format';
+import { todayIST } from '../../shared/dates';
 import { paths } from '../../paths';
 import { t } from '../../strings';
 import { EmptyState, ErrorState, Icon, makeStatusBadge, SkeletonRows, TableWrap } from '../../shared/ui';
@@ -213,6 +214,9 @@ export function InventoryPage() {
         <h1>{lt.inventoryTitle}</h1>
         {canReceive && (
           <div className="row">
+            <Link className="btn btn-text" to={`${paths.adminLabels}?from=${todayIST()}&to=${todayIST()}`}>
+              <Icon name="print" /> {lt.labelsNewStock}
+            </Link>
             <Link className="btn btn-outlined" to={paths.adminShelve}>
               <Icon name="shelves" /> {lt.shelveButton(unshelved.data ?? 0)}
             </Link>
@@ -422,15 +426,19 @@ export interface LabelData {
 /** Copy ids the labels link carries in its address (what a new tab, or a pasted link, can print). */
 export const LABELS_IN_LINK = 120;
 
-/** The label sizes on offer. A4 is a sheet of 24 stickers; the others are one label per page (label printers). */
-export const LABEL_FORMATS = ['a4', '4x6', '4x4', '4x2'] as const;
+/**
+ * The label sizes on offer: an A4 sheet of 24 stickers, or one label per page on a 4-inch (100 mm) thermal label
+ * printer such as the Shreyans 4-inch thermal transfer printer, in the roll sizes sold for it.
+ */
+export const LABEL_FORMATS = ['100x50', '100x75', '100x100', '100x150', 'a4'] as const;
 export type LabelFormat = (typeof LABEL_FORMATS)[number];
 /** Page size for the print dialog and labels per page. */
 const FORMAT_PAGE: Record<LabelFormat, { page: string; perPage: number }> = {
+  '100x50': { page: '100mm 50mm; margin: 0', perPage: 1 },
+  '100x75': { page: '100mm 75mm; margin: 0', perPage: 1 },
+  '100x100': { page: '100mm 100mm; margin: 0', perPage: 1 },
+  '100x150': { page: '100mm 150mm; margin: 0', perPage: 1 },
   a4: { page: 'A4; margin: 10mm 7mm', perPage: 24 },
-  '4x6': { page: '4in 6in; margin: 0', perPage: 1 },
-  '4x4': { page: '4in 4in; margin: 0', perPage: 1 },
-  '4x2': { page: '4in 2in; margin: 0', perPage: 1 },
 };
 const formatKey = remember.key('labelFormat');
 
@@ -482,9 +490,24 @@ function PrintedLabel({ l, shelf, format }: { l: LabelData; shelf: string | null
 export function LabelsPage() {
   const [params] = useSearchParams();
   const { org, branch } = useWorkspace();
+  const navigate = useNavigate();
   const handed = handedLabels(useLocation().state);
   const ids = handed ? [] : (params.get('copies') ?? '').split(',').filter(Boolean).slice(0, LABELS_IN_LINK);
-  const [format, setFormat] = useState<LabelFormat>(() => remember.get(formatKey, 'a4', oneOf(LABEL_FORMATS)));
+  // New stock received between two dates (?from=&to=), when no list was handed over.
+  const isDay = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const range = !handed && !ids.length && isDay(params.get('from')) && isDay(params.get('to')) ? { from: params.get('from')!, to: params.get('to')! } : null;
+  const [from, setFrom] = useState(range?.from ?? todayIST());
+  const [to, setTo] = useState(range?.to ?? todayIST());
+  const byDate = useAsync(
+    async () => (org && branch && range ? copiesReceivedBetween(org.id, branch.id, range.from, range.to) : null),
+    [org?.id, branch?.id, range?.from, range?.to],
+  );
+  const showRange = (e: FormEvent) => {
+    e.preventDefault();
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    navigate(`${paths.adminLabels}?from=${a}&to=${b}`);
+  };
+  const [format, setFormat] = useState<LabelFormat>(() => remember.get(formatKey, '100x50', oneOf(LABEL_FORMATS)));
   const read = useAsync(async () => {
     if (!org || !ids.length) return { labels: [] as LabelData[], missing: 0 };
     // One copy that can't be read (it has moved to another branch) must not blank the whole sheet.
@@ -494,8 +517,10 @@ export function LabelsPage() {
     if (!found.length && refused) throw refused.reason;
     return { labels: found, missing: ids.length - found.length };
   }, [org?.id, ids.join(',')]);
-  const labels = handed ?? read.data?.labels ?? [];
-  const loading = !handed && read.loading;
+  const fromRange = byDate.data?.map((c): LabelData => ({ barcode: c.barcode, title: c.bookTitle, locationId: c.locationId })) ?? null;
+  const labels = handed ?? fromRange ?? read.data?.labels ?? [];
+  const loading = !handed && (range ? byDate.loading : read.loading);
+  const failed = !handed && (range ? byDate.error : read.error);
   const wantsShelves = labels.some((l) => l.locationId);
   // The shelf numbers: one read of this branch's shelves, only when a label stands on one. A label without a
   // known shelf is printed without the line.
@@ -528,6 +553,26 @@ export function LabelsPage() {
           <Icon name="print" /> {lt.print}
         </button>
       </header>
+      {!handed && !ids.length && (
+        <form className="card label-range no-print" onSubmit={showRange}>
+          <h2 className="h-section">{lt.labelsByDate}</h2>
+          <p className="muted">{lt.labelsByDateHint}</p>
+          <div className="row">
+            <label className="field">
+              <span>{lt.labelsFrom}</span>
+              <input type="date" value={from} max={todayIST()} onChange={(e) => setFrom(e.target.value)} required />
+            </label>
+            <label className="field">
+              <span>{lt.labelsTo}</span>
+              <input type="date" value={to} max={todayIST()} onChange={(e) => setTo(e.target.value)} required />
+            </label>
+            <button type="submit" className="btn btn-outlined" disabled={!branch}>
+              {lt.labelsShow}
+            </button>
+          </div>
+          {range && byDate.data && byDate.data.length >= RECEIVED_LIMIT && <Notice tone="warn">{lt.labelsTooMany(RECEIVED_LIMIT)}</Notice>}
+        </form>
+      )}
       <fieldset className="label-formats no-print">
         <legend>{lt.labelSize}</legend>
         {LABEL_FORMATS.map((f) => (
@@ -540,13 +585,13 @@ export function LabelsPage() {
       </fieldset>
       {loading ? (
         <SkeletonRows rows={3} />
-      ) : !handed && read.error ? (
-        <ErrorState message={read.error} onRetry={read.reload} />
+      ) : failed ? (
+        <ErrorState message={failed} onRetry={range ? byDate.reload : read.reload} />
       ) : labels.length === 0 ? (
-        <EmptyState icon="print" title={lt.labelsNone} message="" />
+        range ? <EmptyState icon="print" title={lt.labelsNoneInRange} message="" /> : null
       ) : (
         <>
-          {!handed && !!read.data?.missing && (
+          {!handed && !range && !!read.data?.missing && (
             <div className="no-print">
               <Notice tone="warn">{lt.labelsMissing(read.data.missing)}</Notice>
             </div>

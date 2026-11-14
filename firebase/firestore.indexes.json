@@ -1357,6 +1357,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "copies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "currentBranchId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "acquiredAt",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

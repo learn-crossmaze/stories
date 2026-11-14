@@ -1,4 +1,8 @@
 // User-facing copy for the Phase 1 library screens (kept out of components for i18n).
+type LabelSize = '100x50' | '100x75' | '100x100' | '100x150' | 'a4';
+const PRINTER_TIP =
+  "In the print dialog choose the label printer, set the paper to the roll's size, margins None, scale 100% (Actual size), and switch off headers and footers.";
+
 export const lt = {
   // catalogue
   catalogueTitle: 'Catalogue',
@@ -155,19 +159,29 @@ export const lt = {
     sheets ? `${n} ${n === 1 ? 'label' : 'labels'}, ${pages} ${pages === 1 ? 'sheet' : 'sheets'}.` : `${n} ${n === 1 ? 'label' : 'labels'}.`,
   labelSize: 'Label size',
   labelShelf: (code: string) => `Shelf ${code}`,
-  labelFormatName: { a4: 'A4 sheet', '4x6': '4 × 6 inch', '4x4': '4 × 4 inch', '4x2': '4 × 2 inch' } as Record<'a4' | '4x6' | '4x4' | '4x2', string>,
+  labelFormatName: { '100x50': '100 × 50 mm', '100x75': '100 × 75 mm', '100x100': '100 × 100 mm', '100x150': '100 × 150 mm', a4: 'A4 sheet' } as Record<LabelSize, string>,
   labelFormatWhat: {
-    a4: '24 small stickers per A4 sheet (3 × 8), for any printer.',
-    '4x6': 'One label per book with a large QR code (about 3.6 inches), easy to scan from a distance. Label printer.',
-    '4x4': 'Square label with a 2.7-inch QR code and the details below it. Label printer.',
-    '4x2': 'Wide label: QR code on the left, number, shelf and title on the right. Label printer.',
-  } as Record<'a4' | '4x6' | '4x4' | '4x2', string>,
+    '100x50': 'Thermal label printer (4-inch). QR code on the left, number, shelf and title on the right. Fits a book cover.',
+    '100x75': 'Thermal label printer (4-inch). Bigger QR code (about 2 in) beside the details.',
+    '100x100': 'Thermal label printer (4-inch). Square label, 2.6-inch QR code with the details below.',
+    '100x150': 'Thermal label printer (4-inch). Largest QR code (about 3.5 in), easy to scan from a distance.',
+    a4: '24 small stickers per A4 sheet (3 × 8), for an ordinary printer.',
+  } as Record<LabelSize, string>,
   labelFormatHint: {
+    '100x50': `One label per page for a 4-inch thermal label printer with 100 × 50 mm labels. ${PRINTER_TIP}`,
+    '100x75': `One label per page for a 4-inch thermal label printer with 100 × 75 mm labels. ${PRINTER_TIP}`,
+    '100x100': `One label per page for a 4-inch thermal label printer with 100 × 100 mm labels. ${PRINTER_TIP}`,
+    '100x150': `One label per page for a 4-inch thermal label printer with 100 × 150 mm labels. ${PRINTER_TIP}`,
     a4: 'Print on A4 label sheets (3 × 8). Use your browser’s print dialog.',
-    '4x6': 'For a label printer with 4 × 6 inch labels. In the print dialog choose that printer, paper 4 × 6 in, margins none, scale 100%.',
-    '4x4': 'For a label printer with 4 × 4 inch labels. In the print dialog choose that printer, paper 4 × 4 in, margins none, scale 100%.',
-    '4x2': 'For a label printer with 4 × 2 inch labels. In the print dialog choose that printer, paper 4 × 2 in, margins none, scale 100%.',
-  } as Record<'a4' | '4x6' | '4x4' | '4x2', string>,
+  } as Record<LabelSize, string>,
+  labelsByDate: 'Labels for new stock',
+  labelsByDateHint: 'Every copy that came into stock at this branch between these dates (both days included), with its shelf number.',
+  labelsFrom: 'Received from',
+  labelsTo: 'to',
+  labelsShow: 'Show labels',
+  labelsNoneInRange: 'No copies came into stock at this branch on those dates.',
+  labelsTooMany: (n: number) => `Only the first ${n} copies are shown. Choose fewer days to print the rest.`,
+  labelsNewStock: 'Labels for new stock',
   labelsMissing: (n: number) => `${n} ${n === 1 ? 'label' : 'labels'} could not be read and ${n === 1 ? 'is' : 'are'} left out. Print ${n === 1 ? 'it' : 'them'} from the book's page.`,
   labelsNone: 'No labels to print.',
   shelfLabels: 'Print shelf labels',
@@ -567,6 +581,15 @@ export const lt = {
   bulkNav: 'Receive books',
   // Receiving a delivery (the same page, for staff who look after copies at the branch)
   receiveTitle: 'Receive books',
+  sheetUpload: 'Upload order (Excel or CSV)',
+  sheetReading: 'Reading the sheet…',
+  sheetTemplate: 'Download a blank order sheet',
+  sheetRead: (file: string, titles: number, copies: number, skipped: number) =>
+    `${file}: ${titles} ${titles === 1 ? 'title' : 'titles'} (${copies} ${copies === 1 ? 'copy' : 'copies'}) added to the list below. Check the rows, then receive.` +
+    (skipped ? ` ${skipped} ${skipped === 1 ? 'row has' : 'rows have'} no ISBN we can read and ${skipped === 1 ? 'was' : 'were'} left out.` : ''),
+  sheetNone: (file: string) => `${file} has no ISBNs we can read. The sheet needs a column headed “ISBN” (and, if you like, “Quantity” and “Price”).`,
+  sheetUnreadable: (file: string) => `${file} could not be read. Save it from Excel as .xlsx or CSV and try again.`,
+  sheetOldExcel: 'This is an old Excel file (.xls). In Excel choose File → Save As → Excel Workbook (.xlsx), then upload that.',
   receiveIntro: (branch: string, canAddTitles: boolean) =>
     `Scan each book as it comes out of the box${branch ? ` at ${branch}` : ''}: scanning the same book again counts another copy. ${
       canAddTitles ? 'Books new to the catalogue are looked up and added with it; ' : 'Books must already be in the catalogue; '

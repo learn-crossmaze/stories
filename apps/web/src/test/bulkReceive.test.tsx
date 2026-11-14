@@ -134,6 +134,23 @@ beforeEach(() => {
 });
 
 describe('Receive books', () => {
+  it('fills the rows from an uploaded order sheet: ISBNs, copies and prices, then receives them as typed', async () => {
+    const [a, b] = isbns(2);
+    const { user, container } = open();
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const sheet = new File([`ISBN,Quantity,Price\n${a},3,250\n${b},2,\n${a},1,\nnot an isbn,1,\n`], 'order.csv', { type: 'text/csv' });
+    await user.upload(input, sheet);
+    expect(await screen.findByText(lt.sheetRead('order.csv', 2, 6, 1))).toBeInTheDocument();
+    expect(isbnField(1)).toHaveValue(a);
+    expect(isbnField(2)).toHaveValue(b);
+    // The same ISBN twice in the sheet is one row with the copies added up.
+    expect(screen.getByLabelText(lt.receiveCopiesRow(1))).toHaveValue('4');
+    expect(screen.getByLabelText(lt.receiveCopiesRow(2))).toHaveValue('2');
+    await user.click(await screen.findByRole('button', { name: lt.receiveSubmit(6) }));
+    await waitFor(() => expect(receiveCalls()).toHaveLength(1));
+    expect(receiveCalls()[0].items.map((i) => i.quantity)).toEqual([4, 2]);
+  });
+
   it('keeps the titles a committed call received when a later call fails, and retries only the rest', async () => {
     const { user } = open();
     await user.click(isbnField(1));
